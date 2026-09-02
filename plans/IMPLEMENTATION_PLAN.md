@@ -150,6 +150,29 @@ against all forty competitions rather than a sample.
   fixtures. Committing a slice would have contradicted the README's own claim.
   `PathsConfig.sample_dir` was removed rather than left unused.
 
+### Incremental re-run verification (post-milestone)
+
+Asked to confirm a re-run is incremental and idempotent, and four of the five
+properties did not hold. Recorded because the verification was worth more than
+the feature it checked.
+
+| Property | Before | After |
+|---|---|---|
+| Identical output on repeat | held — Parquet byte-identical | held |
+| No duplicate matches | held | held |
+| Only **new** files downloaded | HTTP-300 misses re-downloaded every run | recorded with a 7-day TTL |
+| Only **modified** files downloaded | undetectable — settled files trusted forever, live files refetched on age | conditional requests, authoritative |
+| Historical checksums preserved | no raw manifest existed | all 732 files checksummed |
+
+The design change is that change detection is the *server's* answer, not a
+heuristic: the provider serves `ETag` and `Last-Modified` and honours
+`If-None-Match` with a 304 carrying no body. A file-age rule is wrong in both
+directions — it re-downloads unchanged files once they age, and misses a file
+that changed minutes ago.
+
+Measured over two full ingests: the second transferred 0 files and 0.00 MB and
+produced the same `sha256` as before the work began.
+
 ---
 
 ## Milestone 3 — Storage and validation (next)

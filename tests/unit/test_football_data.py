@@ -21,6 +21,7 @@ import pytest
 import requests
 
 from src.ingestion.base import CANONICAL_SCHEMA, Capability, SeasonUnavailableError
+from src.ingestion.cache import FetchCache
 from src.ingestion.football_data import (
     FootballDataProvider,
     derive_result,
@@ -31,6 +32,7 @@ from src.ingestion.football_data import (
     pick_odds,
 )
 from src.ingestion.registry import Competition, Feed, Registry
+from src.utils.http import DownloadResult
 
 TODAY = date(2026, 9, 3)
 
@@ -91,21 +93,54 @@ MULTI_LEAGUE_FEED = (
 class RecordingClient:
     """Stands in for HttpClient, recording downloads instead of making them."""
 
-    def __init__(self, payloads: dict[str, str] | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        payloads: dict[str, str] | None = None,
+        error: Exception | None = None,
+        *,
+        not_modified: bool = True,
+        etag: str | None = '"v1"',
+        last_modified: str | None = "Thu, 28 Jan 2021 22:47:08 GMT",
+    ):
         self.payloads = payloads or {}
         self.error = error
+        self.not_modified = not_modified
+        self.etag = etag
+        self.last_modified = last_modified
         self.requested: list[str] = []
+        self.conditional: list[tuple[str | None, str | None]] = []
 
-    def download(self, url: str, destination: Path, **_kwargs: object) -> Path:
+    def download(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        etag: str | None = None,
+        last_modified: str | None = None,
+        **_kwargs: object,
+    ) -> DownloadResult:
         self.requested.append(url)
+        self.conditional.append((etag, last_modified))
         if self.error is not None:
             raise self.error
+        # Mimic a real 304: when the caller sends a validator matching what
+        # this stub is serving, answer "not modified" and touch nothing.
+        if self.not_modified and (etag or last_modified):
+            return DownloadResult(
+                path=destination, modified=False, etag=etag, last_modified=last_modified
+            )
         destination.parent.mkdir(parents=True, exist_ok=True)
         body = next((v for k, v in self.payloads.items() if url.endswith(k)), None)
         if body is None:
             raise _http_error(404)
         destination.write_text(body, encoding="utf-8")
-        return destination
+        return DownloadResult(
+            path=destination,
+            modified=True,
+            etag=self.etag,
+            last_modified=self.last_modified,
+            bytes_written=len(body.encode()),
+        )
 
     def close(self) -> None:
         return None
@@ -117,18 +152,50 @@ def _http_error(status: int) -> requests.HTTPError:
     return requests.HTTPError(f"{status}", response=response)
 
 
-def make_provider(tmp_path: Path, client: RecordingClient | None = None) -> FootballDataProvider:
+def make_provider(
+    tmp_path: Path,
+    client: RecordingClient | None = None,
+    *,
+    cache: FetchCache | None = None,
+    **kwargs: object,
+) -> FootballDataProvider:
     return FootballDataProvider(
-        REGISTRY, tmp_path / "raw", client=client or RecordingClient(), today=TODAY
+        REGISTRY,
+        tmp_path / "raw",
+        client=client or RecordingClient(),
+        today=TODAY,
+        cache=cache if cache is not None else FetchCache.load(tmp_path / "fetch_cache.json"),
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
+SEEDED_ETAG = '"seeded"'
+SEEDED_LAST_MODIFIED = "Thu, 28 Jan 2021 22:47:08 GMT"
+
+
 def seed(tmp_path: Path, competition: Competition, season: str, body: str) -> None:
-    """Write a file straight into the cache, as a settled season."""
+    """Write a file into the cache as though a previous run had fetched it.
+
+    Both halves matter. The file goes on disk, *and* a fetch-cache entry
+    records the validators that came with it — that is what a real prior run
+    leaves behind, and it is what lets the next run ask "changed?" instead of
+    downloading again. Seeding only the file would model a machine that
+    downloaded data and forgot it had.
+    """
     provider = make_provider(tmp_path)
     path = provider.local_path(competition, season)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
+
+    cache = FetchCache.load(tmp_path / "fetch_cache.json")
+    cache.record_fetch(
+        provider.url_for(competition, season),
+        etag=SEEDED_ETAG,
+        last_modified=SEEDED_LAST_MODIFIED,
+        sha256=None,
+        size=path.stat().st_size,
+    )
+    cache.save()
 
 
 # ---- field parsing ----------------------------------------------------------
@@ -393,18 +460,17 @@ def test_a_settled_season_is_never_refetched(tmp_path: Path) -> None:
     of history that cannot have changed."""
     seed(tmp_path, ENG, "2024-25", MODERN_MAIN)
     client = RecordingClient()
-    provider = FootballDataProvider(REGISTRY, tmp_path / "raw", client=client, today=TODAY)
-    provider.fetch(ENG, "2024-25")
+    make_provider(tmp_path, client).fetch(ENG, "2024-25")
     assert client.requested == []
 
 
-def test_an_unsettled_season_is_refetched(tmp_path: Path) -> None:
+def test_an_unsettled_season_is_always_revalidated(tmp_path: Path) -> None:
+    """The current season gains rows every match day, so age is the wrong
+    question — it is asked of the server every run. A conditional request costs
+    one round trip and no body when nothing has changed."""
     seed(tmp_path, ENG, "2026-27", MODERN_MAIN)
     client = RecordingClient({"2627/E0.csv": MODERN_MAIN})
-    provider = FootballDataProvider(
-        REGISTRY, tmp_path / "raw", client=client, today=TODAY, max_age_days=0
-    )
-    provider.fetch(ENG, "2026-27")
+    make_provider(tmp_path, client).fetch(ENG, "2026-27")
     assert len(client.requested) == 1
 
 
@@ -427,7 +493,7 @@ def test_html_served_as_csv_becomes_season_unavailable(tmp_path: Path) -> None:
     "Multiple Choices" page. raise_for_status does not treat 3xx as an error,
     so the download succeeds and only a content check catches it."""
     client = RecordingClient({"2425/E0.csv": "<!DOCTYPE HTML><html>300 Multiple Choices</html>"})
-    provider = FootballDataProvider(REGISTRY, tmp_path / "raw", client=client, today=TODAY)
+    provider = make_provider(tmp_path, client)
     with pytest.raises(SeasonUnavailableError, match="HTML page"):
         provider.fetch(ENG, "2024-25")
 
@@ -435,7 +501,7 @@ def test_html_served_as_csv_becomes_season_unavailable(tmp_path: Path) -> None:
 def test_an_html_page_is_not_left_in_the_cache(tmp_path: Path) -> None:
     """Otherwise the next run finds a fresh-looking cached file and parses it."""
     client = RecordingClient({"2425/E0.csv": "<!DOCTYPE HTML><html>oops</html>"})
-    provider = FootballDataProvider(REGISTRY, tmp_path / "raw", client=client, today=TODAY)
+    provider = make_provider(tmp_path, client)
     with pytest.raises(SeasonUnavailableError):
         provider.fetch(ENG, "2024-25")
     assert not provider.local_path(ENG, "2024-25").exists()
@@ -461,7 +527,7 @@ def test_an_injected_client_is_not_closed_by_the_provider(tmp_path: Path) -> Non
     """The caller that opened it owns it. Closing a shared client here would
     break the next competition in the same run."""
     client = RecordingClient()
-    provider = FootballDataProvider(REGISTRY, tmp_path / "raw", client=client, today=TODAY)
+    provider = make_provider(tmp_path, client)
     provider.close()
     assert provider._client is client
 

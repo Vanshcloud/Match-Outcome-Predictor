@@ -30,6 +30,7 @@ logger = get_logger(__name__)
 
 MATCHES_FILENAME = "matches.parquet"
 MANIFEST_FILENAME = "manifest.json"
+RAW_MANIFEST_FILENAME = "manifest.json"
 
 
 @dataclass
@@ -49,6 +50,7 @@ class IngestReport:
     someone's attention."""
     per_competition: dict[str, int] = field(default_factory=dict)
     output: Path | None = None
+    raw_manifest: Path | None = None
 
     def summary(self) -> str:
         summary = (
@@ -128,6 +130,13 @@ def run_ingest(
         frames.extend(collected)
 
     report.competitions_empty = tuple(empty)
+
+    # Persisted before the early return: a run that ingested nothing still
+    # learned which files are missing and which are unchanged, and throwing
+    # that away would make the next run pay for it again.
+    provider.save_cache()
+    report.raw_manifest = _write_raw_manifest(provider.raw_dir)
+
     if not frames:
         logger.warning("nothing ingested")
         return report
@@ -158,6 +167,28 @@ def run_ingest(
     )
     logger.info("wrote %s — %s", output.name, report.summary())
     return report
+
+
+def _write_raw_manifest(raw_dir: Path) -> Path | None:
+    """Checksum every cached provider file.
+
+    This is the historical record: it says exactly which bytes produced a given
+    canonical table, so "the model was trained on this data" is checkable
+    rather than hopeful, and a file the provider silently revises shows up as a
+    changed checksum rather than as a quietly different model.
+
+    Separate from the processed-table manifest because they answer different
+    questions — one is provenance of the *inputs*, the other of the *output* —
+    and because the raw manifest survives a rebuild of the canonical table.
+    """
+    if not raw_dir.is_dir():
+        return None
+    files = sorted(path for path in raw_dir.rglob("*.csv") if path.is_file())
+    if not files:
+        return None
+    destination = raw_dir / RAW_MANIFEST_FILENAME
+    write_manifest(destination, raw_dir, files, extra={"kind": "raw-provider-files"})
+    return destination
 
 
 def _combine(frames: list[pd.DataFrame]) -> pd.DataFrame:

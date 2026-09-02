@@ -67,6 +67,13 @@ Adding a league is a `configs/leagues.yaml` entry — no code change. Adding a
 *provider* means writing one adapter against the canonical schema, with no
 change to any downstream code.
 
+Re-running is **incremental and idempotent**. Change detection uses HTTP
+conditional requests — the provider answers `If-None-Match` with a 304 and no
+body — rather than a file-age guess. Measured over the full ingest: the second
+run transfers **0 files and 0.00 MB** and produces a **byte-identical** Parquet
+(`sha256 8d489ed3…`). Every cached file is checksummed into
+`data/raw/manifest.json`, so which bytes produced a given table is checkable.
+
 **Every quirk that shaped this design is documented, with the file it was found
 in, in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)** — fifteen of them,
 including a missing file that returns HTTP 300 with an HTML body, a header
@@ -125,8 +132,9 @@ unpick.
 
 ```bash
 make setup     # venv, dev dependencies, git hooks
-make leagues   # list the 40 configured competitions
-make data      # download and ingest everything (~15 min, resumable)
+make leagues   # list the 39 configured competitions
+make data      # download and ingest everything (~15 min first time)
+make refresh   # incremental re-run: conditional requests only, 0 MB if unchanged
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy

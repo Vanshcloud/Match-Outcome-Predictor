@@ -15,6 +15,7 @@ browser automation and no HTML parser is installed.
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 
@@ -49,6 +50,24 @@ RETRY_STATUSES = (429, 500, 502, 503, 504)
 # reads, but the restriction is stated rather than assumed, so adding a POST
 # later cannot silently inherit automatic replay.
 RETRY_METHODS = frozenset({"GET", "HEAD"})
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadResult:
+    """The outcome of a download, including whether anything was transferred.
+
+    ``modified=False`` means the server answered 304 Not Modified and the file
+    on disk is already current — no bytes crossed the network and the existing
+    file was left untouched. That distinction is what makes an incremental
+    re-run cheap and, more importantly, *correct*: a cache decision based on
+    file age is a guess, while a 304 is the server's own answer.
+    """
+
+    path: Path
+    modified: bool
+    etag: str | None = None
+    last_modified: str | None = None
+    bytes_written: int = 0
 
 
 class HttpClient:
@@ -136,8 +155,16 @@ class HttpClient:
         response.raise_for_status()
         return response
 
-    def download(self, url: str, destination: Path, **kwargs: object) -> Path:
-        """Stream ``url`` to ``destination``, atomically.
+    def download(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        etag: str | None = None,
+        last_modified: str | None = None,
+        **kwargs: object,
+    ) -> DownloadResult:
+        """Stream ``url`` to ``destination``, atomically and conditionally.
 
         Written to a ``.part`` file and renamed only on success, so an
         interrupted download can never be mistaken for a complete one. That
@@ -145,15 +172,66 @@ class HttpClient:
         season silently missing its last eight match weeks would corrupt every
         rolling feature computed from it without raising anything.
 
+        Args:
+            etag: The ``ETag`` recorded when this file was last fetched. Sent
+                as ``If-None-Match``.
+            last_modified: The ``Last-Modified`` recorded when this file was
+                last fetched. Sent as ``If-Modified-Since``.
+
+        Passing either validator turns this into a conditional request: if the
+        file has not changed the server answers **304 Not Modified** with no
+        body, the file on disk is left exactly as it was, and the result says
+        ``modified=False``. Both are sent when both are known — a server may
+        honour one and ignore the other, and the cost of sending both is two
+        header lines.
+
         Returns:
-            ``destination``, for chaining.
+            A :class:`DownloadResult`. Callers that only want the file can read
+            ``.path``, which is ``destination`` either way.
         """
         destination.parent.mkdir(parents=True, exist_ok=True)
         partial = destination.with_suffix(destination.suffix + ".part")
 
+        conditional: dict[str, str] = {}
+        # Only meaningful when a copy actually exists. Sending validators for a
+        # file that is not on disk would earn a 304 and leave nothing to read.
+        if destination.is_file() and destination.stat().st_size > 0:
+            if etag:
+                conditional["If-None-Match"] = etag
+            if last_modified:
+                conditional["If-Modified-Since"] = last_modified
+
+        if conditional:
+            # kwargs is typed `object` because it is forwarded verbatim to
+            # requests, which accepts a dozen unrelated types. Narrowed here
+            # rather than silenced, so a caller passing headers as something
+            # other than a mapping fails loudly instead of losing them.
+            supplied = kwargs.pop("headers", None)
+            headers: dict[str, str] = {}
+            if isinstance(supplied, dict):
+                headers.update({str(k): str(v) for k, v in supplied.items()})
+            elif supplied is not None:
+                raise TypeError(f"headers must be a mapping, got {type(supplied).__name__}")
+            headers.update(conditional)
+            kwargs["headers"] = headers
+
         kwargs.setdefault("stream", True)
-        logger.info("downloading %s -> %s", url, destination.name)
+        logger.debug("fetching %s -> %s", url, destination.name)
         response = self.get(url, **kwargs)
+
+        if response.status_code == 304:
+            logger.debug("not modified: %s", destination.name)
+            # Return the validators we sent, not the ones on the 304: a 304 is
+            # permitted to omit them, and dropping them here would make the
+            # next run unconditional.
+            return DownloadResult(
+                path=destination,
+                modified=False,
+                etag=response.headers.get("ETag", etag),
+                last_modified=response.headers.get("Last-Modified", last_modified),
+            )
+
+        logger.info("downloading %s -> %s", url, destination.name)
 
         # Any failure below must remove the .part file. A short read left on
         # disk is worse than no file at all, because a freshness check only
@@ -186,7 +264,13 @@ class HttpClient:
         # so re-downloading over an existing file works on both.
         partial.replace(destination)
         logger.info("downloaded %s (%.2f MB)", destination.name, bytes_written / 1e6)
-        return destination
+        return DownloadResult(
+            path=destination,
+            modified=True,
+            etag=response.headers.get("ETag"),
+            last_modified=response.headers.get("Last-Modified"),
+            bytes_written=bytes_written,
+        )
 
     def close(self) -> None:
         """Close the connection pool."""

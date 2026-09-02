@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data leagues test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -38,8 +38,14 @@ install: ## Install runtime dependencies only
 install-dev: ## Install runtime + dev dependencies
 	$(BIN)/pip install -r requirements-dev.txt
 
-data: ## Download and ingest every configured competition (~15 min, resumable)
+data: ## Download and ingest every configured competition (~15 min first time)
 	$(BIN)/python scripts/fetch_data.py
+
+refresh: ## Incremental re-run: only new or modified files are transferred
+	$(BIN)/python scripts/fetch_data.py
+
+revalidate: ## Re-check finished seasons too, to pick up provider corrections
+	$(BIN)/python scripts/fetch_data.py --revalidate
 
 leagues: ## List the competition registry
 	$(BIN)/python scripts/fetch_data.py --list

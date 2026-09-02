@@ -39,7 +39,9 @@ from src.ingestion.base import (
     SeasonUnavailableError,
     make_match_id,
 )
+from src.ingestion.cache import CACHE_FILENAME, DEFAULT_MISS_TTL_DAYS, FetchCache
 from src.ingestion.csv_reader import ProviderFileError, looks_like_csv, read_provider_csv
+from src.ingestion.manifest import checksum
 from src.ingestion.registry import (
     Competition,
     Feed,
@@ -119,10 +121,16 @@ INTEGER_COLUMNS: frozenset[str] = frozenset(
     name for name, dtype in CANONICAL_SCHEMA.items() if dtype.startswith("Int")
 )
 
-# A season file stops changing once the season is over. This is how many years
-# after a season's start year it is treated as settled and never re-fetched.
-# Two, not one: a split season starting in 2023 finishes in mid-2024, so only
-# from 2025 is it certainly complete regardless of today's month.
+# A season file stops *gaining* rows once the season is over. Two years, not
+# one: a split season starting in 2023 finishes in mid-2024, so only from 2025
+# is it certainly complete regardless of today's month.
+#
+# Settled means "will not grow", NOT "will never change" — the provider does
+# revise history to correct a scoreline or add a referee. So a settled file is
+# skipped entirely on an ordinary run and revalidated with a conditional
+# request when the caller asks for it (`revalidate=True`), which costs a 304
+# and no body. Trusting a settled file forever was the old behaviour and made
+# a correction permanently invisible.
 SEASON_SETTLED_AFTER_YEARS = 2
 
 # A real bookmaker's implied probabilities always sum above 1.0 — the excess is
@@ -231,8 +239,10 @@ class FootballDataProvider:
         *,
         client: HttpClient | None = None,
         base_url: str = BASE_URL,
-        max_age_days: float = 1.0,
         today: date | None = None,
+        revalidate: bool = False,
+        miss_ttl_days: float = DEFAULT_MISS_TTL_DAYS,
+        cache: FetchCache | None = None,
     ) -> None:
         """
         Args:
@@ -241,16 +251,31 @@ class FootballDataProvider:
             client: Injected so tests never reach the network. A client is
                 created on demand when not supplied.
             base_url: Overridden in tests to point at a local fixture server.
-            max_age_days: How stale an unsettled file may be before refetching.
             today: Injected so cache tests are not time-dependent.
+            revalidate: Also send a conditional request for seasons already
+                settled. Off by default because those files are skipped
+                entirely, which is what makes a re-run nearly free; on, every
+                file is checked against the server for about zero bytes each.
+            miss_ttl_days: How long a recorded miss is trusted.
+            cache: Injected for tests. Loaded from ``raw_dir`` otherwise.
         """
         self.registry = registry
         self.raw_dir = raw_dir
         self.base_url = base_url.rstrip("/")
-        self.max_age_days = max_age_days
         self._today = today
+        self.revalidate = revalidate
+        self.miss_ttl_days = miss_ttl_days
+        self.cache = cache if cache is not None else FetchCache.load(raw_dir / CACHE_FILENAME)
         self._client = client
         self._owns_client = client is None
+        # URLs already revalidated during this run. A secondary-feed country
+        # file holds every season at once, so ingesting Brazil's fifteen
+        # seasons asked the server about the same file fifteen times — plus
+        # once more to enumerate the seasons. Correct, but sixteen round trips
+        # where one answers the question. Per-run rather than persisted: the
+        # point is that one file is checked once per run, not that it is
+        # trusted between runs.
+        self._validated_this_run: set[str] = set()
 
     @property
     def name(self) -> str:
@@ -261,6 +286,10 @@ class FootballDataProvider:
         if self._client is None:
             self._client = HttpClient()
         return self._client
+
+    def save_cache(self) -> None:
+        """Persist what this run learned. Safe to call more than once."""
+        self.cache.save()
 
     def close(self) -> None:
         """Close the HTTP client, but only one this provider created itself."""
@@ -309,16 +338,19 @@ class FootballDataProvider:
             return self.raw_dir / PROVIDER_NAME / "main" / season / f"{competition.code}.csv"
         return self.raw_dir / PROVIDER_NAME / "extra" / f"{competition.code}.csv"
 
-    def _is_fresh(self, path: Path, competition: Competition, season: str) -> bool:
-        """Whether the cached file can be used without re-downloading."""
+    def _can_skip_entirely(self, path: Path, competition: Competition, season: str) -> bool:
+        """Whether this file can be used without contacting the server at all.
+
+        Only a settled primary-feed season qualifies, and only when
+        ``revalidate`` is off. Everything else gets a conditional request: it
+        costs one round trip and no body when nothing has changed, and it is
+        the only way to notice when something has.
+        """
         if not path.is_file() or path.stat().st_size == 0:
             return False
-        # A finished season's file is immutable. Without this, refreshing the
-        # current season would re-download three decades of settled history.
-        if competition.feed is Feed.MAIN and is_season_settled(season, self._today):
-            return True
-        age_days = (datetime.now(tz=UTC).timestamp() - path.stat().st_mtime) / 86_400
-        return age_days <= self.max_age_days
+        if self.revalidate:
+            return False
+        return competition.feed is Feed.MAIN and is_season_settled(season, self._today)
 
     def ensure_file(self, competition: Competition, season: str = "") -> Path:
         """Return a local path to the provider file, downloading if needed.
@@ -334,18 +366,53 @@ class FootballDataProvider:
                 an error.
         """
         path = self.local_path(competition, season)
-        if self._is_fresh(path, competition, season):
-            logger.debug("cache hit: %s", path.name)
+        url = self.url_for(competition, season)
+
+        # A file the provider is known not to publish. Re-probing it every run
+        # costs a request, and for this provider often a whole HTML download,
+        # since an unavailable season answers 300 rather than 404. Retried once
+        # the TTL expires so a newly published division is still picked up.
+        if self.cache.is_known_missing(url, ttl_days=self.miss_ttl_days):
+            raise SeasonUnavailableError(f"{competition.id} {season}: known missing (cached)")
+
+        if self._can_skip_entirely(path, competition, season):
+            logger.debug("settled, not checked: %s", path.name)
             return path
 
-        url = self.url_for(competition, season)
+        if url in self._validated_this_run and path.is_file():
+            logger.debug("already checked this run: %s", path.name)
+            return path
+
+        entry = self.cache.get(url)
         try:
-            self.client.download(url, path)
+            result = self.client.download(
+                url,
+                path,
+                etag=entry.etag if entry else None,
+                last_modified=entry.last_modified if entry else None,
+            )
         except Exception as error:  # noqa: BLE001 - re-raised below, narrowed
             status = getattr(getattr(error, "response", None), "status_code", None)
             if status == 404:
+                self.cache.record_miss(url)
                 raise SeasonUnavailableError(f"{competition.id} {season}: not published") from error
             raise
+
+        self._validated_this_run.add(url)
+
+        if not result.modified:
+            # 304: the bytes on disk are current and nothing was transferred.
+            # The recorded checksum is left alone — it still describes this
+            # file — while fetched_at moves, so the log can distinguish "not
+            # checked since March" from "checked today, unchanged".
+            self.cache.record_fetch(
+                url,
+                etag=result.etag,
+                last_modified=result.last_modified,
+                sha256=entry.sha256 if entry else None,
+                size=entry.bytes if entry else None,
+            )
+            return path
 
         # The HTML-as-CSV guard. A missing division-season answers HTTP 300
         # with a "Multiple Choices" page, which downloads perfectly happily.
@@ -353,9 +420,18 @@ class FootballDataProvider:
         # before it can be mistaken for a cached copy on the next run.
         if not looks_like_csv(path.read_bytes()):
             path.unlink(missing_ok=True)
+            self.cache.record_miss(url)
             raise SeasonUnavailableError(
                 f"{competition.id} {season}: provider returned an HTML page, not CSV"
             )
+
+        self.cache.record_fetch(
+            url,
+            etag=result.etag,
+            last_modified=result.last_modified,
+            sha256=checksum(path),
+            size=path.stat().st_size,
+        )
         return path
 
     def _read_country_file(self, competition: Competition) -> list[dict[str, str]]:

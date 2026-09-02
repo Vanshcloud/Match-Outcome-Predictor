@@ -181,3 +181,58 @@ def test_every_cached_raw_file_still_parses() -> None:
     for path in files:
         rows = read_provider_csv(path)
         assert rows, f"{path} parsed to zero rows"
+
+
+# ---- incremental state on real data -----------------------------------------
+
+
+def test_the_raw_manifest_covers_every_cached_file() -> None:
+    """A file present but unrecorded is a gap in the provenance chain: the
+    canonical table could have been built from bytes nothing checksummed."""
+    manifest_path = RAW / ".." / "manifest.json"
+    manifest_path = manifest_path.resolve()
+    if not manifest_path.is_file():
+        pytest.skip("no raw manifest; run scripts/fetch_data.py")
+
+    from src.ingestion.manifest import read_manifest
+
+    manifest = read_manifest(manifest_path)
+    recorded = {entry["path"] for entry in manifest["files"]}  # type: ignore[index,union-attr]
+    on_disk = {
+        path.relative_to(manifest_path.parent).as_posix()
+        for path in manifest_path.parent.rglob("*.csv")
+    }
+    assert on_disk - recorded == set(), "cached files missing from the manifest"
+
+
+def test_the_raw_manifest_still_verifies() -> None:
+    """Re-checksums every cached file. A mismatch means either local corruption
+    or a provider revision — both worth knowing before training on it."""
+    manifest_path = (RAW / ".." / "manifest.json").resolve()
+    if not manifest_path.is_file():
+        pytest.skip("no raw manifest; run scripts/fetch_data.py")
+
+    from src.ingestion.manifest import read_manifest, verify_manifest
+
+    result = verify_manifest(read_manifest(manifest_path), manifest_path.parent)
+    assert result.ok, f"raw files changed since the manifest was written: {result.summary()}"
+
+
+def test_the_fetch_cache_holds_validators_for_what_it_fetched() -> None:
+    """Without validators every re-run is a full download, so an entry that
+    recorded a fetch but no ETag or Last-Modified is a silent regression."""
+    from src.ingestion.cache import CACHE_FILENAME, FetchCache
+
+    cache_path = SETTINGS.paths.raw_dir / CACHE_FILENAME
+    if not cache_path.is_file():
+        pytest.skip("no fetch cache; run scripts/fetch_data.py")
+
+    cache = FetchCache.load(cache_path)
+    fetched = [
+        cache.get(url)
+        for url in cache._entries  # noqa: SLF001 - inspecting cache contents is the point
+        if not cache._entries[url].missing  # noqa: SLF001
+    ]
+    assert fetched, "cache recorded no successful fetches"
+    without = [e.url for e in fetched if e and not (e.etag or e.last_modified)]
+    assert not without, f"fetched without recording a validator: {without[:5]}"

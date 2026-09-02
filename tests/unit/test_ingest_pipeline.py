@@ -63,10 +63,23 @@ class StubProvider:
 
     name = "stub"
 
-    def __init__(self, seasons: dict[str, pd.DataFrame], competitions: tuple[Competition, ...]):
+    def __init__(
+        self,
+        seasons: dict[str, pd.DataFrame],
+        competitions: tuple[Competition, ...],
+        raw_dir: Path | None = None,
+    ):
         self.seasons = seasons
         self._competitions = competitions
         self.calls: list[tuple[str, str]] = []
+        # The pipeline checksums the raw cache and persists what the run
+        # learned; a stub has to expose both or it is not testing the pipeline
+        # that actually runs.
+        self.raw_dir = raw_dir or Path("/nonexistent-raw")
+        self.saved = 0
+
+    def save_cache(self) -> None:
+        self.saved += 1
 
     def competitions(self) -> tuple[Competition, ...]:
         return self._competitions

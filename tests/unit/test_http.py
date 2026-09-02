@@ -196,8 +196,10 @@ def test_a_failed_request_still_spaces_the_next_one(monkeypatch: pytest.MonkeyPa
 def test_download_writes_the_file(tmp_path: Path) -> None:
     body = b"Div,Date,HomeTeam\n" * 100
     client = make_client(_StubAdapter(body=body, headers={"Content-Length": str(len(body))}))
-    destination = client.download(URL, tmp_path / "E0.csv")
-    assert destination.read_bytes() == body
+    result = client.download(URL, tmp_path / "E0.csv")
+    assert result.path.read_bytes() == body
+    assert result.modified is True
+    assert result.bytes_written == len(body)
 
 
 def test_download_creates_missing_parent_directories(tmp_path: Path) -> None:
@@ -249,7 +251,7 @@ def test_a_response_without_content_length_is_accepted(tmp_path: Path) -> None:
     """Omitting the header is legal. There is simply nothing to compare
     against, so the size check is skipped rather than the download rejected."""
     client = make_client(_StubAdapter(body=b"abc"))
-    assert client.download(URL, tmp_path / "E0.csv").read_bytes() == b"abc"
+    assert client.download(URL, tmp_path / "E0.csv").path.read_bytes() == b"abc"
 
 
 def test_an_error_status_aborts_the_download(tmp_path: Path) -> None:
@@ -270,3 +272,129 @@ def test_the_context_manager_closes_the_session() -> None:
     with HttpClient(session=session) as client:
         assert isinstance(client, HttpClient)
     assert closed == [True]
+
+
+# ---- conditional requests ---------------------------------------------------
+#
+# The provider serves ETag and Last-Modified on every file and answers both
+# If-None-Match and If-Modified-Since with a 304 carrying no body. That is what
+# makes an incremental re-run cost nothing and, more importantly, makes it
+# correct — a cache decision based on file age is a guess.
+
+
+def test_validators_are_sent_when_a_copy_exists(tmp_path: Path) -> None:
+    destination = tmp_path / "E0.csv"
+    destination.write_bytes(b"cached")
+    seen: dict[str, str] = {}
+    adapter = _StubAdapter(body=b"new")
+    original = adapter.send
+
+    def spy(request, **kwargs):  # type: ignore[no-untyped-def]
+        seen.update(request.headers)
+        return original(request, **kwargs)
+
+    adapter.send = spy  # type: ignore[method-assign]
+    make_client(adapter).download(
+        URL, destination, etag='"v1"', last_modified="Thu, 01 Jan 2026 00:00:00 GMT"
+    )
+    assert seen["If-None-Match"] == '"v1"'
+    assert seen["If-Modified-Since"] == "Thu, 01 Jan 2026 00:00:00 GMT"
+
+
+def test_no_validators_are_sent_without_a_local_copy(tmp_path: Path) -> None:
+    """Sending them for a file that is not on disk would earn a 304 and leave
+    nothing to read."""
+    seen: dict[str, str] = {}
+    adapter = _StubAdapter(body=b"new")
+    original = adapter.send
+
+    def spy(request, **kwargs):  # type: ignore[no-untyped-def]
+        seen.update(request.headers)
+        return original(request, **kwargs)
+
+    adapter.send = spy  # type: ignore[method-assign]
+    make_client(adapter).download(URL, tmp_path / "absent.csv", etag='"v1"')
+    assert "If-None-Match" not in seen
+
+
+def test_an_empty_cached_file_is_not_revalidated(tmp_path: Path) -> None:
+    """A zero-byte file is what an interrupted write leaves behind. Treating it
+    as a valid copy would let a 304 confirm nothing."""
+    destination = tmp_path / "E0.csv"
+    destination.write_bytes(b"")
+    seen: dict[str, str] = {}
+    adapter = _StubAdapter(body=b"new")
+    original = adapter.send
+
+    def spy(request, **kwargs):  # type: ignore[no-untyped-def]
+        seen.update(request.headers)
+        return original(request, **kwargs)
+
+    adapter.send = spy  # type: ignore[method-assign]
+    make_client(adapter).download(URL, destination, etag='"v1"')
+    assert "If-None-Match" not in seen
+
+
+def test_a_304_leaves_the_file_untouched(tmp_path: Path) -> None:
+    destination = tmp_path / "E0.csv"
+    destination.write_bytes(b"original")
+    client = make_client(_StubAdapter(status=304, headers={"ETag": '"v1"'}))
+
+    result = client.download(URL, destination, etag='"v1"')
+
+    assert result.modified is False
+    assert result.bytes_written == 0
+    assert destination.read_bytes() == b"original"
+    assert result.etag == '"v1"'
+
+
+def test_a_304_without_validators_keeps_the_ones_we_sent(tmp_path: Path) -> None:
+    """A 304 is permitted to omit them. Dropping them here would make the next
+    run unconditional, quietly undoing the whole mechanism."""
+    destination = tmp_path / "E0.csv"
+    destination.write_bytes(b"original")
+    client = make_client(_StubAdapter(status=304))
+
+    result = client.download(
+        URL, destination, etag='"v1"', last_modified="Thu, 01 Jan 2026 00:00:00 GMT"
+    )
+    assert result.etag == '"v1"'
+    assert result.last_modified == "Thu, 01 Jan 2026 00:00:00 GMT"
+
+
+def test_a_200_reports_the_new_validators(tmp_path: Path) -> None:
+    client = make_client(
+        _StubAdapter(
+            body=b"new", headers={"ETag": '"v2"', "Last-Modified": "Fri, 02 Jan 2026 00:00:00 GMT"}
+        )
+    )
+    result = client.download(URL, tmp_path / "E0.csv", etag='"v1"')
+    assert result.modified is True
+    assert result.etag == '"v2"'
+    assert result.last_modified == "Fri, 02 Jan 2026 00:00:00 GMT"
+
+
+def test_caller_supplied_headers_are_preserved(tmp_path: Path) -> None:
+    destination = tmp_path / "E0.csv"
+    destination.write_bytes(b"cached")
+    seen: dict[str, str] = {}
+    adapter = _StubAdapter(body=b"new")
+    original = adapter.send
+
+    def spy(request, **kwargs):  # type: ignore[no-untyped-def]
+        seen.update(request.headers)
+        return original(request, **kwargs)
+
+    adapter.send = spy  # type: ignore[method-assign]
+    make_client(adapter).download(URL, destination, etag='"v1"', headers={"X-Trace": "abc"})
+    assert seen["X-Trace"] == "abc"
+    assert seen["If-None-Match"] == '"v1"'
+
+
+def test_non_mapping_headers_are_refused(tmp_path: Path) -> None:
+    """Narrowed rather than silenced: a caller passing headers as something
+    other than a mapping should fail loudly instead of losing them."""
+    destination = tmp_path / "E0.csv"
+    destination.write_bytes(b"cached")
+    with pytest.raises(TypeError, match="headers must be a mapping"):
+        make_client(_StubAdapter()).download(URL, destination, etag='"v1"', headers=["bad"])

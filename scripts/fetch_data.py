@@ -24,6 +24,7 @@ from pathlib import Path
 # makes it work when invoked from another directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.ingestion.cache import DEFAULT_MISS_TTL_DAYS  # noqa: E402
 from src.ingestion.football_data import FootballDataProvider  # noqa: E402
 from src.ingestion.registry import Competition, load_registry  # noqa: E402
 from src.pipelines.ingest import run_ingest  # noqa: E402
@@ -53,6 +54,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="every competition in this country. Repeatable.",
     )
     parser.add_argument("--list", action="store_true", help="list the registry and exit")
+    parser.add_argument(
+        "--revalidate",
+        action="store_true",
+        help="also re-check seasons already finished. They are skipped by default because "
+        "a finished season gains no rows; use this to pick up a provider correction. "
+        "Costs one conditional request and no body per unchanged file.",
+    )
+    parser.add_argument(
+        "--forget-misses",
+        action="store_true",
+        help="retry every season previously recorded as unpublished, ignoring the cache TTL",
+    )
     parser.add_argument("--log-level", default=None, help="override the configured level")
     return parser.parse_args(argv)
 
@@ -116,7 +129,13 @@ def main(argv: list[str] | None = None) -> int:
         user_agent=settings.http.user_agent,
         min_request_interval_seconds=settings.http.min_request_interval_seconds,
     ) as client:
-        provider = FootballDataProvider(registry, settings.paths.raw_dir, client=client)
+        provider = FootballDataProvider(
+            registry,
+            settings.paths.raw_dir,
+            client=client,
+            revalidate=args.revalidate,
+            miss_ttl_days=0.0 if args.forget_misses else DEFAULT_MISS_TTL_DAYS,
+        )
         report = run_ingest(provider, settings.paths.processed_dir, competitions=targets)
 
     if report.matches == 0:
@@ -125,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\n{report.summary()}")
     print(f"written to {report.output}")
+    if report.raw_manifest is not None:
+        print(f"raw checksums in {report.raw_manifest}")
     if report.competitions_empty:
         print(f"no data found for: {', '.join(report.competitions_empty)}")
     return 0

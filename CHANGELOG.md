@@ -10,6 +10,47 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-09-03
+
+Incremental, idempotent re-runs. Verifying the claim that a re-run is cheap
+found that it was not: settled files were trusted forever so a provider
+correction was permanently invisible, live files re-downloaded on age even when
+unchanged, unavailable seasons were re-probed every run, and nothing recorded
+the checksum of a single input file.
+
+### Added
+
+- HTTP conditional requests (`If-None-Match` / `If-Modified-Since`). The
+  provider answers both with 304 and no body, so change detection is
+  authoritative instead of guessed. `HttpClient.download` now returns a
+  `DownloadResult` reporting whether anything was transferred.
+- `src/ingestion/cache.py` — per-URL `ETag`, `Last-Modified`, `sha256` and
+  last-checked time, plus recorded misses with a 7-day TTL so unpublished
+  seasons are not re-probed every run. A corrupt or version-mismatched cache is
+  discarded rather than raised on.
+- Raw-file manifest (`data/raw/manifest.json`) checksumming all 732 cached
+  provider files — provenance of the inputs, alongside the existing manifest
+  for the output.
+- `--revalidate` re-checks finished seasons to pick up a provider correction;
+  `--forget-misses` retries seasons previously recorded as unpublished.
+  `make refresh` and `make revalidate`.
+- 36 tests covering incremental re-runs, conditional requests and the cache,
+  plus integration tests asserting the real manifest still verifies.
+
+### Changed
+
+- A secondary-feed country file is now revalidated **once per run** rather than
+  once per season. Ingesting Brazil's fifteen seasons asked the server about
+  the same file sixteen times.
+- `max_age_days` removed. Age was the wrong question in both directions.
+
+### Measured
+
+Two full 39-competition ingests back to back: the second transferred **0 files
+and 0.00 MB**, re-probed **0** of the previous run's misses, and produced a
+**byte-identical** table — `sha256 8d489ed3…`, unchanged from before this work,
+so the fetching got smarter and the data did not move.
+
 ## [0.2.0] — 2026-09-03
 
 Milestone 2: ingestion.
@@ -86,6 +127,7 @@ Milestone 1: repository foundation.
   path would then have depended on the process's working directory. Fixed at
   the base model so no future section can reintroduce it.
 
-[Unreleased]: https://github.com/Vanshcloud/Match-Outcome-Predictor/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Vanshcloud/Match-Outcome-Predictor/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Vanshcloud/Match-Outcome-Predictor/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Vanshcloud/Match-Outcome-Predictor/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Vanshcloud/Match-Outcome-Predictor/releases/tag/v0.1.0

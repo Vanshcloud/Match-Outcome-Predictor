@@ -210,6 +210,57 @@ one id through promotion and relegation. An alias table exists for the second
 provider and is deliberately empty until there is one to verify against.
 `find_single_season_teams` reports rename candidates rather than guessing.
 
+## Incremental re-runs
+
+The provider serves `ETag` and `Last-Modified` on every file, and honours both
+`If-None-Match` and `If-Modified-Since` with **304 Not Modified and no body**.
+Change detection is therefore authoritative rather than guessed, and the
+pipeline uses it instead of a file-age heuristic — age is wrong in both
+directions: it re-downloads unchanged files once they get old enough, and it
+misses a file that changed five minutes ago.
+
+| File class | Ordinary run | `--revalidate` |
+|---|---|---|
+| Settled season (finished ≥2 years) | not contacted | conditional request |
+| Current / recent season | conditional request | conditional request |
+| Secondary-feed country file | conditional request, **once per run** | same |
+| Known missing (cached, TTL 7 days) | not contacted | not contacted |
+
+"Settled" means *will not grow*, not *will never change* — the provider does
+revise history to correct a scoreline. `--revalidate` catches that for the
+price of a 304 per file. `--forget-misses` retries everything previously
+recorded as unpublished.
+
+### Measured, over the full 39-competition ingest
+
+| | First run | Second run |
+|---|---|---|
+| Files transferred | 80 (**10.20 MB**) | 0 (**0.00 MB**) |
+| Revalidated (304, no body) | 6 | 60 |
+| 404 misses re-probed | 2 | 0 |
+| Output `sha256` | `8d489ed3…` | `8d489ed3…` |
+
+The canonical Parquet is **byte-identical** across runs, which is what makes
+the checksum in the manifest meaningful. It is also independent of the order
+competitions are ingested in, because the table is sorted by
+`(date, competition_id, match_id)` before writing.
+
+### State on disk
+
+| Path | Purpose |
+|---|---|
+| `data/raw/fetch_cache.json` | Per-URL `ETag`, `Last-Modified`, `sha256`, last-checked time, and whether the provider publishes it at all |
+| `data/raw/manifest.json` | Checksum of every cached provider file — provenance of the **inputs** |
+| `data/processed/manifest.json` | Checksum, row count and date range of the canonical table — provenance of the **output** |
+
+Both manifests are verified by the integration suite. A changed checksum is
+*reported*, never raised on: the provider genuinely does revise files, and
+whether that is corruption or a correction is the caller's judgement.
+
+Losing the fetch cache costs one slow run and nothing else — a corrupt or
+version-mismatched cache is discarded rather than raising, because an
+optimisation that can halt the pipeline is a liability.
+
 ## Deliberately not used
 
 | Source | Reason |

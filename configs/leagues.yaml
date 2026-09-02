@@ -1,0 +1,94 @@
+# ============================================================
+# Competition registry
+# ============================================================
+# Adding a league is an entry here. No code changes, no new module — that
+# property is asserted by tests/unit/test_registry.py, which loads this file
+# and checks every entry resolves to a fetchable location.
+#
+# `feed` selects the provider's file layout:
+#
+#   main   one file per competition-season at /mmz4281/{season}/{code}.csv.
+#          Rich per-match detail: shots, shots on target, corners, fouls,
+#          cards, referee. History back to 1993/94 for the older divisions.
+#
+#   extra  one file per COUNTRY at /new/{code}.csv, covering every season at
+#          once. Results and closing odds only — no shot statistics, ever.
+#          History from roughly 2012.
+#
+# `league_filter` picks one competition out of a country file that holds more
+# than one. It is not defensive padding: Argentina's file mixes the league with
+# a cup, and Switzerland's mixes two tiers. Without the filter, Argentina's
+# rows would merge a league and a knockout competition into a single impossible
+# table. Values are compared stripped, because the provider's own League column
+# contains ' J1 League' alongside 'J1 League'.
+#
+# `tier` is the level within the domestic pyramid, or null for a cup.
+
+# First season to attempt for the main feed. Availability differs per division
+# and the provider publishes no index, so the adapter probes forward from here
+# and treats a missing season as a normal answer rather than an error.
+earliest_season: 1993
+
+competitions:
+
+  # ---- England -------------------------------------------------------------
+  - {id: ENG_1, country: England, name: Premier League,   tier: 1, feed: main, code: E0}
+  - {id: ENG_2, country: England, name: Championship,     tier: 2, feed: main, code: E1}
+  - {id: ENG_3, country: England, name: League One,       tier: 3, feed: main, code: E2}
+  - {id: ENG_4, country: England, name: League Two,       tier: 4, feed: main, code: E3}
+  - {id: ENG_5, country: England, name: National League,  tier: 5, feed: main, code: EC}
+
+  # ---- Scotland ------------------------------------------------------------
+  - {id: SCO_1, country: Scotland, name: Premiership,   tier: 1, feed: main, code: SC0}
+  - {id: SCO_2, country: Scotland, name: Championship,  tier: 2, feed: main, code: SC1}
+  - {id: SCO_3, country: Scotland, name: League One,    tier: 3, feed: main, code: SC2}
+  - {id: SCO_4, country: Scotland, name: League Two,    tier: 4, feed: main, code: SC3}
+
+  # ---- Germany, Italy, Spain, France ---------------------------------------
+  - {id: GER_1, country: Germany, name: Bundesliga,        tier: 1, feed: main, code: D1}
+  - {id: GER_2, country: Germany, name: 2. Bundesliga,     tier: 2, feed: main, code: D2}
+  - {id: ITA_1, country: Italy,   name: Serie A,           tier: 1, feed: main, code: I1}
+  - {id: ITA_2, country: Italy,   name: Serie B,           tier: 2, feed: main, code: I2}
+  - {id: ESP_1, country: Spain,   name: La Liga,           tier: 1, feed: main, code: SP1}
+  - {id: ESP_2, country: Spain,   name: Segunda Division,  tier: 2, feed: main, code: SP2}
+  - {id: FRA_1, country: France,  name: Ligue 1,           tier: 1, feed: main, code: F1}
+  - {id: FRA_2, country: France,  name: Ligue 2,           tier: 2, feed: main, code: F2}
+
+  # ---- Rest of the primary feed --------------------------------------------
+  - {id: NED_1, country: Netherlands, name: Eredivisie,     tier: 1, feed: main, code: N1}
+  - {id: BEL_1, country: Belgium,     name: Pro League,     tier: 1, feed: main, code: B1}
+  - {id: POR_1, country: Portugal,    name: Primeira Liga,  tier: 1, feed: main, code: P1}
+  - {id: TUR_1, country: Turkey,      name: Super Lig,      tier: 1, feed: main, code: T1}
+  - {id: GRE_1, country: Greece,      name: Super League,   tier: 1, feed: main, code: G1}
+
+  # ---- Secondary feed: results and odds only -------------------------------
+  # Two country files carry more than one competition and need a filter.
+  - {id: ARG_1,   country: Argentina, name: Liga Profesional, tier: 1, feed: extra, code: ARG,
+     league_filter: Liga Profesional}
+  - {id: ARG_CUP, country: Argentina, name: Copa de la Liga Profesional, tier: null, feed: extra,
+     code: ARG, league_filter: Copa De La Liga Profesional}
+  - {id: SUI_1,   country: Switzerland, name: Super League,     tier: 1, feed: extra, code: SWZ,
+     league_filter: Super League}
+  # Switzerland's file also carries a 'Challenge League' label, and it is NOT
+  # the second tier: it is two matches, Thun v Sion home and away in May 2021 —
+  # the Super League promotion/relegation playoff. Registered as a competition
+  # it would be a league with one season and two fixtures, which no rolling
+  # feature can use and every per-competition report would have to caveat.
+  # Left out deliberately; the league_filter mechanism it would have used is
+  # still exercised by Argentina, whose file really does hold two competitions.
+
+  # Single-competition country files.
+  - {id: AUT_1, country: Austria,  name: Bundesliga,     tier: 1, feed: extra, code: AUT}
+  - {id: BRA_1, country: Brazil,   name: Serie A,        tier: 1, feed: extra, code: BRA}
+  - {id: CHN_1, country: China,    name: Super League,   tier: 1, feed: extra, code: CHN}
+  - {id: DEN_1, country: Denmark,  name: Superliga,      tier: 1, feed: extra, code: DNK}
+  - {id: FIN_1, country: Finland,  name: Veikkausliiga,  tier: 1, feed: extra, code: FIN}
+  - {id: IRL_1, country: Ireland,  name: Premier Division, tier: 1, feed: extra, code: IRL}
+  - {id: JPN_1, country: Japan,    name: J1 League,      tier: 1, feed: extra, code: JPN}
+  - {id: MEX_1, country: Mexico,   name: Liga MX,        tier: 1, feed: extra, code: MEX}
+  - {id: NOR_1, country: Norway,   name: Eliteserien,    tier: 1, feed: extra, code: NOR}
+  - {id: POL_1, country: Poland,   name: Ekstraklasa,    tier: 1, feed: extra, code: POL}
+  - {id: ROU_1, country: Romania,  name: Superliga,      tier: 1, feed: extra, code: ROU}
+  - {id: RUS_1, country: Russia,   name: Premier League, tier: 1, feed: extra, code: RUS}
+  - {id: SWE_1, country: Sweden,   name: Allsvenskan,    tier: 1, feed: extra, code: SWE}
+  - {id: USA_1, country: USA,      name: MLS,            tier: 1, feed: extra, code: USA}

@@ -15,6 +15,19 @@ PyYAML>=6.0
 python-dotenv>=1.0
 pydantic>=2.9
 
+# ---- Data (M2) ----
+# pandas is pinned below 3.0 deliberately. Unpinned it resolves to 3.0.x, which
+# changes the default string dtype from `object` to `str` and makes
+# Copy-on-Write permanent. Both are silent behaviour changes rather than
+# errors — the worst kind in a pipeline whose whole job is reshaping frames.
+# Revisit as a deliberate migration, not as a side effect of an install.
+pandas>=2.2,<3
+# Never imported by name. It is pandas' Parquet engine, and every canonical
+# table this project writes round-trips through Parquet, so `read_parquet`
+# fails without it. Listed explicitly because an implicit dependency is one
+# nobody pins.
+pyarrow>=17.0
+
 # ---- HTTP ----
 # `requests` only. Every source this project reads serves CSV; no HTML parser
 # is installed, because nothing here parses HTML. Playwright and Selenium are
@@ -22,7 +35,6 @@ pydantic>=2.9
 requests>=2.32
 
 # ---- Added in later milestones (recorded so the order is deliberate) --------
-# M2  ingestion .......... pandas<3, pyarrow
 # M3  storage ............ duckdb, psycopg[binary], SQLAlchemy, pandera
 # M4  ratings ............ numpy
 # M7  splits/baselines ... scikit-learn

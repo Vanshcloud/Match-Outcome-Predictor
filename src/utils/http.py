@@ -22,9 +22,22 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src import __version__
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Built from the single source of truth rather than repeated as a literal. The
+# User-Agent identifies this client to a third party on every request, and a
+# hardcoded version becomes a small lie at the first release — which is exactly
+# what happened at 0.2.0, caught by tests/unit/test_version.py.
+#
+# `from src import __version__` is the one permitted intra-package import in
+# src/utils: src/__init__.py imports nothing, so it cannot create a cycle.
+DEFAULT_USER_AGENT = (
+    f"match-outcome-predictor/{__version__} "
+    "(+https://github.com/Vanshcloud/Match-Outcome-Predictor)"
+)
 
 # Transient failures only. A 404 is deliberately absent: the file is missing,
 # and asking four more times only delays the error by the backoff schedule.
@@ -51,7 +64,7 @@ class HttpClient:
         timeout_seconds: float = 60.0,
         max_retries: int = 5,
         backoff_factor: float = 0.5,
-        user_agent: str = "match-outcome-predictor/0.1",
+        user_agent: str = DEFAULT_USER_AGENT,
         min_request_interval_seconds: float = 0.0,
         session: requests.Session | None = None,
     ) -> None:
@@ -66,7 +79,7 @@ class HttpClient:
                 an anonymous, scraper-shaped UA is how a polite consumer gets
                 mistaken for an impolite one and blocked.
             min_request_interval_seconds: Minimum spacing between requests.
-                This project fetches ~38 files from a single small host, so
+                This project fetches ~700 files from a single small host, so
                 spacing them is a courtesy that costs nothing.
             session: Injected for tests, which use a session with a mounted
                 mock adapter so no test ever reaches the network.

@@ -9,7 +9,7 @@ re-litigated later. Milestone sections are filled in as each is delivered.
 
 | # | Decision | Chosen | Rationale |
 |---|---|---|---|
-| 1 | Data provider | football-data.co.uk only, behind an adapter interface | Free, keyless, static CSV, no rate limit, ~38 competitions, ~250k matches. Verified live before committing to it. Other providers plug in later without downstream change. |
+| 1 | Data provider | football-data.co.uk only, behind an adapter interface | Free, keyless, static CSV, no rate limit. Measured after a full ingest: 39 competitions, 305,499 matches, 1993-2026. Verified live before committing to it. Other providers plug in later without downstream change. |
 | 2 | Model zoo | Pruned zoo first (M8), then a separate Research Models milestone (M14) | Prove the pipeline end to end with models that reliably win on tabular data, then benchmark TabNet / FT-Transformer / AutoML against the best GBDT under *identical* time-aware validation, with a written verdict on whether the complexity is justified. |
 | 3 | Storage & MLOps | DuckDB + Parquet (analytics, feature store), PostgreSQL (application data, prediction serving), MLflow (tracking, registry), Docker Compose (orchestration) | Storage sits behind interfaces so Postgres can be replaced or scaled without touching business logic. Checksum-based dataset versioning now; the layout stays compatible with adding DVC or S3/MinIO later. |
 | 4 | Commit policy | `commit-msg` authorship guard, no attribution trailers | Matches the sibling Transfer Value Predictor and predictive-maintenance repositories. Installed via version-controlled `core.hooksPath`, so it survives a reclone. |
@@ -40,7 +40,7 @@ supply it.
 - **FiveThirtyEight SPI.** The feed stopped updating when 538 was wound down;
   the archive is usable history but cannot serve live fixtures.
 - **Weather, injuries, lineups, travel, attendance, squad value.** Not
-  available at match level across 38 competitions from any free source. Feature
+  available at match level across 39 competitions from any free source. Feature
   registry slots exist so any that becomes available is one entry, not a
   refactor.
 
@@ -102,22 +102,68 @@ expensive at Milestone 5.
 
 ---
 
-## Milestone 2 — Ingestion (next)
+## Milestone 2 — Ingestion ✅
+
+**Delivered.** 39 competitions across 27 countries, two provider file layouts,
+one canonical 35-column schema. A full ingest produced 305,499 matches and
+1,363 teams spanning 1993-2026, with zero unreadable files. No downstream module can tell which feed a
+match came from — CI enforces it.
+
+| Module | Responsibility |
+|---|---|
+| `base.py` | The canonical schema, `Capability`, `MatchProvider` protocol, deterministic `match_id`. |
+| `csv_reader.py` | Every file-level quirk in one place: encodings, BOMs, ragged rows, blank rows, HTML-served-as-CSV. |
+| `registry.py` | The competition registry and season-label normalisation (split vs calendar). |
+| `teams.py` | Canonical team ids, alias seam, rename detection. |
+| `football_data.py` | The adapter: URLs, caching, parsing, per-row validation. |
+| `manifest.py` | Checksum-based dataset versioning, in place of DVC. |
+| `pipelines/ingest.py` | Orchestration only — no logic. |
+
+**Verified:** 213 unit tests, 100% coverage of `src`, ruff/black/mypy clean,
+plus 16 integration tests that run against real downloaded data and skip
+without it.
+
+### Two decisions that changed after measurement
+
+Recorded because both were wrong first, and both were only caught by running
+against all forty competitions rather than a sample.
+
+1. **The ragged-row guard was too strict, and it aborted the run.** It raised
+   whenever a truncated field was non-empty, on the theory that surplus data
+   meant a shifted row. Italian Serie B 2003/04 falsified it: a 42-column
+   header whose last eight names are blank, with rows of 49 fields carrying
+   extra unnamed statistics and every named column correctly aligned. Worse,
+   raising killed the whole ingest — one bad file out of ~700 discarded every
+   competition after it. Now: pad, truncate, warn; the real guard is semantic
+   and per-row, and the pipeline survives an unreadable file.
+2. **No fuzzy team-name matching.** Measured across 34 Premier League seasons:
+   51 distinct team strings, 12,724 matches, byte-identical spellings across
+   three decades. The two most similar distinct pairs both score exactly 0.800
+   (`Sheffield United`/`Sheffield Weds`, `Barnsley`/`Burnley`), so any useful
+   threshold merges real clubs. Identity is exact, with an empty alias table
+   for the second provider.
+
+### Changed from the approved plan
+
+- **No `data/sample/`.** The provider publishes no licence granting
+  redistribution, and the unit suite is already fully offline on synthetic
+  fixtures. Committing a slice would have contradicted the README's own claim.
+  `PathsConfig.sample_dir` was removed rather than left unused.
+
+---
+
+## Milestone 3 — Storage and validation (next)
 
 Scope, for approval:
 
-- `src/ingestion/base.py` — the `MatchProvider` protocol and the canonical
-  match schema every adapter must produce.
-- `src/ingestion/football_data.py` — both schemas (main and extra) behind one
-  adapter, with per-competition capability flags.
-- `configs/leagues.yaml` — the competition registry. Adding a league is a
-  config entry, not code.
-- Caching and freshness: a completed season never re-downloads; the current
-  season refreshes on an age check. Checksum manifest for reproducibility.
-- Team-name normalisation across seasons and schemas — the first real data
-  problem, and the one most likely to corrupt joins silently.
-- `data/sample/` — a committed slice, so the suite stays offline.
-- `scripts/fetch_data.py` — the CLI entry point.
+- `src/storage/base.py` — the storage protocol; DuckDB and Postgres behind it.
+- `src/storage/duckdb_store.py` — the analytical store; Parquet feature store.
+- `src/storage/postgres_store.py` — application data and prediction serving.
+- `src/validation/` — schema checks, referential integrity, distribution
+  sanity. The integration assertions written in Milestone 2 move here and
+  become a first-class, reportable gate rather than a test file.
+- A dataset card generated from the real ingest, with per-competition coverage.
+- `docker-compose.yml` for Postgres.
 
-**No feature engineering, no modelling, no leakage-sensitive transforms.**
-Milestone 2 produces one canonical, validated table of historical matches.
+**No feature engineering yet.** Milestone 3 makes the canonical table
+queryable, validated and reproducible.

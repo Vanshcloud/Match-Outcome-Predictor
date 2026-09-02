@@ -21,16 +21,18 @@ env/
 # minutes by `make data`, and it changes every match week — committing it would
 # be both large and permanently stale.
 #
-# data/sample/ IS committed. The test suite runs against it, so CI needs no
-# network: a suite that only passes on a machine that has already downloaded
-# 250k matches is a suite nobody can trust.
+# Nothing under data/ is committed, and no sample slice is either. The
+# provider publishes no licence granting redistribution, so this repository
+# ships none of its data — see the note in README. The unit suite needs none:
+# it runs against synthetic fixtures shaped like the real files, so CI passes
+# on a clean checkout with no network. Tests that need real data are marked
+# `integration` and skip when it is absent.
 data/raw/*
 data/processed/*
 data/features/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/features/.gitkeep
-!data/sample/
 
 # ---- Models ----
 models/*

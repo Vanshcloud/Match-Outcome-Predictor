@@ -8,9 +8,10 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 1 of 13 — repository foundation.**
-> The configuration, logging, path and HTTP layers are built and tested.
-> Ingestion begins at Milestone 2. Nothing in this repository predicts a match
+> **Status: Milestone 2 of 13 — ingestion.**
+> Foundation and the ingestion layer are built and tested: **305,499 matches**
+> across 39 competitions, 27 countries and 33 years reduce to one canonical
+> schema behind a provider-adapter interface. Storage and validation are next. Nothing here predicts a match
 > yet, and this README will not claim otherwise until it does.
 
 ---
@@ -53,16 +54,29 @@ behind one canonical interface:
 | Schema | Competitions | Depth | Per-match detail |
 |---|---|---|---|
 | Main (`/mmz4281/{season}/{div}.csv`) | 22 divisions across England, Scotland, Germany, Italy, Spain, France, Netherlands, Belgium, Portugal, Turkey, Greece | 1993/94 → present | Result, half-time score, shots, shots on target, corners, fouls, cards, referee, odds |
-| Extra (`/new/{COUNTRY}.csv`) | 16 countries: Argentina, Austria, Brazil, China, Denmark, Finland, Ireland, Japan, Mexico, Norway, Poland, Romania, Russia, Sweden, Switzerland, USA | ~2012 → present | Result and closing odds only |
+| Extra (`/new/{COUNTRY}.csv`) | 17 competitions in 16 country files: Argentina (league + cup), Austria, Brazil, China, Denmark, Finland, Ireland, Japan, Mexico, Norway, Poland, Romania, Russia, Sweden, Switzerland, USA | ~2012 → present | Result and closing odds only |
 
-Roughly 250,000 matches. The two schemas differ deliberately in what they
-carry, and that difference is modelled rather than hidden: features declare the
-data they require, so a competition without shot statistics yields nulls for
-those features instead of blocking the pipeline.
+**39 competitions, 27 countries, 305,499 matches, 1,363 teams, 1993-2026.**
+Those are measured from a real full ingest, not estimated.
+The two schemas differ deliberately in what
+they carry, and that difference is modelled rather than hidden: each
+competition declares its `Capability` set, so one without shot statistics
+yields nulls for those columns instead of blocking the pipeline.
 
-Ingestion is an **adapter layer**. Adding API-Football, Understat, StatsBomb or
-Football-Data API means writing one adapter against the canonical match schema,
-with no change to any downstream code.
+Adding a league is a `configs/leagues.yaml` entry — no code change. Adding a
+*provider* means writing one adapter against the canonical schema, with no
+change to any downstream code.
+
+**Every quirk that shaped this design is documented, with the file it was found
+in, in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)** — fifteen of them,
+including a missing file that returns HTTP 300 with an HTML body, a header
+narrower than its own rows, and a country file that mixes a league with a cup.
+
+> **No data is redistributed by this repository, and none is committed** — not
+> even a test slice. The provider publishes no licence granting redistribution.
+> The unit suite runs on synthetic fixtures shaped like the real files, so it
+> needs no network; tests requiring real data are marked `integration` and skip
+> when it is absent. Run `make data` to fetch your own copy.
 
 > **Not implemented, by decision, not oversight:** Transfermarkt. Its Terms of
 > Use (§11.1) prohibit both automated access and training models on its
@@ -72,7 +86,7 @@ with no change to any downstream code.
 
 Weather, altitude, travel distance, injuries, suspensions, lineups, formation,
 manager changes, attendance, squad market value and player ratings are not
-available at match level across 38 competitions from any free source. They are
+available at match level across 39 competitions from any free source. They are
 not in the roadmap as "coming soon". The feature registry has slots for them,
 so any that later becomes available is one registry entry rather than a
 refactor — but the model is built from what genuinely exists: ratings, form,
@@ -84,7 +98,13 @@ congestion and head-to-head history.
 ```
 src/
   utils/            paths, typed config, logging, HTTP   [Milestone 1] ✅
-  ingestion/        provider adapters -> canonical schema [Milestone 2]
+  ingestion/        provider adapters -> canonical schema [Milestone 2] ✅
+    base.py           the 35-column canonical schema + MatchProvider protocol
+    csv_reader.py     encodings, ragged rows, HTML-served-as-CSV
+    registry.py       the competition registry and season labels
+    teams.py          canonical team ids
+    football_data.py  the adapter
+    manifest.py       checksum-based dataset versioning
   storage/          DuckDB + Parquet, Postgres for serving [Milestone 3]
   ratings/          Elo and Dixon-Coles, strictly causal   [Milestone 4]
   feature_engineering/  registry, rolling windows          [Milestone 5]
@@ -105,7 +125,10 @@ unpick.
 
 ```bash
 make setup     # venv, dev dependencies, git hooks
-make test      # unit tests
+make leagues   # list the 40 configured competitions
+make data      # download and ingest everything (~15 min, resumable)
+make test      # unit tests — no network, no data needed
+make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
 ```
 
@@ -139,7 +162,7 @@ imports is a supply-chain surface with no upside.
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Foundation — config, logging, paths, HTTP, gates | ✅ |
-| 2 | Ingestion — adapters, canonical schema, league registry | |
+| 2 | Ingestion — adapters, canonical schema, league registry | ✅ |
 | 3 | Storage — DuckDB, Parquet, Postgres, schema validation | |
 | 4 | Ratings — Elo, Dixon-Coles | |
 | 5 | Feature engineering — registry, rolling windows | |

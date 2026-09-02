@@ -26,9 +26,9 @@ http:
   timeout_seconds: 60
   max_retries: 5
   backoff_factor: 0.5
-  # Identify the client honestly. An anonymous, scraper-shaped User-Agent is
-  # how a polite consumer gets mistaken for an impolite one.
-  user_agent: "match-outcome-predictor/0.1 (+https://github.com/Vanshcloud/Match-Outcome-Predictor)"
+  # user_agent is deliberately absent. It defaults to a string built from
+  # src.__version__, so the version this client reports cannot drift from the
+  # version it is. A literal here would be a second copy that nothing updates.
   # Minimum seconds between outbound requests. Non-zero by default here, unlike
   # the sibling project: a full ingest pulls ~38 files in a burst from one
   # small static host, and one second of spacing costs about half a minute

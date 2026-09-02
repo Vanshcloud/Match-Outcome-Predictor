@@ -157,11 +157,34 @@ jobs:
         # Two greps rather than one with a negative lookahead: `(?!...)` is
         # PCRE, and `grep -E` is POSIX ERE, where it is a syntax error rather
         # than a non-match — so the elegant one-liner fails the job outright.
+        #
+        # `from src import __version__` is the single permitted exception:
+        # src/__init__.py imports nothing, so it cannot create a cycle, and the
+        # alternative is a second copy of the version string. It is matched and
+        # excluded by name rather than by a pattern loose enough to let a real
+        # import through — the first version of this check used `src\.` and
+        # would have missed `from src import` entirely.
         run: |
-          if grep -rEn '^[[:space:]]*(from|import) src\.' src/utils | grep -v 'src\.utils'; then
-            echo "src/utils imports another src package"; exit 1
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\b' src/utils \
+                      | grep -v 'src\.utils' \
+                      | grep -v 'from src import __version__' || true)
+          if [ -n "$offenders" ]; then
+            echo "src/utils imports another src package:"; echo "$offenders"; exit 1
           fi
           echo "src/utils has no intra-src dependencies"
+
+      - name: The provider stays behind the adapter layer
+        # The whole point of src/ingestion is that no downstream module learns
+        # which provider a match came from. A provider name or URL leaking into
+        # features, models or the API is that abstraction quietly dissolving,
+        # and it is far cheaper to catch here than to unpick later.
+        run: |
+          leaked=$(grep -rEln 'football-data\.co\.uk|mmz4281' src scripts \
+                   | grep -v '^src/ingestion/' || true)
+          if [ -n "$leaked" ]; then
+            echo "provider details outside src/ingestion:"; echo "$leaked"; exit 1
+          fi
+          echo "provider confined to src/ingestion"
 
       - name: No network access from the unit suite
         # The suite must stay runnable offline. requests is only ever reached

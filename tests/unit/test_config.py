@@ -78,7 +78,6 @@ def test_subdirectories_are_derived_from_data_dir(config_file: Path) -> None:
     assert paths.raw_dir == paths.data_dir / "raw"
     assert paths.processed_dir == paths.data_dir / "processed"
     assert paths.features_dir == paths.data_dir / "features"
-    assert paths.sample_dir == paths.data_dir / "sample"
 
 
 # ---- environment overlay ----------------------------------------------------

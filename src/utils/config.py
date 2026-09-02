@@ -29,6 +29,7 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.utils.http import DEFAULT_USER_AGENT
 from src.utils.paths import PROJECT_ROOT, resolve
 
 DEFAULT_CONFIG_PATH: Path = PROJECT_ROOT / "configs" / "config.yaml"
@@ -106,12 +107,6 @@ class PathsConfig(_Strict):
         """The feature store. Parquet, partitioned, rebuildable from processed."""
         return self.data_dir / "features"
 
-    @property
-    def sample_dir(self) -> Path:
-        """A committed slice of real data. This is what the test suite reads,
-        which is why the suite needs no network and no prior download."""
-        return self.data_dir / "sample"
-
 
 class HttpConfig(_Strict):
     """Outbound request policy, shared by every ingestion adapter."""
@@ -119,7 +114,10 @@ class HttpConfig(_Strict):
     timeout_seconds: float = Field(default=60.0, gt=0)
     max_retries: int = Field(default=5, ge=0)
     backoff_factor: float = Field(default=0.5, ge=0)
-    user_agent: str = "match-outcome-predictor/0.1"
+    user_agent: str = DEFAULT_USER_AGENT
+    """Defaults to the version-derived string in src.utils.http. Overridable,
+    but deliberately not repeated in configs/config.yaml: a literal there is a
+    second copy of the version that nothing keeps in step."""
     min_request_interval_seconds: float = Field(default=0.0, ge=0)
 
 

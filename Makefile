@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev test test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data leagues test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -38,8 +38,17 @@ install: ## Install runtime dependencies only
 install-dev: ## Install runtime + dev dependencies
 	$(BIN)/pip install -r requirements-dev.txt
 
-test: ## Run unit tests (integration excluded)
+data: ## Download and ingest every configured competition (~15 min, resumable)
+	$(BIN)/python scripts/fetch_data.py
+
+leagues: ## List the competition registry
+	$(BIN)/python scripts/fetch_data.py --list
+
+test: ## Run unit tests (integration excluded, no network needed)
 	$(BIN)/pytest -m "not integration"
+
+test-int: ## Run integration tests (needs `make data` first; skips without it)
+	$(BIN)/pytest -m integration
 
 test-cov: ## Run tests with a coverage report and enforce the threshold
 	$(BIN)/pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=95

@@ -1,0 +1,32 @@
+# Runtime dependencies.
+#
+# Canonical source of truth: pyproject.toml reads this file, and CI and the
+# Dockerfiles install from it. Two lists of pins drift, and the one nobody
+# installs from is always the wrong one.
+#
+# This list GROWS ONE MILESTONE AT A TIME. A dependency appears here in the
+# milestone that first imports it, not in advance — an unused pin is a
+# supply-chain surface with no upside, and it makes CI slower for nothing.
+# Milestone 1 (foundation) imports exactly four things.
+
+# ---- Configuration ----
+# YAML defaults, .env overlay, validated into a frozen typed object.
+PyYAML>=6.0
+python-dotenv>=1.0
+pydantic>=2.9
+
+# ---- HTTP ----
+# `requests` only. Every source this project reads serves CSV; no HTML parser
+# is installed, because nothing here parses HTML. Playwright and Selenium are
+# not used at all — the chosen provider serves static files.
+requests>=2.32
+
+# ---- Added in later milestones (recorded so the order is deliberate) --------
+# M2  ingestion .......... pandas<3, pyarrow
+# M3  storage ............ duckdb, psycopg[binary], SQLAlchemy, pandera
+# M4  ratings ............ numpy
+# M7  splits/baselines ... scikit-learn
+# M8  model zoo .......... xgboost, lightgbm, catboost, optuna, mlflow
+# M10 explainability ..... shap, matplotlib
+# M11 api ................ fastapi, uvicorn[standard]
+# M12 dashboard .......... streamlit, plotly

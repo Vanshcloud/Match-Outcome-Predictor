@@ -1,0 +1,14 @@
+# Lint and type tooling, PINNED EXACTLY.
+#
+# Unpinned, CI installs whatever released that morning: a formatter release
+# turns the build red with no code change, and disagrees with every local run.
+# These versions are matched to the sibling Transfer Value Predictor repository
+# so one toolchain covers both.
+ruff==0.16.5
+black==26.5.1
+mypy==2.3.1
+
+# Type stubs. Always preferred over a mypy `ignore_missing_imports` override:
+# a stub type-checks the call, an override only silences it.
+types-PyYAML==6.0.12.20260815
+types-requests==2.33.0.20260712

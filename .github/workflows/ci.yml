@@ -1,0 +1,174 @@
+name: CI
+
+# Runs exactly the gates `make quality` and `make test-cov` run locally. A CI
+# that checks something different from the local command is a CI that people
+# learn to re-run rather than read.
+#
+# It also runs on a clean checkout, where data/ and models/ are empty. Keeping
+# the suite green there is the property this workflow exists to protect: a
+# suite that only passes on a machine which has already downloaded 250k
+# matches is a suite nobody can trust.
+
+# Least privilege. Nothing here publishes, comments or tags, so GITHUB_TOKEN
+# gets read access and nothing else rather than the repository default.
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          # The same minor the project develops against. A silent 3.14 would
+          # change behaviour with no diff to point at.
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check src tests scripts
+
+      - name: Format check
+        run: black --check src tests scripts
+
+      - name: Types
+        run: mypy src
+
+      - name: Tests
+        # Integration tests are excluded by marker AND would skip anyway on a
+        # clean checkout. Both, so a forgotten marker cannot quietly turn a
+        # skip into a failure.
+        #
+        # --cov-fail-under is what keeps the README's coverage claim honest.
+        # Without it the number in the README is prose, not a measurement.
+        run: pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=95
+
+      - name: Confirm the suite is green with no data present
+        # `test ! -d` would prove nothing here: a Parquet file is a *file*, so
+        # -d is false whether or not the data is there. -e covers both, and the
+        # loop names the offending file instead of failing with a bare code.
+        run: |
+          set -e
+          for path in data/raw data/processed data/features models; do
+            count=$(find "$path" -type f -not -name '.gitkeep' | wc -l | tr -d ' ')
+            if [ "$count" -ne 0 ]; then
+              echo "expected $path to be empty on a clean checkout; found $count file(s):"
+              find "$path" -type f -not -name '.gitkeep'
+              exit 1
+            fi
+          done
+          echo "clean checkout confirmed: data/ and models/ empty, suite passed"
+
+  authorship:
+    name: Authorship
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: No AI attribution in commit history
+        # scripts/hooks/commit-msg enforces this at commit time, but a hook
+        # only runs where someone has run `make hooks` — never on a fork, and
+        # never on a clone that skipped setup.
+        run: |
+          trailers=$(git log --format='%(trailers:key=Co-Authored-By)' | grep -c . || true)
+          if [ "$trailers" -ne 0 ]; then
+            echo "found $trailers Co-Authored-By trailer(s)"; exit 1
+          fi
+          # Anchored to line start: an attribution is a trailer or its own
+          # line, never a mid-sentence mention. Without the anchor this fails
+          # on the commit that adds the hook's own test cases — a false
+          # positive that would teach people to ignore this job.
+          if git log --format='%B' | grep -qiE '^(co-authored-by:|generated with )'; then
+            echo "found an AI attribution line in a commit message"; exit 1
+          fi
+          echo "authorship clean: $(git log --oneline | wc -l) commits"
+
+      - name: One author across the history
+        run: |
+          expected="vanshwar@gmail.com"
+          unexpected=$(git log --format='%ae%n%ce' | sort -u | grep -v "^${expected}$" || true)
+          if [ -n "$unexpected" ]; then
+            echo "unexpected author or committer address:"; echo "$unexpected"; exit 1
+          fi
+          echo "single author across $(git rev-list --count HEAD) commits"
+
+      - name: No host-specific detail anywhere in the history
+        # A redaction commit does not redact anything: the text survives in
+        # every earlier commit, and the removing diff prints it again in its
+        # own '-' lines. This has to read `git log -p`, because a tip-only
+        # check is exactly the check that misses it.
+        run: |
+          if git log -p --all | grep -nEi '/(Users|home)/[a-z0-9._-]+/|[0-9]+ ?GB free'; then
+            echo "a local path or host inventory appears in the history"; exit 1
+          fi
+          echo "no host-specific detail in the history"
+
+  invariants:
+    name: Architectural invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: No removed or deprecated APIs
+        # Each of these still *runs* and merely warns, which is why a grep is
+        # worth more here than a code review. The list grows as milestones
+        # introduce the libraries that have them.
+        #
+        # Every pattern is anchored to CODE, never to prose. The unanchored
+        # version failed on src/utils/config.py's own docstring — the one
+        # explaining which v1 idioms are banned. A gate that goes red for
+        # documenting the rule it enforces is a gate people disable.
+        run: |
+          set -e
+          patterns='^[[:space:]]*@(app\.on_event|validator|root_validator)\b'
+          patterns="$patterns"'|[A-Za-z0-9_)][[:space:]]*\.(parse_obj|dict)\(\)'
+          patterns="$patterns"'|^[[:space:]]*class Config:'
+          if grep -rEn "$patterns" src tests scripts 2>/dev/null; then
+            echo "found a removed or deprecated API above"; exit 1
+          fi
+          echo "no removed APIs in use"
+
+      - name: utils depends on nothing else in src
+        # src/utils is the bottom of the dependency graph. Keeping it there is
+        # what lets every other package import it without a cycle, and a cycle
+        # is far cheaper to prevent than to unpick later.
+        #
+        # Two greps rather than one with a negative lookahead: `(?!...)` is
+        # PCRE, and `grep -E` is POSIX ERE, where it is a syntax error rather
+        # than a non-match — so the elegant one-liner fails the job outright.
+        run: |
+          if grep -rEn '^[[:space:]]*(from|import) src\.' src/utils | grep -v 'src\.utils'; then
+            echo "src/utils imports another src package"; exit 1
+          fi
+          echo "src/utils has no intra-src dependencies"
+
+      - name: No network access from the unit suite
+        # The suite must stay runnable offline. requests is only ever reached
+        # through src/utils/http, and unit tests inject a stubbed session.
+        run: |
+          if grep -rEn '^[[:space:]]*(import|from) (requests|urllib|http\.client|socket)\b' src \
+             | grep -v '^src/utils/http.py'; then
+            echo "HTTP is being made outside src/utils/http"; exit 1
+          fi
+          echo "outbound HTTP confined to src/utils/http"

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# =============================================================================
+# commit-msg — enforce sole authorship
+# =============================================================================
+# WHY THIS EXISTS:
+#   This project has exactly one contributor: Vansh Tomar. Tooling that writes
+#   commits is configured by default to append a "Co-Authored-By:" trailer and
+#   a "Generated with" line. A rule that lives only in a prompt or a memory
+#   file survives until the first fresh session; this hook survives everything,
+#   including a reclone, because core.hooksPath points here and this file is
+#   version-controlled.
+#
+#   It matches attribution markers specifically, NOT the bare word "claude" —
+#   a commit like "chore: add .claude/ to gitignore" is legitimate and must
+#   still land. For the same reason the generation marker is anchored to
+#   "Generated with [Claude" rather than a bare "Generated with", which would
+#   reject honest prose like "generated with a seeded split".
+#
+#   Matched to the sibling Transfer Value Predictor repository, so the policy
+#   is identical across both.
+# =============================================================================
+set -euo pipefail
+
+msg_file="$1"
+fail=0
+
+# Attribution trailers and AI-generation markers.
+patterns=(
+  'Co-Authored-By:'
+  'Co-authored-by:'
+  'Generated with[[:space:]]*\[?Claude'
+  'Claude-Session:'
+  'noreply@anthropic\.com'
+  'claude\.ai/code'
+  'Signed-off-by:[[:space:]]*Claude'
+)
+
+for pat in "${patterns[@]}"; do
+  if grep -qiE "$pat" "$msg_file"; then
+    echo "commit-msg: rejected — commit message contains '$pat'" >&2
+    fail=1
+  fi
+done
+
+# The commit must also be authored by Vansh, not merely lack a co-author.
+# git var GIT_AUTHOR_IDENT resolves the same identity the commit will carry,
+# including GIT_AUTHOR_* environment overrides, so this cannot be sidestepped
+# by exporting a different name for one command.
+author="$(git var GIT_AUTHOR_IDENT)"
+case "$author" in
+  *"vanshwar@gmail.com"*) ;;
+  *)
+    echo "commit-msg: rejected — author is not Vansh: $author" >&2
+    fail=1
+    ;;
+esac
+
+if [ "$fail" -ne 0 ]; then
+  echo "" >&2
+  echo "This project has a single contributor. Remove the attribution and retry." >&2
+  exit 1
+fi

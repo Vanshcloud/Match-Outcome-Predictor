@@ -1,0 +1,66 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Data ----
+# Raw and derived data are downloaded and rebuilt, never committed. The whole
+# corpus is ~38 competition files from football-data.co.uk, re-fetchable in
+# minutes by `make data`, and it changes every match week — committing it would
+# be both large and permanently stale.
+#
+# data/sample/ IS committed. The test suite runs against it, so CI needs no
+# network: a suite that only passes on a machine that has already downloaded
+# 250k matches is a suite nobody can trust.
+data/raw/*
+data/processed/*
+data/features/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/features/.gitkeep
+!data/sample/
+
+# ---- Models ----
+models/*
+!models/.gitkeep
+
+# ---- MLflow ----
+# Experiment tracking state is a local artefact store, not source. The runs
+# worth keeping are promoted to the model registry and their metrics written
+# into docs/, which is what gets reviewed.
+mlruns/
+mlartifacts/
+
+# ---- Tooling ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+.claude/
+.DS_Store
+*.swp
+
+# Stray lockfiles from other package managers. This project pins with
+# requirements*.txt; a second, unmaintained lockfile in the tree is a source of
+# confusion, not of truth.
+uv.lock
+poetry.lock

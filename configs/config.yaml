@@ -1,0 +1,44 @@
+# ============================================================
+# Default configuration.
+# ============================================================
+# Values here are the committed defaults. A .env file overrides a subset of
+# them at runtime — see ENV_OVERRIDES in src/utils/config.py for the exact,
+# explicit list. Nothing secret belongs in this file; it is version-controlled.
+#
+# Unknown keys are an error, not a shrug: every section sets extra="forbid", so
+# a typo fails at load with the key name rather than being silently ignored.
+#
+# Sections arrive with the milestone that first reads them. Milestone 1 is the
+# foundation, so there are four.
+
+paths:
+  # Only the two roots are configurable. raw/, processed/, features/ and
+  # sample/ are derived from data_dir in code, because their relationship is a
+  # fact about the pipeline layout rather than a preference.
+  data_dir: data
+  model_dir: models
+
+http:
+  # Applies to every outbound request this project makes. Retries cover the
+  # transient 5xx/429 class only; a 404 is not retried, because a missing
+  # season file is an expected condition — not every division has played every
+  # season — and retrying it just delays the answer.
+  timeout_seconds: 60
+  max_retries: 5
+  backoff_factor: 0.5
+  # Identify the client honestly. An anonymous, scraper-shaped User-Agent is
+  # how a polite consumer gets mistaken for an impolite one.
+  user_agent: "match-outcome-predictor/0.1 (+https://github.com/Vanshcloud/Match-Outcome-Predictor)"
+  # Minimum seconds between outbound requests. Non-zero by default here, unlike
+  # the sibling project: a full ingest pulls ~38 files in a burst from one
+  # small static host, and one second of spacing costs about half a minute
+  # while removing any chance of looking like a denial-of-service.
+  min_request_interval_seconds: 1.0
+
+api:
+  host: 0.0.0.0
+  port: 8000
+
+logging:
+  level: INFO
+  format: "%(asctime)s %(levelname)-8s %(name)s: %(message)s"

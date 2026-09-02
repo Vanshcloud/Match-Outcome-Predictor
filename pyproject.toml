@@ -1,0 +1,110 @@
+# ============================================================
+# pyproject.toml — project metadata and tool configuration
+# ============================================================
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "match-outcome-predictor"
+description = "Calibrated home/draw/away probabilities for ~38 professional football competitions"
+readme = "README.md"
+# 3.13 over 3.12/3.14: the full modelling stack (scikit-learn, xgboost,
+# lightgbm, catboost, shap) ships prebuilt wheels for 3.13 today, and 3.14 is
+# still waiting on some of them. Matched to the sibling Transfer Value
+# Predictor repository so one venv recipe works for both.
+requires-python = ">=3.13,<3.14"
+license = {text = "MIT"}
+dynamic = ["version", "dependencies"]
+authors = [{name = "Vansh Tomar", email = "vanshwar@gmail.com"}]
+maintainers = [{name = "Vansh Tomar", email = "vanshwar@gmail.com"}]
+keywords = ["football", "soccer", "machine-learning", "forecasting", "calibration", "mlops"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/Vanshcloud/Match-Outcome-Predictor"
+Repository = "https://github.com/Vanshcloud/Match-Outcome-Predictor"
+Changelog = "https://github.com/Vanshcloud/Match-Outcome-Predictor/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Vanshcloud/Match-Outcome-Predictor/issues"
+
+# The version lives in src/__init__.py and is read from there. The sibling
+# project shipped 0.1.0 in five files while its release tag said v1.0.0; the
+# fix is fewer copies of the number, plus a test that fails when the survivors
+# disagree (tests/unit/test_version.py).
+[tool.setuptools.dynamic]
+version = {attr = "src.__version__"}
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+# ---- Ruff ----
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# ARG (unused arguments) and PTH (os.path -> pathlib) are the two that catch
+# real drift in a data project: a silently ignored parameter, and a path built
+# with string concatenation that breaks the moment it meets a Windows runner.
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "ARG", "PTH", "RET"]
+ignore = ["E501"]  # line length is Black's job, and it wraps differently
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+# ---- MyPy ----
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+
+# NOTE: per-package `ignore_missing_imports` overrides are added by the
+# milestone that introduces the import, never up front. Declared before
+# anything imports them, mypy reports each as an unused section — and a gate
+# that prints noise on a clean run is a gate people learn to skim.
+#
+# Real stubs are preferred over an override wherever they exist: a stub
+# type-checks the call, an override only silences it. See requirements-lint.txt.
+
+# ---- pytest ----
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+# Deprecation warnings are errors. Pydantic v1 idioms (`@validator`, `.dict()`,
+# nested `class Config`) and FastAPI's `@app.on_event` all still *run* — they
+# only warn — so without this a v1 idiom lands silently and surfaces much
+# later. Third-party warnings get a targeted, commented ignore here when the
+# dependency that raises them is actually introduced; never a blanket one.
+filterwarnings = ["error::DeprecationWarning"]
+markers = [
+  "integration: needs downloaded data or a trained model (deselect with -m 'not integration')",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+# A line that only runs under `if TYPE_CHECKING` or on an unreachable branch is
+# not untested code, and counting it as such makes the threshold meaningless.
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@(abc\\.)?abstractmethod",
+]

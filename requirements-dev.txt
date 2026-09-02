@@ -1,0 +1,11 @@
+# Everything needed to develop and test. CI installs exactly this file, so
+# "works on my machine" has no room to hide.
+#
+# A pinned lockfile (requirements-lock.txt) arrives with the container images
+# in Milestone 13, when there is finally an image whose resolution must match
+# the developer's. Locking a four-package list today would be ceremony.
+-r requirements.txt
+-r requirements-lint.txt
+
+pytest==9.1.1
+pytest-cov==7.1.0

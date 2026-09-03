@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate card test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -49,6 +49,12 @@ revalidate: ## Re-check finished seasons too, to pick up provider corrections
 
 leagues: ## List the competition registry
 	$(BIN)/python scripts/fetch_data.py --list
+
+validate: ## Run the data checks and regenerate docs/DATASET_CARD.md
+	$(BIN)/python scripts/validate_data.py
+
+validate-strict: ## As above, but warnings fail the run too
+	$(BIN)/python scripts/validate_data.py --strict
 
 test: ## Run unit tests (integration excluded, no network needed)
 	$(BIN)/pytest -m "not integration"

@@ -10,6 +10,72 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-03
+
+Milestone 3: storage and validation. The canonical table becomes queryable
+through an interface, and the assertions that lived in a test file become a
+report the pipeline runs on every ingest.
+
+### Added
+
+- `src/storage/` — a `MatchStore` protocol and a DuckDB implementation over the
+  Parquet the ingest pipeline writes. Views rather than tables, so the file
+  stays the single source of truth; filters (`competitions`, `since`, `until`,
+  `columns`) are pushed into the query, which makes a point-in-time read the
+  interface's own operation rather than something every caller reimplements.
+- `src/validation/` — 23 checks in four groups (schema, integrity, referential,
+  distribution) producing a report with three outcomes and two severities. Run
+  by `run_ingest` on the frame it just wrote, and by
+  `scripts/validate_data.py`, which exits non-zero on a blocking failure.
+- `PRE_MATCH_COLUMNS` / `POST_MATCH_COLUMNS` / `BENCHMARK_COLUMNS` on the
+  canonical schema, and a check that every column is classified. The leakage
+  defence has to be temporal, not columnar: `home_shots` is kept because a
+  team's shots in *earlier* matches are a legitimate feature, so it cannot be
+  enforced by leaving data out.
+- `docs/DATASET_CARD.md`, generated from the table on every validation run,
+  with per-competition coverage and the checksum of the exact file it
+  describes.
+- `make validate`, `make validate-strict`.
+- A CI invariant: the canonical table is read through `src/storage`, nowhere
+  else.
+
+### Changed
+
+- `IngestReport` carries a `validation` report. It reports rather than gates —
+  a table you can inspect is more useful than one the pipeline refused to save.
+- `tests/integration/test_real_provider_files.py` no longer restates the data
+  assertions. They live in `src/validation` and the integration suite runs
+  them, rather than being the same rule in two places.
+
+### Found
+
+- **One row in 305,499 is filed under the wrong season** — an Argentinian match
+  played 2015-01-29 and labelled 2013-14 in the provider's own file, 213 days
+  outside the widest defensible window. Reported as a warning, left in place.
+  The first thing the new gate caught, on the data that already existed.
+- **`_goals_are_plausible` crashed on an empty table.** `min()` over an empty
+  nullable column returns `pd.NA`, and `pd.NA < 0` raises rather than being
+  falsy — so a validation suite would have died at the moment a report was most
+  useful. Caught by the empty-table test, not by review.
+- **DuckDB's dtypes depend on the rows selected**: a NumPy `int16` for a column
+  with no nulls and a nullable `Int16` for one with them. Every store read
+  re-asserts the canonical schema, which is also what makes a store read equal
+  a `pd.read_parquet` of the same file.
+
+### Deferred, with a reason
+
+- **PostgreSQL and `docker-compose.yml`.** Scoped for this milestone, and
+  moved to Milestone 11. There is no application data and no prediction to
+  serve yet, so a Postgres store today would be an unused implementation of an
+  interface with one caller, plus a compose file nobody runs — the dead code
+  the project's own standing rule says to avoid. The seam that makes it cheap
+  (`MatchStore`) is delivered.
+- **MLflow.** Arrives with the model zoo in Milestone 8, when there is a run to
+  track.
+- **pandera.** The checks here are mostly semantic — home advantage, a book's
+  overround, a season's date window — not schema, and pandera's schema model
+  would be a second copy of `CANONICAL_SCHEMA` to keep in step.
+
 ## [0.2.1] — 2026-09-03
 
 Incremental, idempotent re-runs. Verifying the claim that a re-run is cheap

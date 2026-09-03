@@ -186,6 +186,20 @@ jobs:
           fi
           echo "provider confined to src/ingestion"
 
+      - name: The canonical table is read through the storage layer
+        # Milestone 3's seam. Every module downstream asks a store for rows
+        # rather than opening a path, so the day the matches stop living in a
+        # file, a caller that asked a store keeps working and a caller that
+        # opened a path has to be rewritten. src/pipelines writes the file, so
+        # it is the one package allowed to name the format.
+        run: |
+          leaked=$(grep -rEln 'read_parquet' src \
+                   | grep -v '^src/storage/' || true)
+          if [ -n "$leaked" ]; then
+            echo "the canonical table is read outside src/storage:"; echo "$leaked"; exit 1
+          fi
+          echo "canonical reads confined to src/storage"
+
       - name: No network access from the unit suite
         # The suite must stay runnable offline. requests is only ever reached
         # through src/utils/http, and unit tests inject a stubbed session.

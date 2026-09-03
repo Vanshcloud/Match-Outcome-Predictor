@@ -1,8 +1,10 @@
 """Shared fixtures.
 
-Deliberately thin at Milestone 1: there is no data to slice yet. The committed
-``data/sample/`` fixtures arrive with the ingestion layer in Milestone 2, at
-which point every downstream test reads real shapes without touching a network.
+Deliberately thin. No match data is committed to this repository — the provider
+publishes no redistribution licence — so there are no data fixtures to share.
+Synthetic canonical tables are built by :mod:`tests.factories` instead, which
+are constructors rather than fixtures because several tests need one at module
+scope where a fixture cannot reach.
 """
 
 from __future__ import annotations

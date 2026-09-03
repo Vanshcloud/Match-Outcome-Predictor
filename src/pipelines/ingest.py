@@ -25,6 +25,8 @@ from src.ingestion.football_data import FootballDataProvider
 from src.ingestion.manifest import write_manifest
 from src.ingestion.registry import Competition
 from src.utils.logging import get_logger
+from src.validation.matches import match_checks
+from src.validation.report import Outcome, ValidationReport, run_checks
 
 logger = get_logger(__name__)
 
@@ -51,6 +53,15 @@ class IngestReport:
     per_competition: dict[str, int] = field(default_factory=dict)
     output: Path | None = None
     raw_manifest: Path | None = None
+    validation: ValidationReport | None = None
+    """The check suite run over the table that was just written.
+
+    Run here rather than left to a separate command because the frame is
+    already in memory and the checks are a second's work over it — so the run
+    that produced a broken table is the run that says so, instead of the
+    developer finding out at training time. It does not gate: the file is
+    written either way, because a table you can inspect is more useful than one
+    the pipeline refused to save."""
 
     def summary(self) -> str:
         summary = (
@@ -60,6 +71,8 @@ class IngestReport:
         )
         if self.seasons_failed:
             summary += f"; {len(self.seasons_failed)} unreadable"
+        if self.validation is not None:
+            summary += f"; validation {self.validation.summary()}"
         return summary
 
 
@@ -143,6 +156,12 @@ def run_ingest(
 
     matches = _combine(frames)
     report.matches = len(matches)
+    report.validation = run_checks(matches, match_checks(provider.registry))
+    for failure in report.validation.of(Outcome.FAILED):
+        # Warnings included: a validation failure nobody sees is a validation
+        # suite nobody has. The severity decides whether it stops a caller, not
+        # whether it is worth printing.
+        logger.warning("validation: %s — %s", failure.name, failure.message)
 
     processed_dir.mkdir(parents=True, exist_ok=True)
     output = processed_dir / MATCHES_FILENAME

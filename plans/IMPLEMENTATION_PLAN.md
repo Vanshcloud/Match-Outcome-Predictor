@@ -175,18 +175,107 @@ produced the same `sha256` as before the work began.
 
 ---
 
-## Milestone 3 — Storage and validation (next)
+## Milestone 3 — Storage and validation ✅
+
+**Delivered.** The canonical table is queryable through an interface, and the
+assertions that lived in a test file are now a report the pipeline runs on
+every ingest.
+
+| Module | Responsibility |
+|---|---|
+| `storage/base.py` | The `MatchStore` protocol. Read-shaped, because nothing but ingestion writes yet. |
+| `storage/duckdb_store.py` | DuckDB views over Parquet; point-in-time and per-competition reads pushed into the query. |
+| `validation/report.py` | `Check`, three outcomes, two severities, one report. |
+| `validation/matches.py` | 23 checks: schema, integrity, referential, distribution. |
+| `validation/card.py` | The dataset card, generated from the table. |
+| `scripts/validate_data.py` | The gate. Non-zero exit on a blocking failure. |
+
+**Verified:** 378 unit tests, 100% coverage of `src`, ruff/black/mypy clean,
+12 integration tests against the real 305,499-row table.
+
+### Three decisions worth recording
+
+1. **Views, not tables.** `CREATE TABLE AS` would have copied 305,499 rows into
+   the catalog and then served yesterday's copy after every re-ingest. A view
+   keeps the Parquet as the single source of truth, and DuckDB reads it in
+   place — so the "database" is a few kilobytes of view definition.
+2. **Every read re-asserts the canonical dtypes.** DuckDB returns a NumPy
+   `int16` for a column with no nulls and a nullable `Int16` for one with them,
+   so the dtype of `home_goals` would otherwise depend on which rows the query
+   selected, and code that worked on the full table would break on a subset.
+   Re-asserting is also what makes a store read *equal* a `pd.read_parquet` of
+   the same file, which is the property that makes the store an indirection
+   rather than a behaviour change.
+3. **Checks report; they do not gate the write.** The Parquet is written either
+   way. A table you can open and inspect is more useful than one the pipeline
+   refused to save, and severity — not the write path — decides what stops a
+   caller.
+
+### The leakage classification
+
+Every canonical column now declares which side of kick-off it is knowable on,
+and a check fails if any is unclassified. The reasoning matters more than the
+lists: the defence has to be **temporal, not columnar**. `home_shots` is a
+summary of the ninety minutes and using it for its own match is textbook
+leakage — but a team's shots in its *earlier* matches are a legitimate feature,
+so the columns are kept and the rule is about *when*, not *whether*. Odds are
+genuinely pre-match and still excluded by default, for the separate reason that
+a model trained on them copies the bookmaker.
+
+Milestone 6 builds the temporal-integrity suite on top of this: a feature
+declares which side it draws from, and CI fails any that can see its own match.
+
+### What the gate found on day one
+
+- **One row in 305,499 is filed under the wrong season.** An Argentinian match
+  played 2015-01-29, labelled 2013-14 in the provider's own file, 213 days
+  outside the widest defensible window. Reported as a warning and left in
+  place: one misfiled row does not justify refusing the dataset, and silently
+  carrying it into a season-level aggregate does not either.
+- **The suite crashed on an empty table.** `min()` over an empty nullable
+  column returns `pd.NA`, and `pd.NA < 0` raises rather than being falsy — so a
+  validation report would have died at the moment it was most useful. Found by
+  the empty-table test, not by review.
+- **The feed capability flag is a ceiling, not a promise.** `ENG_5` sits in the
+  primary feed, which declares `MATCH_STATS`, and supplies shot data for 2% of
+  its recent matches. The aggregate check is set against the measured 93%, and
+  the per-competition breakdown lives in the dataset card where it can be seen
+  rather than averaged away.
+
+### Changed from the approved scope, with reasons
+
+The approved architecture is DuckDB + Parquet + PostgreSQL + MLflow + Docker
+Compose. Two of those are **deferred, not dropped**, because building them now
+would contradict this project's own standing rule against dead code:
+
+- **PostgreSQL and `docker-compose.yml` → Milestone 11.** Postgres was scoped
+  for "application data and prediction serving". At Milestone 3 there is no
+  application data and no prediction. A Postgres store today is an unused
+  second implementation of an interface with one caller, a schema with no rows,
+  and a compose file nobody runs — three things a later milestone would have to
+  rewrite anyway once it knew what a served prediction looks like. What makes
+  the deferral safe is delivered: `MatchStore` is the seam, and CI enforces
+  that nothing reads the table around it.
+- **MLflow → Milestone 8.** It tracks runs. There are no runs.
+- **pandera → not planned.** It was pencilled in for schema validation. Two
+  thirds of these checks are semantic rather than structural — home advantage,
+  a book's overround, a season's date window — and the structural third would
+  need a pandera schema that is a second copy of `CANONICAL_SCHEMA` to keep in
+  step. The one place a library would have earned its keep is the smallest
+  part of the problem.
+
+---
+
+## Milestone 4 — Ratings (next)
 
 Scope, for approval:
 
-- `src/storage/base.py` — the storage protocol; DuckDB and Postgres behind it.
-- `src/storage/duckdb_store.py` — the analytical store; Parquet feature store.
-- `src/storage/postgres_store.py` — application data and prediction serving.
-- `src/validation/` — schema checks, referential integrity, distribution
-  sanity. The integration assertions written in Milestone 2 move here and
-  become a first-class, reportable gate rather than a test file.
-- A dataset card generated from the real ingest, with per-competition coverage.
-- `docker-compose.yml` for Postgres.
-
-**No feature engineering yet.** Milestone 3 makes the canonical table
-queryable, validated and reproducible.
+- `src/ratings/elo.py` — Elo with a home-advantage term and a margin-of-victory
+  multiplier, fitted per competition.
+- `src/ratings/dixon_coles.py` — the bivariate Poisson with the low-score
+  correction and time decay.
+- Strictly causal by construction: a rating for match *n* is computed from
+  matches 1..*n*-1 only, and the temporal-integrity check for that is written
+  in the same milestone rather than in Milestone 6.
+- Ratings persisted as a Parquet table alongside the canonical one, read
+  through the same store.

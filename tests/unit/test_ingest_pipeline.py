@@ -17,6 +17,7 @@ from src.ingestion.base import CANONICAL_SCHEMA, SeasonUnavailableError
 from src.ingestion.manifest import read_manifest, verify_manifest
 from src.ingestion.registry import Competition, Feed, Registry
 from src.pipelines.ingest import MANIFEST_FILENAME, MATCHES_FILENAME, run_ingest
+from tests.factories import canonical_frame
 
 TODAY = date(2026, 9, 3)
 
@@ -54,8 +55,7 @@ def frame(rows: list[tuple[str, str, str, int, int]], competition: str = "ENG_1"
                 ),
             }
         )
-    built = pd.DataFrame.from_records(records).reindex(columns=list(CANONICAL_SCHEMA))
-    return built.astype(CANONICAL_SCHEMA)
+    return canonical_frame(records)
 
 
 class StubProvider:
@@ -71,6 +71,10 @@ class StubProvider:
     ):
         self.seasons = seasons
         self._competitions = competitions
+        # The pipeline validates what it wrote, and the referential checks need
+        # the registry the table is supposed to agree with. A stub that omits it
+        # is not standing in for the provider the pipeline actually calls.
+        self.registry = Registry(competitions=competitions)
         self.calls: list[tuple[str, str]] = []
         # The pipeline checksums the raw cache and persists what the run
         # learned; a stub has to expose both or it is not testing the pipeline
@@ -293,3 +297,39 @@ def test_an_unreadable_season_is_distinct_from_an_unpublished_one(tmp_path: Path
     assert report.seasons_unavailable == 1
     assert report.seasons_failed == ("ENG_1 2023-24",)
     assert "1 unreadable" in report.summary()
+
+
+# ---- validation -------------------------------------------------------------
+
+
+def test_the_run_validates_what_it_wrote(tmp_path: Path) -> None:
+    """The run that produced a broken table should be the run that says so.
+    The frame is already in memory and the checks are a second's work over it,
+    so the alternative is finding out at training time."""
+    provider = make_provider({("ENG_1", "2024-25"): frame([("2024-25", "2024-08-16", "A", 1, 0)])})
+    report = run_ingest(provider, tmp_path)  # type: ignore[arg-type]
+
+    assert report.validation is not None
+    assert report.validation.ok
+    assert report.validation.rows == 1
+    assert "validation" in report.summary()
+
+
+def test_validation_reports_without_gating(tmp_path: Path) -> None:
+    """A table you can inspect is more useful than one the pipeline refused to
+    save, so a failed check is reported and the Parquet is still written."""
+    broken = frame([("2024-25", "2024-08-16", "A", 1, 0)])
+    broken.loc[0, "result"] = "A"  # disagrees with 1-0
+    provider = make_provider({("ENG_1", "2024-25"): broken})
+
+    report = run_ingest(provider, tmp_path)  # type: ignore[arg-type]
+
+    assert report.validation is not None
+    assert not report.validation.ok
+    assert (tmp_path / MATCHES_FILENAME).is_file()
+
+
+def test_a_run_that_ingested_nothing_has_no_validation_report(tmp_path: Path) -> None:
+    provider = make_provider({})
+    report = run_ingest(provider, tmp_path)  # type: ignore[arg-type]
+    assert report.validation is None

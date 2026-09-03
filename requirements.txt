@@ -28,6 +28,13 @@ pandas>=2.2,<3
 # nobody pins.
 pyarrow>=17.0
 
+# ---- Storage (M3) ----
+# The analytical store. Reads Parquet in place, so there is no load step and no
+# second copy of the data — the aggregates this project asks for (coverage per
+# competition, class balance per season) are column scans over the same bytes
+# the modelling code reads. No server, no daemon, one wheel.
+duckdb>=1.1
+
 # ---- HTTP ----
 # `requests` only. Every source this project reads serves CSV; no HTML parser
 # is installed, because nothing here parses HTML. Playwright and Selenium are
@@ -35,7 +42,9 @@ pyarrow>=17.0
 requests>=2.32
 
 # ---- Added in later milestones (recorded so the order is deliberate) --------
-# M3  storage ............ duckdb, psycopg[binary], SQLAlchemy, pandera
+# M11 serving storage .... psycopg[binary], SQLAlchemy  (PostgreSQL arrives with
+#                         the first prediction to serve, not before — see the
+#                         Milestone 3 note in plans/IMPLEMENTATION_PLAN.md)
 # M4  ratings ............ numpy
 # M7  splits/baselines ... scikit-learn
 # M8  model zoo .......... xgboost, lightgbm, catboost, optuna, mlflow

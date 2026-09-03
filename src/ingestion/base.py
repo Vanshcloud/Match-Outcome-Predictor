@@ -192,6 +192,64 @@ CAPABILITY_COLUMNS: dict[Capability, frozenset[str]] = {
 }
 
 
+# --- When each column becomes knowable ----------------------------------------
+#
+# The single most expensive mistake available in this project is training on a
+# column that does not exist until after the match it is meant to predict.
+# `home_shots` is not a property of the fixture; it is a summary of the ninety
+# minutes. A model given it scores brilliantly in validation and is useless on
+# a Saturday morning, because on a Saturday morning the column is empty.
+#
+# The canonical table stores those columns anyway — they are the raw material
+# for *lagged* features, where a team's shots in its previous matches are
+# entirely legitimate. The distinction is temporal, not columnar, so it cannot
+# be enforced by leaving data out. It is enforced by naming which columns are
+# knowable before kick-off, here, once, and by making the feature layer say
+# which side of the line it is drawing from.
+#
+# `TARGET_COLUMN` and the score are post-match by construction. Everything in
+# the odds block is genuinely pre-match — a closing price exists before kick-off
+# — but is still not a default feature, for the separate reason recorded on
+# ODDS_COLUMNS above.
+
+PRE_MATCH_COLUMNS: frozenset[str] = frozenset(
+    {
+        *IDENTITY_COLUMNS,
+        *COMPETITION_COLUMNS,
+        *TIME_COLUMNS,
+        *TEAM_COLUMNS,
+        *ODDS_COLUMNS,
+    }
+)
+"""Known before kick-off. Safe to use directly as a feature for the same match
+— with the odds block excluded by default, see :data:`BENCHMARK_COLUMNS`."""
+
+POST_MATCH_COLUMNS: frozenset[str] = frozenset(
+    {
+        *OUTCOME_COLUMNS,
+        *HALF_TIME_COLUMNS,
+        *MATCH_STAT_COLUMNS,
+        *OFFICIAL_COLUMNS,
+    }
+)
+"""Observed during or after the match. Usable only through a lag: a team's
+value in an *earlier* match, never in this one.
+
+``referee`` is the arguable member. Appointments are published days ahead in
+most leagues, so in principle it is pre-match — but this provider supplies it
+only in the results file, so the pipeline itself does not have it until the
+match is over. Classified by what the data source can actually deliver at
+prediction time rather than by what is true in principle; the conservative
+direction is the one that cannot leak."""
+
+BENCHMARK_COLUMNS: frozenset[str] = frozenset(ODDS_COLUMNS)
+"""Pre-match, but reserved as the comparison this project measures itself
+against rather than spent as an input. See the note on :data:`ODDS_COLUMNS`."""
+
+TARGET_COLUMN = "result"
+"""The prediction target: :class:`Result`, three ordered classes."""
+
+
 def make_match_id(
     provider: str,
     competition_id: str,

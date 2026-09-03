@@ -405,14 +405,91 @@ ablation is where it earns its place or is dropped.
 
 ---
 
-## Milestone 6 — Leakage suite (next)
+## Milestone 6 — Leakage suite ✅
+
+**Delivered.** Two more probes, and one change of principle: the suite stopped
+taking a list of what to check.
+
+| Module | Responsibility |
+|---|---|
+| `validation/leakage.py` | Finds every producer by walking the packages; runs both probes over each; traces every derived column to its inputs. |
+| `validation/temporal.py` | Now four probes: prefix invariance, outcome independence, split boundary, observed reads. |
+| `tests/unit/test_leakage_suite.py` | The suite, run on every test run and named as its own CI step. |
+| `scripts/audit_columns.py` | `make audit` — the command behind `docs/LEAKAGE.md`. |
+
+**Verified:** 100% coverage of `src`, ruff/black/mypy clean, 680 unit tests and
+31 integration tests. Every probe holds over all four producers, on synthetic
+data in the suite and on 2,400 real matches in the audit.
+
+Full measurements are in `docs/LEAKAGE.md`.
+
+### A list is a thing you can forget to add to
+
+Milestones 4 and 5 each probe the producers on their own list. A builder wired
+into a pipeline but omitted from its probe call would have shipped unverified,
+and nothing in the output would have said so — the whole failure mode the
+probes exist for, one level up.
+
+So `producers()` does not take a list. It walks `src.ratings` and
+`src.feature_engineering`, finds every class satisfying the contract, and
+constructs each with the defaults the pipelines use — so what is probed is what
+ships, not a test-tuned configuration that could hold while the shipped one
+does not. `check_defaults_are_complete()` closes the other direction: a
+producer nobody runs is not a leak, but it is a column the model layer expects
+and will not get, which would otherwise surface milestones later as nulls.
+
+### The third and fourth probes
+
+**Split boundary** is the one the approved scope named. Ties fail, on the same
+reasoning that makes every window cut strictly on the date: a full Saturday
+programme is one round. Milestone 7 owns the splits, so the probe is tested and
+waiting rather than wired.
+
+**Observed reads** was not in the scope and is what made the audit worth
+writing. Rewriting one input column and seeing which outputs move produces the
+same table a hand-written audit would — except measured. It also gave the
+feature registry the check it was missing: `reads` is hand-written, a typo in
+it silently reclassifies a leaking feature as safe, and nothing until now
+compared the declaration against behaviour. The assertion is coverage, not
+equality — the measurement is a lower bound, and over-declaring is the safe
+direction.
+
+### What the audit found
+
+Nothing wrong, and four things that reading the code does not tell you: Elo
+reads `season` and never `date`; Dixon-Coles reads `competition_id` while Elo
+reads no partition column at all, because its per-country pooling is already
+inside the team id; `home_venue_points_5` does not read `away_team_id`, which
+is the asymmetry a reshape is most likely to get wrong; and `elo_*_played`
+reads no result.
+
+It also found its own blind spot immediately. The first run, over ENG_1's
+earliest 2,000 matches, reported that no feature reads shots — true of that
+slice, because the provider carried no shot data before 2000/01, and a column
+that is entirely null cannot be perturbed. The sample now takes the most recent
+matches, and the limit is documented as a property of the sample rather than of
+the code.
+
+### Changed from the approved scope
+
+- **"As a CI step" became a unit test that CI names as a step.** A shell step
+  running its own probe script would have been a second way to run the same
+  code, and the two would drift. The suite runs under `pytest`, so a producer
+  added on a branch is probed by the command its author already runs locally,
+  and the workflow calls it out separately so a failure appears in the job list
+  rather than as one dot among five hundred.
+- **A fourth probe, not a third.** The written audit the scope asked for would
+  have been prose. Measuring it cost about twenty lines and turned the feature
+  registry's declaration into a claim that fails when it is wrong.
+
+---
+
+## Milestone 7 — Splits and baselines (next)
 
 Scope, for approval:
 
-- Extend `src/validation/temporal.py` to run over *every* registered producer
-  as a CI step rather than only inside each pipeline, so a new builder cannot
-  be added without being probed.
-- A third probe for the split boundary: no training row may be dated after any
-  evaluation row.
-- A written audit of every column the model layer will see, tracing each back
-  to the canonical columns it reads.
+- Walk-forward cross-validation over the canonical table, with the split
+  boundary probe from this milestone gating every fold.
+- Baselines to beat: home-always, the bookmaker's closing line, and
+  Dixon-Coles' own three-class probabilities.
+- Log loss and RPS as the reported metrics, per competition and pooled.

@@ -10,6 +10,74 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.6.0] — unreleased
+
+Milestone 6: the leakage suite. Two more probes, and a change of principle —
+the suite no longer takes a list of what to check.
+
+### Added
+
+- `src/validation/leakage.py`. It **walks** `src.ratings` and
+  `src.feature_engineering` and finds every class satisfying the producer
+  contract, constructed with the defaults the pipelines use. Both earlier
+  milestones probe the producers on their own list, and a list is a thing you
+  can forget to add to: a builder wired into a pipeline but omitted from its
+  probe call would have shipped unverified, with nothing in the output saying
+  so. `check_defaults_are_complete()` closes the other half — a discovered
+  producer in no pipeline's defaults is a column the model layer expects and
+  will not get.
+- **Split boundary**, the third probe. No training row may be dated at or
+  after any evaluation row, and no match may appear in both halves. Ties fail:
+  a full Saturday programme is one round, and a model trained on the 3pm
+  results is not entitled to predict the 5.30 kick-off. Milestone 7 owns the
+  splits; the probe is here and tested, waiting for them.
+- **Observed reads**, the fourth. Rewrite one input column, recompute, and
+  whatever moved read it. This is the measured counterpart to the feature
+  registry's hand-written `reads` — the one part of that registry that can be
+  wrong without anything noticing, since a typo there reclassifies a leaking
+  feature as safe. The suite asserts the declaration *covers* what was
+  measured; over-declaring is safe, under-declaring is not.
+- `benchmark_leaks()`: any derived column that moves when a bookmaker's price
+  is rewritten fails the run. The rule was written on `ODDS_COLUMNS` in
+  Milestone 2 and until now was only written.
+- `tests/unit/test_leakage_suite.py` — both temporal probes over every
+  discovered producer, on every test run. A unit test rather than a shell step
+  on purpose: CI runs the suite, so a producer added on a branch is probed by
+  the same command its author already runs locally. CI names it as its own
+  step so a leak appears in the job list rather than as one dot among five
+  hundred.
+- `scripts/audit_columns.py`, `make audit`, and **[docs/LEAKAGE.md](docs/LEAKAGE.md)**:
+  every derived column the model layer will see, traced back to the canonical
+  columns it reads.
+
+### Measured
+
+Thirty derived columns traced over the most recent 1,200 matches of ENG_1 and
+ESP_1. Every probe held; nothing reads `result`, `ht_*`, `referee` or an odds
+column. Four things the trace says that reading the code does not:
+
+| Finding | Why it matters |
+|---|---|
+| Elo reads `season`, never `date` | Its ratings are invariant to *when* matches were played and sensitive only to order — correct for an online update, and worth knowing before anyone adds time decay to it. |
+| Dixon-Coles reads `competition_id`; Elo reads no partition column at all | Elo's per-country pooling is already inside `home_team_id`, which is country-scoped so a promoted club keeps one id. The partition is in the identifier, not in a `groupby`. |
+| `home_venue_points_5` does not read `away_team_id` | Venue form is a team's record at its own end and the opponent is irrelevant to it. This is the asymmetry a reshape is most likely to get wrong, and it shows up as an absence rather than as a number to check by eye. |
+| `elo_*_played` reads no result | The same conclusion the registry reaches by declaration for `*_matches_played`, reached here by measurement. |
+
+The trace is a **lower bound**, and both ways it falls short are properties of
+the sample rather than of the code. A column that is entirely null cannot be
+perturbed: run the audit over ENG_1's first 2,000 matches and it reports that
+no feature reads shots — correctly, for that slice, since the provider carried
+none before 2000/01. A column that does not vary cannot be perturbed either, so
+a single-competition sample cannot show that Dixon-Coles partitions on
+`competition_id`. Hence the most recent matches, from two competitions in two
+countries.
+
+### Changed
+
+- `--limit` on the audit takes the most **recent** N matches per competition
+  rather than the first. The first N are the ones with no shot data, and an
+  audit over them reports absences that belong to 1993 rather than to the code.
+
 ## [0.5.0] — unreleased
 
 Milestone 5: feature engineering. Twenty features, and the correctness bug that

@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 5 of 14 — feature engineering.**
+> **Status: Milestone 6 of 14 — the leakage suite.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings now run over it, and the
@@ -45,13 +45,14 @@ Three consequences shape the whole design:
    well-calibrated model that rarely *predicts* "draw" is behaving correctly,
    not failing — which is precisely why accuracy is the wrong target.
 
-Leakage prevention is not a review step here. Two probes in
-`src/validation/temporal.py` test any derived column by recomputing it —
-truncate the history and the surviving rows must not move; rewrite one
-scoreline and that match's own row must not move. They are generic over
-`Callable[[DataFrame], DataFrame]`, they run on every ratings build, and they
-are verified against planted leaks of both kinds. Milestone 6 points them at
-the feature layer.
+Leakage prevention is not a review step here. Four probes in
+`src/validation/temporal.py` test a derived column by recomputing it — truncate
+the history and the surviving rows must not move; rewrite one scoreline and
+that match's own row must not move; rewrite one input column and see which
+outputs move; and no training row may be dated at or after any evaluation row.
+They are generic over `Callable[[DataFrame], DataFrame]`, they run on every
+build and on every test run over every producer in the codebase, and each is
+verified against a planted leak of the kind it exists to find.
 
 ## Data
 
@@ -165,6 +166,34 @@ interaction and will earn its place in Milestone 8's ablation or be dropped.
 
 **[docs/FEATURES.md](docs/FEATURES.md)** has every number, including that one.
 
+## Leakage
+
+The three mechanisms above are per-pipeline, and a pipeline probes the
+producers on *its own list*. A list is a thing you can forget to add to. So the
+suite does not take one: it walks `src.ratings` and `src.feature_engineering`,
+finds every class satisfying the producer contract, and probes each with the
+defaults the pipelines use. A producer that exists is a producer that gets
+probed, and the mirror check fails if a discovered producer is in no pipeline's
+defaults.
+
+Two probes join the two from Milestone 4. **Split boundary**: no training row
+may be dated at or after any evaluation row, and ties fail, because a model
+trained on the 3pm results is not entitled to predict the 5.30 kick-off.
+**Observed reads**: rewrite one input column, recompute, and whatever moved
+read it — the measured counterpart to the registry's hand-written declaration,
+which is the one part of it that can be wrong silently.
+
+That trace says four things reading the code does not. Elo reads `season` and
+never `date`, so it is invariant to *when* matches were played. Dixon-Coles
+reads `competition_id` and Elo does not — Elo's per-country pooling is already
+inside the team id. `home_venue_points_5` does not read `away_team_id`, which
+is the asymmetry a reshape is most likely to get wrong, visible here as an
+absence rather than as a number to check by eye. And nothing anywhere reads an
+odds column, which is enforced rather than remembered.
+
+**[docs/LEAKAGE.md](docs/LEAKAGE.md)** traces all thirty derived columns back to
+the canonical columns they read, and says what the trace cannot tell you.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -228,7 +257,8 @@ src/
     base.py           the RatingModel protocol and schema
     elo.py            one pool per country, online updates
     dixon_coles.py    bivariate Poisson, refitted per competition
-  validation/temporal.py  prefix invariance, outcome independence  ✅
+  validation/temporal.py  four probes: prefix, outcome, split, reads   ✅
+  validation/leakage.py   every producer, found rather than listed [Milestone 6] ✅
   models/           splits, zoo, tuning, calibration    [Milestones 7-9]
   evaluation/       backtests, metrics, model cards       [Milestone 10]
   explainability/   SHAP, permutation importance         [Milestone 10]
@@ -251,6 +281,7 @@ make refresh   # incremental re-run: conditional requests only, 0 MB if unchange
 make validate  # run the data checks and regenerate docs/DATASET_CARD.md
 make ratings   # build Elo + Dixon-Coles (~10 min); make ratings-elo is seconds
 make features  # build the 20-feature table (~10 seconds)
+make audit     # probe every producer, trace every column (~3 min)
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -290,7 +321,7 @@ imports is a supply-chain surface with no upside.
 | 3 | Storage and validation — DuckDB over Parquet, 23 checks, dataset card | ✅ |
 | 4 | Ratings — Elo, Dixon-Coles, causality probes | ✅ |
 | 5 | Feature engineering — registry, causal windows, 20 features | ✅ |
-| 6 | Leakage suite — extended to every derived column, enforced in CI | |
+| 6 | Leakage suite — every producer found and probed, every column traced | ✅ |
 | 7 | Splits and baselines — walk-forward CV, RPS/log loss | |
 | 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | |
 | 9 | Ensembling and calibration | |

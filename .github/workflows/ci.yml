@@ -53,6 +53,13 @@ jobs:
       - name: Types
         run: mypy src
 
+      - name: Leakage suite
+        # Every producer in the codebase, found by walking the packages rather
+        # than by reading a list, probed before anything else runs. Split out
+        # from the step below so a leak is named in the job list instead of
+        # being one dot among five hundred.
+        run: pytest tests/unit/test_leakage_suite.py -q
+
       - name: Tests
         # Integration tests are excluded by marker AND would skip anyway on a
         # clean checkout. Both, so a forgotten marker cannot quietly turn a

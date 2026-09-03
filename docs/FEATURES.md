@@ -33,6 +33,11 @@ and checks that match's own row does not move. Both run on every build against
 a sample competition, and the build exits non-zero if either fails. A
 deliberately leaky builder in the test suite proves the failure path works.
 
+Milestone 6 extended all of this past the feature layer:
+[LEAKAGE.md](LEAKAGE.md) traces every derived column — features and ratings
+both — back to the canonical columns it actually reads, measured by rewriting
+each input and seeing what moves.
+
 **And a fourth, on the table itself.** Every window feature has a companion
 count saying how much history it had. A value where the count is zero came from
 somewhere it should not have, and the check suite says so over every row that

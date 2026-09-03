@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -61,6 +61,9 @@ features: ## Build the feature table (~10 seconds)
 
 feature-list: ## List the feature registry and which side of kick-off each reads
 	$(BIN)/python scripts/build_features.py --list
+
+audit: ## Probe every producer and trace every derived column (~3 min; prints the table in docs/LEAKAGE.md)
+	$(BIN)/python scripts/audit_columns.py --competition ENG_1 --competition ESP_1 --markdown
 
 validate: ## Run the data checks and regenerate docs/DATASET_CARD.md
 	$(BIN)/python scripts/validate_data.py

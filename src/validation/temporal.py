@@ -18,9 +18,18 @@ specific of the two and catches what prefix invariance cannot: a computation
 that reads match *n*'s own result while emitting match *n*'s features. Both are
 needed, because each is blind to what the other finds.
 
-The pair is generic over ``Callable[[DataFrame], DataFrame]`` rather than tied
-to a rating model: it is written for Milestone 4's ratings and is the same test
-Milestone 6 runs over feature builders.
+**Split boundary.** The two above test a derivation. A split is the other place
+the same leak lives: no training row may be dated at or after any evaluation
+row, and no match may appear in both halves.
+
+**Observed reads.** Rewrite one input column and see which outputs move. That
+is the measured version of a ``reads`` declaration, and the reason to measure
+it is that the declaration is the one part of the feature registry that can be
+wrong silently — a typo there reclassifies a leaking feature as safe.
+
+All four are generic over ``Callable[[DataFrame], DataFrame]`` rather than tied
+to a rating model: the first two were written for Milestone 4's ratings and are
+the same tests Milestone 6 runs over every registered producer.
 """
 
 from __future__ import annotations
@@ -174,3 +183,126 @@ def outcome_independence(
         checks=len(points),
         violations=tuple(violations),
     )
+
+
+def split_boundary(
+    train: pd.DataFrame,
+    evaluate: pd.DataFrame,
+    *,
+    name: str,
+    date_column: str = "date",
+    key: str = DEFAULT_KEY,
+) -> TemporalResult:
+    """Check that a split's training half ends before its evaluation half starts.
+
+    The two probes above test a *derivation*. This one tests a *split*, which
+    is the other place the same leak lives and the place it is hardest to see:
+    a fold assembled with a random shuffle, or with a boundary computed off a
+    sorted-by-something-else frame, produces a model that has already seen the
+    matches it is scored on. Nothing in the output looks wrong — the metrics
+    just come out better than they should.
+
+    Ties fail. Two matches on the same date are the same round, and a model
+    trained on the 3pm kick-offs is not entitled to predict the 5.30 one; the
+    same reasoning that makes every window here cut strictly on the date.
+
+    Args:
+        train: The training rows.
+        evaluate: The rows the model will be scored on.
+        name: What is being tested, for the report.
+        date_column: The column carrying kick-off dates.
+        key: The column identifying a match, checked for membership in both.
+    """
+    violations: list[str] = []
+
+    if not train.empty and not evaluate.empty:
+        last_train = train[date_column].max()
+        first_evaluation = evaluate[date_column].min()
+        if last_train >= first_evaluation:
+            violations.append(
+                f"training runs to {last_train:%Y-%m-%d} but evaluation starts "
+                f"{first_evaluation:%Y-%m-%d}"
+            )
+
+    shared = set(train[key]) & set(evaluate[key])
+    if shared:
+        violations.append(f"{len(shared)} match(es) are in both halves, e.g. {sorted(shared)[0]}")
+
+    return TemporalResult(name=name, probe="split boundary", checks=2, violations=tuple(violations))
+
+
+def _perturbations(matches: pd.DataFrame, column: str) -> tuple[pd.DataFrame, ...]:
+    """Two rewrites of one column, each of which changes something different.
+
+    *Flattened* gives every row the same value, which destroys the ordering and
+    the gaps between values. *Altered* moves every value while keeping them
+    distinct, which is the one that finds a column that was already constant in
+    this sample — a flatten of a constant column changes nothing, and a
+    dependence probe that reported "unread" there would be reporting on the
+    fixture rather than on the code.
+
+    Dates are altered by a cumulative spread rather than a constant offset:
+    shifting every kick-off by a day leaves every gap identical, so a feature
+    reading rest days would not move. The spread keeps the frame sorted, which
+    every producer here requires.
+    """
+    values = matches[column]
+    present = values.dropna()
+    if present.empty:
+        return ()
+
+    flattened = values.copy()
+    flattened[:] = present.iloc[0]
+
+    if pd.api.types.is_datetime64_any_dtype(values):
+        altered = values + pd.to_timedelta(range(len(values)), unit="D")
+    elif pd.api.types.is_numeric_dtype(values):
+        altered = values + 1
+    else:
+        altered = values + "-x"
+
+    return tuple(matches.assign(**{column: rewritten}) for rewritten in (flattened, altered))
+
+
+def observed_reads(
+    compute: Compute,
+    matches: pd.DataFrame,
+    columns: Sequence[str],
+    *,
+    key: str = DEFAULT_KEY,
+) -> dict[str, frozenset[str]]:
+    """Which input columns each output column actually depends on.
+
+    Rewrite one input column, recompute, and see what moved. What moved read
+    it. This is the measured counterpart to a hand-written ``reads``
+    declaration, which is worth having because the declaration is the one part
+    of the feature registry that can be wrong without anything noticing: a typo
+    there reclassifies a leaking feature as safe.
+
+    The answer is a **lower bound**. A column this sample never varies in, or
+    one a producer reads only in a branch this sample never takes, will not
+    show up. So the property to assert is that a declaration *covers* what was
+    observed, never that the two are equal.
+
+    Args:
+        compute: The derivation under test.
+        matches: The canonical table, sorted by date.
+        columns: Input columns to try. ``key`` is skipped if present: it joins
+            the output back to the input rather than feeding it.
+        key: The column joining the output back to the input.
+
+    Returns:
+        One entry per output column, naming the inputs that moved it.
+    """
+    baseline = compute(matches).set_index(key)
+    reads: dict[str, set[str]] = {column: set() for column in baseline.columns}
+
+    for column in columns:
+        if column == key:
+            continue
+        for perturbed in _perturbations(matches, column):
+            after = compute(perturbed).set_index(key).reindex(baseline.index)
+            for moved in _moved_columns(baseline, after):
+                reads[moved].add(column)
+
+    return {column: frozenset(inputs) for column, inputs in reads.items()}

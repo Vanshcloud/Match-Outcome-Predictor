@@ -28,6 +28,16 @@ pandas>=2.2,<3
 # nobody pins.
 pyarrow>=17.0
 
+# ---- Ratings (M4) ----
+# numpy is listed even though pandas already pulls it in: src/ratings imports
+# it by name, and a dependency you import is one you pin, not one you inherit.
+numpy>=2.0,<3
+# Dixon-Coles is a maximum-likelihood fit — two strengths per team plus a home
+# term and the low-score correction — refitted every thirty days per
+# competition. scipy.optimize.minimize (L-BFGS-B) is the whole reason this is
+# a dependency; nothing else here needs it.
+scipy>=1.14
+
 # ---- Storage (M3) ----
 # The analytical store. Reads Parquet in place, so there is no load step and no
 # second copy of the data — the aggregates this project asks for (coverage per
@@ -45,7 +55,6 @@ requests>=2.32
 # M11 serving storage .... psycopg[binary], SQLAlchemy  (PostgreSQL arrives with
 #                         the first prediction to serve, not before — see the
 #                         Milestone 3 note in plans/IMPLEMENTATION_PLAN.md)
-# M4  ratings ............ numpy
 # M7  splits/baselines ... scikit-learn
 # M8  model zoo .......... xgboost, lightgbm, catboost, optuna, mlflow
 # M10 explainability ..... shap, matplotlib

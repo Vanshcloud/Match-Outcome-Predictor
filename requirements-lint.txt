@@ -17,3 +17,7 @@ types-requests==2.33.0.20260712
 # does not have — mypy would then be checking against the wrong library and
 # reporting confident errors about methods that exist.
 pandas-stubs==2.3.3.260113
+# Matched to the installed scipy exactly, for the same reason as pandas-stubs:
+# scipy-stubs tracks scipy versions, and stubs for a different minor describe
+# an API the installed library does not have.
+scipy-stubs==1.18.1.0

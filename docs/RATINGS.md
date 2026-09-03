@@ -96,6 +96,99 @@ touched it.
 
 ---
 
+## Dixon-Coles
+
+Elo answers "who is stronger". This answers "how many goals, to whom, with what
+probability" — and unlike Elo it produces a genuine H/D/A distribution, which
+makes it the first thing in this project that can be scored with log loss and
+compared against a bookmaker.
+
+    lambda = exp(attack_home + defence_away + home_advantage)
+    mu     = exp(attack_away + defence_home)
+
+Home goals Poisson(lambda), away goals Poisson(mu), with two departures from
+independence doing the real work: a one-parameter correction on the four
+lowest scorelines, and exponential time decay over the fitting window.
+
+Strengths are fitted **per competition** — attack and defence are only
+identifiable among teams that actually play each other — and refitted as the
+seasons advance.
+
+### How good is it
+
+English Premier League, 12,265 priced matches:
+
+| | log loss | RPS |
+|---|---|---|
+| Class prior — predict 45 / 27 / 28 every time | 1.0647 | 0.2267 |
+| **Dixon-Coles** | **0.9888** | **0.2008** |
+| Bookmaker closing odds, overround removed | 0.9631 | 0.1944 |
+
+The closing line is the strongest public forecast there is, and it is 0.026 of
+log loss ahead. That gap is the honest size of the problem, and this is a
+*rating* — the model zoo has not started yet.
+
+### The settings, and what each is worth
+
+| | Shipped | Convention | Measured |
+|---|---:|---:|---|
+| `decay` | 0.002 /day | ~0.0065 | Half-life 347 days. 0 → 0.9942, 0.003 → 0.9931, 0.0065 → 1.0004, 0.012 → 1.0182 |
+| `window_days` | 1095 | 730 | 365 → 1.0051, 730 → 0.9925, 1095 → 0.9908, 1460 → 0.9902 |
+| `refit_days` | 60 | — | 30 → 0.9908, 60 → 0.9888, 90 → 0.9947 |
+| `min_matches` | 150 | — | Below this the window cannot identify two strengths per team |
+
+Three findings worth stating plainly.
+
+**The conventional decay is too fast.** Dixon and Coles' half-life of roughly
+half a year loses to one of nearly a full season on this data — and *some*
+decay still beats none, so the parameter earns its place; it is only the usual
+value that does not.
+
+**A longer window keeps winning.** Three seasons beats two, and four beats
+three by 0.0006 — which is where it stops being worth a third more arithmetic.
+The decay already handles recency, so the window's job is not to be recent: it
+is to contain enough fixtures to identify the strengths of teams that rarely
+meet.
+
+**Sixty days between refits is better *and* half the cost.** The differences
+between 30, 60 and 90 are within noise on subsets that differ by 2% — a longer
+gap leaves a few more early matches unpriced — and when a metric cannot
+separate two options, runtime can. This halves a full build from about twenty
+minutes to ten.
+
+### The low-score correction is worth almost nothing
+
+The correction is the model's defining feature: independent Poissons
+under-count 0-0, 1-0, 0-1 and 1-1, and one parameter reweights exactly those
+four cells.
+
+| | log loss | RPS |
+|---|---|---|
+| Correction off (rho pinned to 0) | 0.9910 | 0.2012 |
+| Correction on | 0.9908 | 0.2011 |
+
+**0.0002 of log loss.** It is kept — it is four lines, it is fitted rather than
+assumed, and it is in the right direction — but anyone reaching for
+Dixon-Coles over a plain double Poisson because of it should know the size of
+what they are buying. At an earlier decay setting it measured slightly
+*negative*, which is a fair summary of how large the effect is.
+
+### Causality, and the case the generic probes cannot reach
+
+The refit window ends **strictly before** the date of the match that triggered
+it. That `<` rather than `<=` is the whole design, because a full Saturday
+programme is one round: a model fitted on the 3pm results to predict the 5.30
+kick-off would look excellent and be useless, and the leak is invisible to
+truncation because both matches survive or neither does. There is a test for
+exactly that.
+
+Everything before a competition's first viable fit is null, and so is a team
+promoted into a division that the current window has never seen. Both are
+honest answers rather than a number nobody could have had. Coverage over the
+full ingest is about 95%.
+
+---
+
 ## Causality
 
 Ratings are the first thing here with memory, and therefore the first place a

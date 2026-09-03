@@ -58,8 +58,6 @@ RATINGS_SCHEMA: dict[str, str] = {
     **DIXON_COLES_COLUMNS,
 }
 
-RATINGS_COLUMNS: tuple[str, ...] = tuple(RATINGS_SCHEMA)
-
 # Every rating column is nullable, and a null means the model could not produce
 # a value at all rather than that it produced a poor one. Dixon-Coles before
 # its first fit has nothing to say and says nothing; Elo before a team's first

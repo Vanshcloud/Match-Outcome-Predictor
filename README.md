@@ -8,12 +8,13 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 3 of 14 — storage and validation.**
+> **Status: Milestone 4 of 14 — ratings.**
 > **305,499 matches** across 39 competitions, 27 countries and 33 years reduce
-> to one canonical schema behind a provider-adapter interface, queryable
-> through a storage interface and checked by **23 validation rules** that run
-> on every ingest. Ratings and features are next. Nothing here predicts a match
-> yet, and this README will not claim otherwise until it does.
+> to one canonical schema, queryable through a storage interface and checked by
+> **23 validation rules** on every ingest. Two ratings now run over it, and the
+> stronger one — Dixon-Coles — already reaches **0.9774 log loss** on the
+> Premier League against **0.9619** for the bookmaker's closing line, on the
+> same 8,818 matches. Features and the model zoo are next.
 
 ---
 
@@ -43,8 +44,13 @@ Three consequences shape the whole design:
    well-calibrated model that rarely *predicts* "draw" is behaving correctly,
    not failing — which is precisely why accuracy is the wrong target.
 
-Leakage prevention is not a review step here. Milestone 6 is a dedicated
-temporal-integrity suite: any feature that can see its own match fails CI.
+Leakage prevention is not a review step here. Two probes in
+`src/validation/temporal.py` test any derived column by recomputing it —
+truncate the history and the surviving rows must not move; rewrite one
+scoreline and that match's own row must not move. They are generic over
+`Callable[[DataFrame], DataFrame]`, they run on every ratings build, and they
+are verified against planted leaks of both kinds. Milestone 6 points them at
+the feature layer.
 
 ## Data
 
@@ -101,6 +107,37 @@ refactor — but the model is built from what genuinely exists: ratings, form,
 home advantage, goal difference, rolling shot statistics, rest days, fixture
 congestion and head-to-head history.
 
+## Ratings
+
+Two, and neither can see the match it is rating.
+
+**Elo**, one pool per country so a promoted club keeps its history. Online, so
+the rating carried into match *n* depends on matches 1..*n*-1 by construction —
+no window to get wrong, no whole-table statistic to include by accident. Home
+advantage is worth 3.9% of its error; the margin-of-victory multiplier,
+autocorrelation damping and season carry-over are worth a few parts in a
+thousand each.
+
+**Dixon-Coles**, a bivariate Poisson fitted per competition on a rolling
+window that ends *strictly before* the match that triggered the refit. A full
+Saturday programme is one round, and a model fitted on the 3pm results to
+predict the 5.30 kick-off would look excellent and be useless. It emits a real
+H/D/A distribution, which is what makes the table below possible:
+
+| Premier League, the 8,818 matches all three can price | log loss | RPS |
+|---|---|---|
+| Class prior — predict the base rates every time | 1.0636 | 0.2285 |
+| **Dixon-Coles** | **0.9774** | **0.1988** |
+| Bookmaker closing odds, overround removed | 0.9619 | 0.1941 |
+
+Every constant in both models was measured rather than inherited, and three of
+the conventional values lost: the football-Elo season carry-over is too
+aggressive, the Dixon-Coles decay half-life is too fast, and the low-score
+correction — the model's defining feature — is worth 0.0002 of log loss here.
+The per-competition Elo fitting the plan called for was built, measured and
+removed for making the ratings worse. **[docs/RATINGS.md](docs/RATINGS.md)** has
+every number, including the ones that did not work.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -155,9 +192,12 @@ src/
     report.py         Check, three outcomes, two severities
     matches.py        the suite: schema, integrity, referential, distribution
     card.py           the generated dataset card
-  ratings/          Elo and Dixon-Coles, strictly causal   [Milestone 4]
+  ratings/          Elo and Dixon-Coles, strictly causal  [Milestone 4] ✅
+    base.py           the RatingModel protocol and schema
+    elo.py            one pool per country, online updates
+    dixon_coles.py    bivariate Poisson, refitted per competition
+  validation/temporal.py  prefix invariance, outcome independence  ✅
   feature_engineering/  registry, rolling windows          [Milestone 5]
-  validation/temporal.py  the leakage gates                [Milestone 6]
   models/           splits, zoo, tuning, calibration    [Milestones 7-9]
   evaluation/       backtests, metrics, model cards       [Milestone 10]
   explainability/   SHAP, permutation importance         [Milestone 10]
@@ -178,6 +218,7 @@ make leagues   # list the 39 configured competitions
 make data      # download and ingest everything (~15 min first time)
 make refresh   # incremental re-run: conditional requests only, 0 MB if unchanged
 make validate  # run the data checks and regenerate docs/DATASET_CARD.md
+make ratings   # build Elo + Dixon-Coles (~20 min); make ratings-elo is seconds
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -215,7 +256,7 @@ imports is a supply-chain surface with no upside.
 | 1 | Foundation — config, logging, paths, HTTP, gates | ✅ |
 | 2 | Ingestion — adapters, canonical schema, league registry | ✅ |
 | 3 | Storage and validation — DuckDB over Parquet, 23 checks, dataset card | ✅ |
-| 4 | Ratings — Elo, Dixon-Coles | |
+| 4 | Ratings — Elo, Dixon-Coles, causality probes | ✅ |
 | 5 | Feature engineering — registry, rolling windows | |
 | 6 | Leakage suite — temporal integrity enforced in CI | |
 | 7 | Splits and baselines — walk-forward CV, RPS/log loss | |

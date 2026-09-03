@@ -2,10 +2,16 @@
 
 What each rating is, what it measured, and what was tried and thrown away.
 
-Every number here comes from walking all **305,499 matches** in date order, with
-each prediction made from prior matches only. That makes them out-of-sample
-figures over the whole table rather than fits, which is the only kind worth
-printing.
+Every number here comes from walking matches in date order with each prediction
+made from prior matches only, so they are out-of-sample figures rather than
+fits — the only kind worth printing.
+
+The Elo figures are over all **305,499 matches**; a single expected-score error
+is comparable across competitions, so pooling them means something. The
+Dixon-Coles figures are **per competition**, because attack and defence are
+only identifiable among teams that play each other, and a log loss pooled
+across thirty-nine leagues of different scoring rates would mostly measure
+which leagues were in the average.
 
 ---
 
@@ -116,17 +122,31 @@ seasons advance.
 
 ### How good is it
 
-English Premier League, 12,265 priced matches:
+English Premier League. Two tables, because a single one would have to compare
+numbers computed over different sets of matches — the model prices 12,052
+fixtures and the provider carries closing odds for 8,818 of them, and quietly
+putting those side by side is the kind of arithmetic this project exists not to
+do.
 
-| | log loss | RPS |
+Everything Dixon-Coles could price:
+
+| 12,052 matches | log loss | RPS |
 |---|---|---|
-| Class prior — predict 45 / 27 / 28 every time | 1.0647 | 0.2267 |
+| Class prior | 1.0647 | 0.2267 |
 | **Dixon-Coles** | **0.9888** | **0.2008** |
-| Bookmaker closing odds, overround removed | 0.9631 | 0.1944 |
 
-The closing line is the strongest public forecast there is, and it is 0.026 of
-log loss ahead. That gap is the honest size of the problem, and this is a
-*rating* — the model zoo has not started yet.
+The subset that also carries a closing line, where all three are computed over
+exactly the same 8,818 matches:
+
+| 8,818 matches | log loss | RPS |
+|---|---|---|
+| Class prior | 1.0636 | 0.2285 |
+| **Dixon-Coles** | **0.9774** | **0.1988** |
+| Bookmaker closing odds, overround removed | 0.9619 | 0.1941 |
+
+The closing line is the strongest public forecast there is, and it is **0.0155
+of log loss** ahead. That gap is the honest size of the problem — and this is a
+*rating*, before the model zoo exists.
 
 ### The settings, and what each is worth
 
@@ -173,6 +193,30 @@ Dixon-Coles over a plain double Poisson because of it should know the size of
 what they are buying. At an earlier decay setting it measured slightly
 *negative*, which is a fair summary of how large the effect is.
 
+### Do the settings transfer?
+
+The obvious objection to the table above is the one this project levelled at
+per-competition Elo fitting: the constants were chosen by looking at the data
+they are then judged on. So they were chosen on the **English Premier League
+alone** and checked against three competitions that had no say in them.
+
+| | Before (literature settings) | After (chosen on ENG_1) |
+|---|---|---|
+| Spain, La Liga | 1.0088 | **0.9972** |
+| Germany, Bundesliga | 1.0284 | **1.0128** |
+| Italy, Serie B | 1.0628 | **1.0561** |
+
+Every one improves, and Spain and Germany improve by more than England did.
+That is what distinguishes this from the per-competition Elo fit that was
+removed: three settings chosen once on 12,724 matches and validated on 33,000
+more, rather than three settings chosen per competition on a few hundred cold
+ones.
+
+It is still one number per setting for thirty-nine competitions, and Serie B
+gains least — a division with a wider talent spread and more turnover may well
+want its own decay. That is a Milestone 7 question, when there are splits to
+tune against honestly.
+
 ### Causality, and the case the generic probes cannot reach
 
 The refit window ends **strictly before** the date of the match that triggered
@@ -184,8 +228,10 @@ exactly that.
 
 Everything before a competition's first viable fit is null, and so is a team
 promoted into a division that the current window has never seen. Both are
-honest answers rather than a number nobody could have had. Coverage over the
-full ingest is about 95%.
+honest answers rather than a number nobody could have had. Measured over the
+full ingest, Dixon-Coles prices **92.1%** of matches; Elo prices all of them,
+because it has a prior for a team it has never seen and reports the count of
+matches backing it alongside.
 
 ---
 

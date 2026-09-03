@@ -18,7 +18,13 @@ import pytest
 
 from src.ingestion.base import CANONICAL_COLUMNS, CANONICAL_SCHEMA
 from src.storage.base import MatchStore, StorageError
-from src.storage.duckdb_store import MATCHES_VIEW, DuckDBStore, _as_date_string, _quote_literal
+from src.storage.duckdb_store import (
+    MATCHES_VIEW,
+    RATINGS_VIEW,
+    DuckDBStore,
+    _as_date_string,
+    _quote_literal,
+)
 from tests.factories import league_frame
 
 
@@ -134,12 +140,44 @@ def test_attaching_a_missing_file_fails_immediately(store: DuckDBStore, tmp_path
         store.attach_parquet("other", tmp_path / "absent.parquet")
 
 
-def test_a_failed_open_does_not_leak_the_connection(tmp_path: Path) -> None:
+def test_a_failed_open_leaves_nothing_behind(tmp_path: Path) -> None:
     """On a file-backed catalog a leaked connection is a leaked lock, and the
     next open fails for a reason that has nothing to do with the real problem."""
     catalog = tmp_path / "store.duckdb"
     with pytest.raises(StorageError):
         DuckDBStore.open_matches(tmp_path / "absent.parquet", database=catalog)
+    with DuckDBStore(catalog) as reopened:
+        assert reopened.views() == ()
+
+
+def test_ratings_can_be_attached_beside_the_matches(matches_parquet: Path, tmp_path: Path) -> None:
+    """Attached rather than joined in: the two tables are rebuilt on different
+    cadences, and a consumer that wants both writes the join it needs."""
+    ratings = tmp_path / "ratings.parquet"
+    frame = pd.read_parquet(matches_parquet)[["match_id"]].copy()
+    frame["elo_home"] = 1500.0
+    frame.to_parquet(ratings, index=False)
+
+    with DuckDBStore.open_matches(matches_parquet, ratings=ratings) as store:
+        assert set(store.views()) == {MATCHES_VIEW, RATINGS_VIEW}
+        joined = store.query(
+            f"SELECT count(*) AS n FROM {MATCHES_VIEW} JOIN {RATINGS_VIEW} USING (match_id)"
+        )
+        assert int(joined.iloc[0]["n"]) == len(frame)
+
+
+def test_a_half_attachable_open_attaches_nothing(matches_parquet: Path, tmp_path: Path) -> None:
+    """The matches file exists and the ratings file does not.
+
+    Attaching as it went created the matches view, failed on the ratings, and
+    left a file-backed catalog holding half of what was asked for — which the
+    next open would have reported as success.
+    """
+    catalog = tmp_path / "store.duckdb"
+    with pytest.raises(StorageError):
+        DuckDBStore.open_matches(
+            matches_parquet, ratings=tmp_path / "absent.parquet", database=catalog
+        )
     with DuckDBStore(catalog) as reopened:
         assert reopened.views() == ()
 

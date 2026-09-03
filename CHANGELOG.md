@@ -10,6 +10,89 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-03
+
+Milestone 4: ratings. Two of them, and the machinery that proves neither can
+see the match it is rating.
+
+### Added
+
+- `src/ratings/elo.py` — one Elo pool per country, online, with home advantage,
+  a margin-of-victory multiplier, autocorrelation damping and season
+  carry-over. Online is the point: the rating carried into match *n* is a
+  function of matches 1..*n*-1 by construction.
+- `src/ratings/dixon_coles.py` — bivariate Poisson with the low-score
+  correction and exponential time decay, refitted per competition on a rolling
+  window that ends **strictly before** the match that triggered the refit. It
+  produces a real H/D/A distribution, so it is the first thing here that can be
+  scored against a bookmaker.
+- `src/validation/temporal.py` — prefix invariance and outcome independence,
+  generic over `Callable[[DataFrame], DataFrame]`. Scoped for Milestone 6 and
+  written here, because shipping two rating models with their central property
+  unverified for two milestones is not a trade worth making.
+- `src/validation/ratings.py` — 9 arithmetic and coverage checks on the output.
+- `src/pipelines/ratings.py` and `scripts/build_ratings.py`. The build runs the
+  probes against a sample competition and exits non-zero when one fails.
+- `make ratings` (~10 min) and `make ratings-elo` (seconds).
+- A CI invariant: `src/ratings` depends only on `src.ratings` and `src.utils`.
+  A model that reached for the store could pass every probe while reading the
+  future, because the probes work by handing it truncated frames.
+
+### Measured
+
+Elo, over all 305,499 matches, every prediction from prior matches only —
+mean squared error of the expected score:
+
+| | MSE |
+|---|---|
+| Plain Elo | 0.16882 |
+| + home advantage | 0.16217 |
+| + margin of victory | 0.16208 |
+| + autocorrelation damping | 0.16173 |
+| + season carry-over (shipped) | **0.16169** |
+
+Dixon-Coles on the English Premier League. All three computed over exactly the
+same 8,818 matches — the ones the model priced *and* the provider carries a
+closing line for:
+
+| | log loss | RPS |
+|---|---|---|
+| Class prior | 1.0636 | 0.2285 |
+| **Dixon-Coles** | **0.9774** | **0.1988** |
+| Bookmaker closing odds, overround removed | 0.9619 | 0.1941 |
+
+Which is where the README says a public-data model should land, from a rating
+rather than from the model zoo. Over all 12,052 matches it could price,
+including three decades before the odds series starts, log loss is 0.9888.
+
+The full build, measured: 305,499 matches rated in about ten minutes,
+Dixon-Coles pricing 92.1% of them and Elo all of them, all four causality
+probes holding, and 9 of 9 checks passing with none skipped.
+
+### Changed
+
+- Elo's `season_carry` ships at 0.97, not the football-Elo convention of 0.75.
+  Three decades of results say a club's strength persists across a summer far
+  more than the convention assumes.
+- Dixon-Coles ships with a 347-day decay half-life and a three-season window,
+  both longer than the literature's, and refits every 60 days rather than 30 —
+  which measured no worse and halves the runtime.
+
+### Removed before shipping
+
+- **Per-competition Elo fitting**, which the plan called for. Built, measured,
+  removed: it made the ratings worse (0.16300 against 0.16246), because a
+  calibration window is the coldest part of the history and three free
+  parameters chase warm-up noise. `--fit-until` re-derives the constants as a
+  maintenance step.
+
+### Fixed
+
+- `DuckDBStore.open_matches` attached the matches view, failed on a missing
+  ratings file, and left a file-backed catalog holding half of what was asked
+  for — which the next open would have reported as success. Every source path
+  is checked before the catalog is touched.
+
 ## [0.3.0] — 2026-09-03
 
 Milestone 3: storage and validation. The canonical table becomes queryable

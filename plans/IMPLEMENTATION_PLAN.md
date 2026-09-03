@@ -266,16 +266,84 @@ would contradict this project's own standing rule against dead code:
 
 ---
 
-## Milestone 4 — Ratings (next)
+## Milestone 4 — Ratings ✅
+
+**Delivered.** Two ratings, and the machinery that proves neither can see the
+match it is rating.
+
+| Module | Responsibility |
+|---|---|
+| `ratings/base.py` | The `RatingModel` protocol, the ratings schema, the chronological guard. |
+| `ratings/elo.py` | One Elo pool per country, online, with home advantage, margin of victory, autocorrelation damping and season carry-over. |
+| `ratings/dixon_coles.py` | Bivariate Poisson with the low-score correction and time decay, refitted per competition on a rolling window. |
+| `validation/temporal.py` | Prefix invariance and outcome independence, generic over any derivation. |
+| `validation/ratings.py` | The arithmetic and coverage checks on the output. |
+| `pipelines/ratings.py` | Orchestration: build, probe, check, persist. |
+
+**Verified:** 498 unit tests, 100% coverage of `src`, ruff/black/mypy clean,
+plus 21 integration tests against the real table. The full build rates all
+305,499 matches in about ten minutes — Dixon-Coles pricing 92.1% and Elo all of
+them — with every causality probe holding and 9 of 9 checks passing, none
+skipped. Both probes were checked against planted leaks before being trusted.
+
+Full measurements are in `docs/RATINGS.md`. The rest of this section records
+the decisions that changed.
+
+### Causality is tested, not asserted
+
+Ratings are the first quantity here with memory, and therefore the first place
+a leak can hide. Reading the code for it does not scale — a rolling mean with
+an off-by-one window, a normalisation over the whole table, a rating updated
+before it is read: all look correct and all leak.
+
+Two probes, and the pair is the point. A derivation that reads its own row is
+*perfectly* prefix-invariant, because every value only ever depended on its own
+row, so truncation changes nothing; only the scoreline rewrite finds it. Both
+were verified against planted leaks of both kinds before being trusted.
+
+They run on every ratings build against a sample competition, and the build
+exits non-zero when one fails. The report says which competition — "verified"
+and "verified on ENG_1" are different claims.
+
+### Changed from the approved scope, with reasons
+
+- **Per-competition Elo fitting: built, measured, removed.** The plan called
+  for it. It made the ratings worse — 0.16300 against 0.16246 for fixed
+  constants — because a calibration window is the coldest part of the history
+  and three free parameters chase warm-up noise. A pooled fit was a wash. The
+  constants come from one pooled search over pre-2005 matches, and
+  `--fit-until` re-derives them when the data grows. Per-competition tuning may
+  still pay against a *three-class* objective, which Elo cannot express; that
+  belongs to Milestone 7, which owns the splits such a fit needs.
+- **Ratings live in `data/features/`, not beside the canonical table.** The
+  plan said "alongside". They are derived and rebuildable from `processed`,
+  which is the definition `PathsConfig.features_dir` already carries; putting
+  them in `processed` would have made the word meaningless.
+- **Milestone 6's leakage suite starts here.** `src/validation/temporal.py`
+  was scoped for Milestone 6. Writing it there would have meant Milestone 4
+  shipping two rating models with their central property unverified for two
+  milestones. It is generic, so Milestone 6 adds feature-specific checks rather
+  than a second suite.
+
+### One bug the tests found
+
+`DuckDBStore.open_matches` attached the matches view, then failed on a missing
+ratings file, and left a file-backed catalog holding half of what was asked for
+— which the next open would have reported as success. Every source path is now
+checked before the catalog is touched.
+
+---
+
+## Milestone 5 — Feature engineering (next)
 
 Scope, for approval:
 
-- `src/ratings/elo.py` — Elo with a home-advantage term and a margin-of-victory
-  multiplier, fitted per competition.
-- `src/ratings/dixon_coles.py` — the bivariate Poisson with the low-score
-  correction and time decay.
-- Strictly causal by construction: a rating for match *n* is computed from
-  matches 1..*n*-1 only, and the temporal-integrity check for that is written
-  in the same milestone rather than in Milestone 6.
-- Ratings persisted as a Parquet table alongside the canonical one, read
-  through the same store.
+- `src/feature_engineering/registry.py` — a feature declares its name, the
+  columns it reads, and which side of kick-off it draws from, so the
+  classification in `src/ingestion/base.py` is enforced rather than documented.
+- Rolling form, goal difference, rest days, fixture congestion, head-to-head —
+  each a lagged window over `POST_MATCH_COLUMNS`, which is the legitimate use
+  of them.
+- The feature table joins to matches and ratings on `match_id`, through the
+  store.
+- Every feature passes both temporal probes, in CI.

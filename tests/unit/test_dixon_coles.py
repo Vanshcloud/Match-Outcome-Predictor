@@ -256,9 +256,7 @@ def test_a_warm_start_lands_in_the_same_place() -> None:
 
 
 def test_rates_are_unavailable_for_an_unseen_team() -> None:
-    strengths = Strengths(
-        attack={"a": 0.1}, defence={"a": 0.0}, home_advantage=0.3, rho=-0.1, matches=200
-    )
+    strengths = Strengths(attack={"a": 0.1}, defence={"a": 0.0}, home_advantage=0.3, rho=-0.1)
     assert strengths.rates("a", "b") is None
     assert strengths.rates("a", "a") is not None
 

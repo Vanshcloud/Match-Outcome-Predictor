@@ -46,6 +46,11 @@ MATCHES_VIEW = "matches"
 a table name that varies by deployment is a table name that appears in a
 handwritten query somewhere and is wrong half the time."""
 
+RATINGS_VIEW = "ratings"
+"""The derived ratings table, when one has been built. Attached beside the
+matches rather than joined into them: they are rebuilt on a different cadence,
+and a consumer that wants both writes the join it needs."""
+
 IN_MEMORY = ":memory:"
 
 # SQL identifiers cannot be bound as parameters, so a view name reaches the
@@ -144,14 +149,45 @@ class DuckDBStore:
         logger.debug("attached %s -> %s", name, path)
 
     @classmethod
-    def open_matches(cls, path: Path, *, database: Path | str = IN_MEMORY) -> DuckDBStore:
-        """Open a store with ``path`` attached as :data:`MATCHES_VIEW`."""
+    def open_matches(
+        cls,
+        path: Path,
+        *,
+        ratings: Path | None = None,
+        database: Path | str = IN_MEMORY,
+    ) -> DuckDBStore:
+        """Open a store with ``path`` attached as :data:`MATCHES_VIEW`.
+
+        Args:
+            path: The canonical match table.
+            ratings: The ratings table, attached as :data:`RATINGS_VIEW` when
+                given. Optional because ratings are built separately and a
+                fresh checkout has none — a store that refused to open without
+                them would make the ingest untestable.
+            database: Catalog path, or in-memory.
+
+        Raises:
+            StorageError: If any source file is missing. Every path is checked
+                *before* the catalog is opened, so a failed call leaves nothing
+                behind. Checking as we went created the matches view, then
+                failed on the ratings, and left a file-backed catalog holding
+                half of what was asked for — which the next open would report
+                as success.
+        """
+        sources = [path] if ratings is None else [path, ratings]
+        for source in sources:
+            if not source.is_file():
+                raise StorageError(f"no such parquet file: {source}")
+
         store = cls(database)
         try:
             store.attach_parquet(MATCHES_VIEW, path)
-        except Exception:
-            # Otherwise a bad path leaks an open connection — and on a
-            # file-backed catalog, its lock.
+            if ratings is not None:
+                store.attach_parquet(RATINGS_VIEW, ratings)
+        except Exception:  # pragma: no cover - the paths are checked above
+            # Belt and braces: a leaked connection is a leaked lock on a
+            # file-backed catalog, and DuckDB can still refuse a view for
+            # reasons a path check cannot see.
             store.close()
             raise
         return store

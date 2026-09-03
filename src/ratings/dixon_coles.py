@@ -125,8 +125,6 @@ class Strengths:
     defence: dict[str, float]
     home_advantage: float
     rho: float
-    matches: int
-    """How many matches the window held. Carried so a thin fit is visible."""
 
     def rates(self, home: str, away: str) -> tuple[float, float] | None:
         """Expected goals for each side, or ``None`` if either team is unseen."""
@@ -305,7 +303,6 @@ def fit_window(
         defence={team: float(theta[count + position[team]]) for team in teams},
         home_advantage=float(theta[-2]),
         rho=float(theta[-1]),
-        matches=len(window),
     )
 
 

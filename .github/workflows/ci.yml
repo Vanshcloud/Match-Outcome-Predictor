@@ -193,12 +193,27 @@ jobs:
         # opened a path has to be rewritten. src/pipelines writes the file, so
         # it is the one package allowed to name the format.
         run: |
-          leaked=$(grep -rEln 'read_parquet' src \
+          leaked=$(grep -rEln 'read_parquet' src scripts \
                    | grep -v '^src/storage/' || true)
           if [ -n "$leaked" ]; then
             echo "the canonical table is read outside src/storage:"; echo "$leaked"; exit 1
           fi
           echo "canonical reads confined to src/storage"
+
+      - name: Ratings compute; they do not fetch, store or validate
+        # src/ratings sits between utils and the pipelines: it turns a frame
+        # into a frame. A rating model that reached for the store would be a
+        # model that could not be run on a slice, which is exactly what the
+        # causality probes do to it — they hand it truncated frames, and a
+        # model that went to disk for the rest would pass every probe while
+        # reading the future.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/ratings \
+                      | grep -vE 'src\.(ratings|utils)\.' || true)
+          if [ -n "$offenders" ]; then
+            echo "src/ratings depends on more than utils:"; echo "$offenders"; exit 1
+          fi
+          echo "src/ratings depends only on src.ratings and src.utils"
 
       - name: No network access from the unit suite
         # The suite must stay runnable offline. requests is only ever reached

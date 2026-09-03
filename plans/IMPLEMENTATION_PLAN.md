@@ -556,14 +556,89 @@ the rating and needs an ablation behind it.
 
 ---
 
-## Milestone 8 — Model zoo (next)
+## Milestone 8 — Model zoo ✅
+
+**Delivered.** Six families, and a result that is more interesting than the
+ranking.
+
+| Module | Responsibility |
+|---|---|
+| `models/dataset.py` | The thirty columns, derived from the two registries; the blocks the ablation withholds. |
+| `models/zoo.py` | Six families, one wrapper, a fresh estimator per fold. |
+| `models/tuning.py` | Optuna on matches strictly earlier than every reported fold. |
+| `models/tracking.py` | MLflow to local SQLite, failure-tolerant. |
+| `pipelines/train.py` | Training and ablation, both through the *unchanged* backtest. |
+| `scripts/train.py` | `make train` (8 min), `make ablation` (5 min), `--tune`. |
+
+**Verified:** 100% coverage of `src`, ruff/black/mypy clean, 880 unit tests and
+61 integration tests. Every CI invariant holds.
+
+Full measurements are in `docs/MODELS.md`.
+
+### The headline
+
+| 59,001 matches | log loss | RPS |
+|---|---:|---:|
+| Bookmaker closing odds | **0.9993** | **0.2031** |
+| CatBoost | **1.0159** | 0.2083 |
+| XGBoost / LightGBM / logistic regression | 1.0161–1.0162 | 0.2083 |
+| Random forest | 1.0172 | 0.2087 |
+| MLP | 1.0203 | 0.2091 |
+| Dixon-Coles | 1.0277 | 0.2114 |
+
+Every family beats the rating, in all 39 competitions. The best closes **0.0118
+of the 0.0284** gap Milestone 7 measured, leaving 0.0166.
+
+### Three findings for Milestone 9
+
+**The top four are within 0.0003 of each other.** Logistic regression on thirty
+columns is not distinguishable from three tuned gradient-boosting libraries.
+Milestone 7 established that what the bookmaker knows on top of a strength
+rating is not strength; this establishes that it is not a non-linear function
+of these thirty columns either. What is left is missing information, not
+missing capacity — which is a statement about where *not* to look next.
+
+**Form is worth more than either rating.** Withholding the fourteen form
+columns costs 0.0033; Elo costs 0.0021 and Dixon-Coles 0.0016, each alone,
+because the two ratings are substitutes. Rest days and congestion are worth
+0.0003 — the question Milestone 5 left open, now settled: they survive and are
+the first thing to trim. Head-to-head is worth 0.0001.
+
+**The zoo fixed the competition the rating could not price.** Dixon-Coles lost
+to counting base rates on the Argentine cup; LightGBM gets 1.0806 there against
+the prior's 1.0902, with no special case. Milestone 7 asked whether the cup
+needed a pooled Dixon-Coles fit. It needed a model around the rating instead,
+and that is one fewer change to a component two milestones downstream now
+depend on.
+
+### Changed from the approved scope
+
+- **Search budgets differ per family, and are stated rather than implied.**
+  Twenty trials for the two cheapest, three for the most expensive; a trial is
+  three fits over most of the history. Uniform budgets would have meant either
+  three trials each or several hours, and the evidence — four of six searches
+  moving the fourth decimal — did not justify the hours.
+- **The tree search spaces were narrowed once, after measurement.** LightGBM's
+  first version reached 255 leaves and 800 estimators, and one trial there took
+  longer than XGBoost's entire search, for a model nobody would ship on thirty
+  tabular columns. The module already claimed its spaces were "deliberately
+  narrow"; this made that true. Every reported search used the narrowed space.
+- **No ensemble was built, deliberately.** Averaging the top four is the
+  obvious next move and belongs in Milestone 9 with the calibration. Built
+  here, on four models within 0.0003 of each other and heavily correlated, it
+  would report a number that says more about the averaging than the models.
+
+---
+
+## Milestone 9 — Ensembling and calibration (next)
 
 Scope, for approval:
 
-- Logistic regression, random forest, XGBoost, LightGBM, CatBoost and an MLP
-  over the twenty features plus the ratings, scored on the folds this milestone
-  built and against the baselines it measured.
-- An ablation per feature group, which is where rest days earn their place or
-  are dropped, and where a cup-shaped fixture list earns Dixon-Coles a pooled
-  fit or a note saying not to use it there.
-- Optuna for tuning and MLflow for the runs, now that there are runs.
+- A calibration layer over the best single model, measured the way everything
+  else here is: reliability against the same folds, and log loss before and
+  after. A model whose probabilities are already proper may gain nothing, and
+  that is a reportable answer.
+- An ensemble of the families that are not substitutes for each other, chosen
+  on the correlation of their errors rather than on their individual scores.
+- Both scored by the unchanged backtest, against the same baselines, so the
+  0.0166 that remains is measured on the same matches throughout.

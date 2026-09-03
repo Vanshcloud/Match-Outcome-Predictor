@@ -251,13 +251,19 @@ jobs:
           echo "src/evaluation depends only on the schema and utils"
 
       - name: Splits and models take frames; they do not fetch or store
-        # A split is a function of a frame and a baseline is a function of two.
+        # A split is a function of a frame and a model is a function of two.
         # That is what lets the boundary probe hand them slices and get a
         # truthful answer — a model that went to disk for the rest of the
         # history would pass every fold check while training on the future.
+        #
+        # Milestone 8 added `feature_engineering.registry` to the permitted
+        # list. It is a schema module like `ingestion.base` and `ratings.base`:
+        # the design matrix is *derived* from the feature registry rather than
+        # written out again, so a feature added there is a column the zoo sees
+        # without anyone editing a second list.
         run: |
           offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/models \
-                      | grep -vE 'src\.(models|utils|evaluation|validation)\.|src\.(ingestion|ratings)\.base' || true)
+                      | grep -vE 'src\.(models|utils|evaluation|validation)\.|src\.(ingestion|ratings)\.base|src\.feature_engineering\.registry' || true)
           if [ -n "$offenders" ]; then
             echo "src/models reaches past the schema:"; echo "$offenders"; exit 1
           fi

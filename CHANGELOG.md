@@ -10,6 +10,117 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.8.0] — unreleased
+
+Milestone 8: the model zoo. Six families, and a result that is more interesting
+than the ranking.
+
+### Added
+
+- `src/models/zoo.py` — logistic regression, random forest, XGBoost, LightGBM,
+  CatBoost and an MLP, behind one wrapper. A trained model is a `Forecaster`
+  that fits inside its own `forecast(train, evaluate)`, so **the evaluation
+  pipeline from Milestone 7 is used unchanged** — nothing in
+  `src/pipelines/backtest.py` knows an estimator exists, which is the only
+  reason a model and a baseline can be put in one table.
+- `src/models/dataset.py` — the thirty columns a model sees, **derived** from
+  the feature and ratings registries rather than listed again. A feature added
+  in Milestone 5 is a column the zoo sees without anyone editing a second list.
+  Nothing canonical passes through directly: the scoreline and the odds are
+  both excluded by a set intersection in the test suite, not by a rule someone
+  has to remember.
+- `src/models/tuning.py` — Optuna over a **tuning slice**: every match strictly
+  earlier than the first reported fold, 241,481 of them ending 2021-09-02.
+  Choosing settings by looking at the folds they are then scored on is the same
+  mistake as fitting a rating on the matches it prices, and this project has
+  already built and removed one thing for it.
+- `src/models/tracking.py` — MLflow to a local SQLite file under `models/`. A
+  tracking failure is logged and swallowed: the real output of a training run
+  is the score table, and a command that failed because a log could not be
+  written would be failing for an unrelated reason.
+- `src/pipelines/train.py`, `scripts/train.py`, `make train` (~8 minutes) and
+  `make ablation` (~5 minutes), plus **[docs/MODELS.md](docs/MODELS.md)**.
+- `DuckDBStore.read_features()` and a `features=` view, matching the ratings.
+- A CI note extending the `src/models` invariant to `feature_engineering.registry`,
+  which is a schema module on the same terms as `ingestion.base`.
+
+### Measured
+
+Five yearly folds, 62,036 evaluation matches, scored on the 59,001 every
+forecaster could price:
+
+| | log loss | RPS | accuracy |
+|---|---:|---:|---:|
+| Bookmaker closing odds | **0.9993** | **0.2031** | 50.6% |
+| CatBoost | **1.0159** | 0.2083 | 49.3% |
+| XGBoost | 1.0161 | 0.2084 | 49.3% |
+| LightGBM | 1.0161 | 0.2083 | 49.3% |
+| Logistic regression | 1.0162 | 0.2083 | 49.3% |
+| Random forest | 1.0172 | 0.2087 | 49.2% |
+| MLP | 1.0203 | 0.2091 | 49.1% |
+| Dixon-Coles | 1.0277 | 0.2114 | 48.5% |
+| Class prior | 1.0751 | 0.2284 | 43.7% |
+
+**Every family beats the rating, in all 39 competitions.** The best closes
+0.0118 of the 0.0284 Milestone 7 measured against the closing line — 42% — and
+leaves 0.0166.
+
+**The top four are within 0.0003 of each other.** Logistic regression on thirty
+columns is not distinguishable from three tuned gradient-boosting libraries.
+Milestone 7 found that what the bookmaker knows on top of a strength rating is
+not strength; this adds that it is not a non-linear function of these thirty
+columns either. What remains is missing information, not missing capacity — and
+that is a finding about where Milestone 9 should not look.
+
+The ablation, LightGBM with each block withheld, all variants in one backtest:
+
+| Block withheld | Δ log loss |
+|---|---:|
+| `form` | **+0.0033** |
+| `elo` | +0.0021 |
+| `dixon_coles` | +0.0016 |
+| `schedule` | +0.0003 |
+| `head_to_head` | +0.0001 |
+
+**Form is worth more than either rating** — fourteen rolling windows against a
+bivariate Poisson refitted every sixty days. The two ratings are substitutes,
+so each looks small alone. **Rest days and congestion are worth 0.0003**, which
+settles the question Milestone 5 left open when it shipped them: they survive,
+and they are the first thing to go if the feature set needs trimming.
+**Head-to-head is worth 0.0001**, which is nothing.
+
+**The zoo fixes the competition the rating could not price.** Dixon-Coles lost
+to counting base rates on the Argentine cup, 1.1329 against 1.0902 — the one
+competition of 39 where that happened. LightGBM gets 1.0806 there, without a
+special case or a per-competition rule. Milestone 7 asked whether the cup
+needed a pooled Dixon-Coles fit; the answer is that it needed a model around
+the rating, not a change to it.
+
+Tuning bought little. Four of the six searches moved the fourth decimal place,
+and twenty trials could not beat `C=1.0` for logistic regression at all — with
+241,000 rows and thirty columns the penalty is irrelevant. The two that did
+move were bad starting guesses rather than subtle optima: LightGBM's defaults
+were too coarse (+0.0028), and the MLP's were wrong (+0.0144 for one hidden
+layer instead of two), which is a fair measure of how wrong an untested guess
+at an architecture can be — and it is still the worst family afterwards.
+
+### Changed
+
+- **MLflow writes to SQLite, not to its own directory store.** The file store
+  is in maintenance mode in MLflow 3.x and raises on write unless an
+  environment variable opts out of the warning. The experiment's artefact root
+  is also set explicitly, because the default is `./mlruns` relative to the
+  working directory — which the clean-checkout gate would then fail on.
+- **The tree search spaces were narrowed once, after measurement.** LightGBM's
+  first version reached 255 leaves and 800 estimators, and one trial in that
+  corner took longer than the entire XGBoost search, for a model nobody would
+  ship on thirty tabular columns. Every reported search used the narrowed space.
+- **The seed fixes the model, not the last bits.** Every family fits on all
+  cores and a parallel sum reorders floating-point addition, so two runs of the
+  forest agree to about 1e-9 rather than bit for bit. Single-threading would
+  buy exact reproducibility for roughly four times the runtime, and the
+  smallest difference read off an ablation here is 1e-4.
+
 ## [0.7.0] — unreleased
 
 Milestone 7: splits and baselines. The first milestone that produces a number

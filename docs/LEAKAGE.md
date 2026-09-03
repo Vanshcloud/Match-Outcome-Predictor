@@ -38,6 +38,29 @@ And two blocks that are deliberately withheld:
   distinction is temporal, not columnar, so it cannot be enforced by leaving
   data out — it is enforced by the probes below.
 
+### What the model layer actually receives
+
+Milestone 8 turned "the model layer" from a plan into thirty columns. They are
+the twenty features and the ten ratings above, and the list is *derived* from
+the two registries rather than written out again — `src/models/dataset.py`
+reads `FEATURES`, `ELO_COLUMNS` and `DIXON_COLES_COLUMNS`, so a feature added
+in Milestone 5 is a column the zoo sees without anyone editing a second list,
+and a column that stops existing stops being requested.
+
+Nothing canonical is passed through directly. Not the scoreline, and not the
+odds: `test_no_post_match_column_reaches_a_model` and
+`test_the_bookmakers_price_is_not_a_feature` are set intersections against
+`POST_MATCH_COLUMNS` and `BENCHMARK_COLUMNS`, so a leak of that kind is a
+failing test rather than a review someone has to remember to do.
+
+A trained model gets one further guarantee that a derived column does not: it
+is fitted inside `forecast(train, evaluate)`, on the training half the split
+layer hands it. It cannot reach a match it was not given, which is why the
+probes below are not run over the zoo — there is no derivation to recompute,
+only a fit whose inputs the fold boundary already decided. What *is* checked,
+per family, is that rewriting the evaluation half's results does not move its
+forecast.
+
 ---
 
 ## The four probes

@@ -51,6 +51,11 @@ RATINGS_VIEW = "ratings"
 matches rather than joined into them: they are rebuilt on a different cadence,
 and a consumer that wants both writes the join it needs."""
 
+FEATURES_VIEW = "features"
+"""The derived feature table, on the same terms as the ratings. Separate from
+them because the two are rebuilt on different cadences again — the feature set
+churns through the modelling milestones and the ratings do not."""
+
 IN_MEMORY = ":memory:"
 
 # SQL identifiers cannot be bound as parameters, so a view name reaches the
@@ -154,6 +159,7 @@ class DuckDBStore:
         path: Path,
         *,
         ratings: Path | None = None,
+        features: Path | None = None,
         database: Path | str = IN_MEMORY,
     ) -> DuckDBStore:
         """Open a store with ``path`` attached as :data:`MATCHES_VIEW`.
@@ -164,6 +170,8 @@ class DuckDBStore:
                 given. Optional because ratings are built separately and a
                 fresh checkout has none — a store that refused to open without
                 them would make the ingest untestable.
+            features: The feature table, on the same terms, as
+                :data:`FEATURES_VIEW`.
             database: Catalog path, or in-memory.
 
         Raises:
@@ -174,16 +182,17 @@ class DuckDBStore:
                 half of what was asked for — which the next open would report
                 as success.
         """
-        sources = [path] if ratings is None else [path, ratings]
-        for source in sources:
+        attachments = [(MATCHES_VIEW, path)]
+        attachments += [(RATINGS_VIEW, ratings)] if ratings is not None else []
+        attachments += [(FEATURES_VIEW, features)] if features is not None else []
+        for _, source in attachments:
             if not source.is_file():
                 raise StorageError(f"no such parquet file: {source}")
 
         store = cls(database)
         try:
-            store.attach_parquet(MATCHES_VIEW, path)
-            if ratings is not None:
-                store.attach_parquet(RATINGS_VIEW, ratings)
+            for view, source in attachments:
+                store.attach_parquet(view, source)
         except Exception:  # pragma: no cover - the paths are checked above
             # Belt and braces: a leaked connection is a leaked lock on a
             # file-backed catalog, and DuckDB can still refuse a view for
@@ -276,25 +285,33 @@ class DuckDBStore:
         frame = self.query(sql, params)
         return frame.astype({column: CANONICAL_SCHEMA[column] for column in selected})
 
-    def read_ratings(self) -> pd.DataFrame:
-        """Return the ratings table, keyed by ``match_id``.
+    def _read_derived(self, view: str, builder: str) -> pd.DataFrame:
+        """A derived table, whole, keyed by ``match_id``.
 
-        Unfiltered, and deliberately so: the ratings are one narrow row per
-        match and the caller joins them to whatever slice of the canonical
-        table it already holds. A second filter API here would be a second
-        place for a point-in-time read to be subtly different.
+        Unfiltered, and deliberately so: these are narrow rows and the caller
+        joins them to whatever slice of the canonical table it already holds. A
+        second filter API here would be a second place for a point-in-time read
+        to be subtly different.
 
         Raises:
-            StorageError: If no ratings view is attached. That is the
-                clean-checkout case, and the message has to say which file is
-                missing rather than report an unknown table.
+            StorageError: If the view is not attached. That is the
+                clean-checkout case, and the message has to name the command
+                that produces the file rather than report an unknown table.
         """
-        if RATINGS_VIEW not in self.views():
+        if view not in self.views():
             raise StorageError(
-                f"no {RATINGS_VIEW} view attached; open the store with "
-                "`ratings=` or run scripts/build_ratings.py first"
+                f"no {view} view attached; open the store with `{view}=` "
+                f"or run scripts/{builder} first"
             )
-        return self.query(f"SELECT * FROM {RATINGS_VIEW}")
+        return self.query(f"SELECT * FROM {view}")
+
+    def read_ratings(self) -> pd.DataFrame:
+        """The Elo and Dixon-Coles columns, one row per rated match."""
+        return self._read_derived(RATINGS_VIEW, "build_ratings.py")
+
+    def read_features(self) -> pd.DataFrame:
+        """The twenty feature columns, one row per match."""
+        return self._read_derived(FEATURES_VIEW, "build_features.py")
 
     def _resolve_columns(self, columns: Sequence[str] | None) -> tuple[str, ...]:
         """Validate a projection, preserving canonical order.

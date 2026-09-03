@@ -51,12 +51,33 @@ duckdb>=1.1
 # not used at all — the chosen provider serves static files.
 requests>=2.32
 
+# ---- Modelling ----
+# Milestone 8. Six families were asked for and six are installed; what each is
+# worth is measured in docs/MODELS.md rather than assumed here.
+#
+# scikit-learn covers three of them and, just as importantly, the imputer and
+# scaler the other three do not need — so the choice to leave a null alone is
+# made per family, in the open.
+scikit-learn>=1.5
+# The three boosted libraries. On macOS these need `brew install libomp`; the
+# wheels link against it and fail at import without it, with a message about a
+# missing dylib that says nothing about OpenMP.
+xgboost>=2.1
+lightgbm>=4.5
+catboost>=1.2
+# Hyperparameter search. Used on a slice of history that ends before the first
+# reported fold, which is the only arrangement in which a tuned number means
+# anything — see src/models/tuning.py.
+optuna>=4.0
+# Run tracking, to a local SQLite file under models/. Not a server: MLflow's
+# own directory-based store is in maintenance mode and refuses writes in 3.x,
+# and a tracking server is infrastructure this project does not want.
+mlflow>=3.0
+
 # ---- Added in later milestones (recorded so the order is deliberate) --------
 # M11 serving storage .... psycopg[binary], SQLAlchemy  (PostgreSQL arrives with
 #                         the first prediction to serve, not before — see the
 #                         Milestone 3 note in plans/IMPLEMENTATION_PLAN.md)
-# M7  splits/baselines ... scikit-learn
-# M8  model zoo .......... xgboost, lightgbm, catboost, optuna, mlflow
 # M10 explainability ..... shap, matplotlib
 # M11 api ................ fastapi, uvicorn[standard]
 # M12 dashboard .......... streamlit, plotly

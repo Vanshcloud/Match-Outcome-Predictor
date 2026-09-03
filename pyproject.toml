@@ -81,6 +81,15 @@ strict_equality = true
 # Real stubs are preferred over an override wherever they exist: a stub
 # type-checks the call, an override only silences it. See requirements-lint.txt.
 
+# Milestone 8. scikit-learn and CatBoost ship no `py.typed` marker and have no
+# maintained stub distribution, so there is nothing to prefer over this.
+# XGBoost, LightGBM, Optuna and MLflow all ship their own types and are
+# deliberately absent from this list — an override for a package that does not
+# need one is an override that hides a real error later.
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "catboost.*"]
+ignore_missing_imports = true
+
 # ---- pytest ----
 [tool.pytest.ini_options]
 testpaths = ["tests"]

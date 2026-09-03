@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 7 of 14 — splits and baselines.**
+> **Status: Milestone 8 of 14 — the model zoo.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings now run over it, and the
@@ -229,6 +229,49 @@ the target for Milestone 8.
 per-competition breakdown, and the one competition where Dixon-Coles loses to
 counting base rates.
 
+## The model zoo
+
+Six families over thirty columns — the twenty features and the ten rating
+columns — scored by the *same* backtest the baselines are, on the same folds
+and the same two subsets. A trained model is a forecaster that fits inside its
+own `forecast(train, evaluate)`, so nothing in the evaluation layer knows an
+estimator exists, and a model and a baseline can be put in one table.
+
+| 59,001 matches every forecaster could price | log loss | RPS | accuracy |
+|---|---:|---:|---:|
+| Bookmaker closing odds | **0.9993** | **0.2031** | 50.6% |
+| CatBoost | **1.0159** | 0.2083 | 49.3% |
+| XGBoost / LightGBM / logistic regression | 1.0161–1.0162 | 0.2083 | 49.3% |
+| Random forest | 1.0172 | 0.2087 | 49.2% |
+| MLP | 1.0203 | 0.2091 | 49.1% |
+| Dixon-Coles | 1.0277 | 0.2114 | 48.5% |
+| Class prior | 1.0751 | 0.2284 | 43.7% |
+
+Three findings worth stating plainly.
+
+**The top four are within 0.0003.** Logistic regression on thirty columns is
+not distinguishable from three tuned gradient-boosting libraries. Milestone 7
+found that what the bookmaker knows on top of a strength rating is not
+strength; this adds that it is not a non-linear function of these thirty
+columns either. What is left is missing information, not missing capacity.
+
+**Form is worth more than either rating.** Withholding the fourteen form
+columns costs 0.0033 of log loss; withholding Elo costs 0.0021 and Dixon-Coles
+0.0016. Rest days and congestion are worth 0.0003 — Milestone 5 shipped them
+saying the ablation would settle it, and it has. Head-to-head is worth 0.0001.
+
+**The zoo fixes the competition the rating could not price.** Dixon-Coles lost
+to counting base rates on the Argentine cup, 1.1329 to 1.0902. LightGBM gets
+1.0806 there — without a special case, a per-competition rule, or anyone
+telling it which competition was awkward.
+
+Tuning bought very little: four of the six searches moved the fourth decimal
+place, and twenty trials could not beat `C=1.0` for logistic regression at all.
+Every search ran on matches strictly earlier than the first reported fold.
+
+**[docs/MODELS.md](docs/MODELS.md)** has the search budgets, the full ablation,
+and what is deliberately not in this milestone.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -294,10 +337,14 @@ src/
     dixon_coles.py    bivariate Poisson, refitted per competition
   validation/temporal.py  four probes: prefix, outcome, split, reads   ✅
   validation/leakage.py   every producer, found rather than listed [Milestone 6] ✅
-  models/           splits and baselines; the zoo next    [Milestone 7] ✅
+  models/           splits, baselines, and the zoo         [Milestone 7-8] ✅
     splits.py         walk-forward folds, cut on the date, probed
     baselines.py      home-always, class prior, Dixon-Coles, the closing line
-    (zoo, tuning, calibration)                          [Milestones 8-9]
+    dataset.py        the thirty columns, derived from the two registries
+    zoo.py            six families, one wrapper, a fresh fit per fold
+    tuning.py         Optuna, on matches earlier than every reported fold
+    tracking.py       MLflow to a local SQLite file, failure-tolerant
+    (calibration)                                       [Milestone 9]
   evaluation/       log loss, RPS, accuracy                [Milestone 7] ✅
     metrics.py        two proper scoring rules and one improper one
     (backtests, model cards)                            [Milestone 10]
@@ -323,6 +370,8 @@ make ratings   # build Elo + Dixon-Coles (~10 min); make ratings-elo is seconds
 make features  # build the 20-feature table (~10 seconds)
 make audit     # probe every producer, trace every column (~3 min)
 make backtest  # score every baseline over walk-forward folds (~5 seconds)
+make train     # fit the six model families over the folds (~8 minutes)
+make ablation  # what each feature block is worth (~5 minutes)
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -364,7 +413,7 @@ imports is a supply-chain surface with no upside.
 | 5 | Feature engineering — registry, causal windows, 20 features | ✅ |
 | 6 | Leakage suite — every producer found and probed, every column traced | ✅ |
 | 7 | Splits and baselines — walk-forward CV, RPS/log loss | ✅ |
-| 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | |
+| 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | ✅ |
 | 9 | Ensembling and calibration | |
 | 10 | Evaluation and explainability — backtests, SHAP, model cards | |
 | 11 | API — FastAPI, PostgreSQL for served predictions | |

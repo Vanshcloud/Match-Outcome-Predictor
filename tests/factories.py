@@ -19,11 +19,13 @@ and several tests need one at module scope where a fixture cannot reach.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import pandas as pd
 
+from src.feature_engineering.registry import FEATURES
 from src.ingestion.base import CANONICAL_SCHEMA
 from src.ingestion.registry import Competition, Feed, Registry
 
@@ -170,3 +172,86 @@ def league_registry(
             ),
         )
     )
+
+
+def _strengths(identifiers: pd.Series) -> pd.Series:
+    """A stable number in [0, 1) per team id."""
+    return pd.Series(
+        [
+            int(hashlib.blake2s(str(one).encode(), digest_size=4).hexdigest(), 16) % 1000 / 1000
+            for one in identifiers
+        ],
+        dtype=float,
+    )
+
+
+def modelled_frame(
+    *,
+    seasons: Sequence[str] | None = None,
+    teams: int = 20,
+    competition_id: str = "ENG_1",
+    team_prefix: str = "Team",
+    signal: float = 0.6,
+) -> pd.DataFrame:
+    """A league with the thirty model columns attached, and a result that follows one.
+
+    The zoo needs a table carrying features and ratings, and it needs those
+    columns to *mean* something: a model fitted on constants produces a class
+    prior, and a test asserting it beats the prior would then be asserting
+    nothing. So `elo_expected_home` is real — it decides the result for
+    ``signal`` of the matches — and every other column is derived from it or
+    from the fixture list.
+
+    Deliberately not the real builders. Running Dixon-Coles over a synthetic
+    league to test a model wrapper would make every test in the zoo depend on
+    the rating's fitting time; `tests/integration/` is where the real tables
+    are used.
+    """
+    frame = league_frame(
+        seasons=seasons, teams=teams, competition_id=competition_id, team_prefix=team_prefix
+    )
+    count = len(frame)
+
+    # A fixed strength per club, so the expectation varies by fixture and is
+    # reproducible without a seed to remember. Digested rather than hashed:
+    # Python randomises string hashing per process, so `hash()` here would give
+    # a different league every run and an ablation that passed four times out
+    # of five.
+    strength = _strengths(frame["home_team_id"])
+    opponent = _strengths(frame["away_team_id"])
+    expected = (0.5 + (strength - opponent) / 2).clip(0.05, 0.95)
+
+    decided = (pd.Series(range(count)) % 100) < (signal * 100)
+    result = frame["result"].copy()
+    result[decided] = expected[decided].map(lambda value: "H" if value > 0.5 else "A")
+    goals = result.map({"H": (2, 1), "D": (1, 1), "A": (0, 1)})
+
+    attached = frame.assign(
+        result=result.to_numpy(),
+        home_goals=[pair[0] for pair in goals],
+        away_goals=[pair[1] for pair in goals],
+        elo_home=1500 + (strength - 0.5).to_numpy() * 400,
+        elo_away=1500 + (opponent - 0.5).to_numpy() * 400,
+        elo_expected_home=expected.to_numpy(),
+        elo_home_played=50,
+        elo_away_played=50,
+        # The Dixon-Coles block is deliberately uninformative — a constant
+        # league-average forecast. Only the Elo block carries the signal, which
+        # is what lets an ablation test assert a direction: withhold the block
+        # the outcome was built from and the model must get worse, withhold any
+        # other and it must not. A factory that spread the same signal across
+        # every block would make every delta zero and every such test vacuous.
+        dc_home_lambda=1.4,
+        dc_away_lambda=1.1,
+        dc_prob_home=0.45,
+        dc_prob_draw=0.27,
+        dc_prob_away=0.28,
+    )
+    for feature in FEATURES:
+        if feature.name in attached:
+            continue
+        # Varying but unrelated to the outcome, for the same reason.
+        rotating = pd.Series(range(count)) % (7 + len(feature.name) % 5)
+        scaled = rotating if feature.dtype.startswith("Int") else rotating / 4
+        attached[feature.name] = scaled.to_numpy()
+    return attached.astype({feature.name: feature.dtype for feature in FEATURES})

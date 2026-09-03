@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit backtest validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit backtest train ablation validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -26,7 +26,7 @@ setup: ## Create the venv, install dev dependencies, install git hooks
 	$(BIN)/pip install -r requirements-dev.txt
 	$(MAKE) hooks
 	@echo "Setup complete."
-	@echo "Note: from Milestone 8, lightgbm and xgboost also need: brew install libomp"
+	@echo "Note: on macOS, lightgbm/xgboost/catboost need: brew install libomp"
 
 hooks: ## Point git at the version-controlled hooks directory
 	git config core.hooksPath scripts/hooks
@@ -64,6 +64,12 @@ feature-list: ## List the feature registry and which side of kick-off each reads
 
 backtest: ## Score every baseline over walk-forward folds (~5 seconds)
 	$(BIN)/python scripts/backtest.py
+
+train: ## Fit the six model families over the walk-forward folds (~10 min)
+	$(BIN)/python scripts/train.py
+
+ablation: ## Score the best model with each feature block withheld (~10 min)
+	$(BIN)/python scripts/train.py --ablate lightgbm
 
 audit: ## Probe every producer and trace every derived column (~3 min; prints the table in docs/LEAKAGE.md)
 	$(BIN)/python scripts/audit_columns.py --competition ENG_1 --competition ESP_1 --markdown

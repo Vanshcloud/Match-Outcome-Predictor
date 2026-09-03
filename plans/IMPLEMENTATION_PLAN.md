@@ -334,16 +334,85 @@ checked before the catalog is touched.
 
 ---
 
-## Milestone 5 — Feature engineering (next)
+## Milestone 5 — Feature engineering ✅
+
+**Delivered.** Twenty features, and three mechanisms that keep them causal
+without relying on anyone reading the code correctly.
+
+| Module | Responsibility |
+|---|---|
+| `feature_engineering/windows.py` | The causal primitive: every window ends at the last row *strictly earlier by date*. |
+| `feature_engineering/registry.py` | What each feature reads, and therefore whether it can leak at all. |
+| `feature_engineering/team_history.py` | Form, venue form, rest, congestion. |
+| `feature_engineering/head_to_head.py` | Prior meetings, from the home side's end. |
+| `validation/features.py` | 10 checks, including a table-level leakage gate. |
+| `pipelines/derived.py` | The shape both derived-table pipelines share. |
+| `pipelines/features.py` | Orchestration. |
+
+**Verified:** 100% coverage of `src`, ruff/black/mypy clean, and 31 integration
+tests against the real table. A full build is ten seconds; every probe holds.
+
+Full measurements are in `docs/FEATURES.md`.
+
+### The window cuts on the date, not the row
+
+`shift(1).rolling(k)` is the obvious implementation and it is subtly wrong:
+`shift` counts rows, so two matches on the same date let the earlier one —
+earlier only by an arbitrary tiebreak in the sort — inform the later. Every
+window here ends at the last row strictly earlier *by date*, which also makes
+the builders survive the probes, since a truncation that removes a same-day
+sibling then changes nothing.
+
+Asking whether that mattered is what found the mislabelled-division bug: the
+answer was 2,444 team-days, and all of them were the same fixture published
+twice.
+
+### Four defences, not one
+
+1. The window cuts on date.
+2. The registry derives `can_leak` from the declared `reads`, so there is no
+   field to set wrongly. Seven of the twenty features read nothing but the
+   fixture list and cannot leak whatever they do with it.
+3. The probes recompute each builder over truncated and rewritten inputs, on
+   every build, with a non-zero exit.
+4. A table-level check: every window feature has a companion count, and a value
+   where the count is zero came from somewhere it should not have. This one
+   runs over every row written, not just the sampled competition the probes
+   see.
+
+### What the features are worth
+
+Home win rate moves from 31.7% to 61.1% across the form-gap range, and the draw
+rate peaks between evenly matched sides — which football says should happen and
+the feature was not built to produce. Venue form is worth ±0.275 points per
+game, symmetric to three decimal places between the two sides, which is the
+check that the reshape is not confusing them.
+
+**Rest days carry no marginal signal at all**: two points of spread and not even
+monotone. Kept for the interaction rather than the marginal, and Milestone 8's
+ablation is where it earns its place or is dropped.
+
+### Changed from the approved scope
+
+- **`src/pipelines/derived.py` was extracted.** The ratings and feature
+  pipelines had the same shape — run producers, probe, check, persist, report —
+  and written twice the two would drift, with the drifting half always being
+  the probe nobody looked at again. The ratings pipeline was refactored onto it
+  in the same change, with its tests unchanged.
+- **Milestone 6 is now smaller.** Its temporal suite was written in Milestone 4
+  and is exercised by every builder here, so what remains is extending it to
+  whatever Milestone 7 derives, not building it.
+
+---
+
+## Milestone 6 — Leakage suite (next)
 
 Scope, for approval:
 
-- `src/feature_engineering/registry.py` — a feature declares its name, the
-  columns it reads, and which side of kick-off it draws from, so the
-  classification in `src/ingestion/base.py` is enforced rather than documented.
-- Rolling form, goal difference, rest days, fixture congestion, head-to-head —
-  each a lagged window over `POST_MATCH_COLUMNS`, which is the legitimate use
-  of them.
-- The feature table joins to matches and ratings on `match_id`, through the
-  store.
-- Every feature passes both temporal probes, in CI.
+- Extend `src/validation/temporal.py` to run over *every* registered producer
+  as a CI step rather than only inside each pipeline, so a new builder cannot
+  be added without being probed.
+- A third probe for the split boundary: no training row may be dated after any
+  evaluation row.
+- A written audit of every column the model layer will see, tracing each back
+  to the canonical columns it reads.

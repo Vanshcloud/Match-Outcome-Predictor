@@ -12,6 +12,66 @@ extra steps.
 
 ## [0.5.0] — unreleased
 
+Milestone 5: feature engineering. Twenty features, and the correctness bug that
+building them uncovered.
+
+### Added
+
+- `src/feature_engineering/` — 20 features in three groups. Form, venue form,
+  goals and shots for and against, rest days, fortnight congestion, and
+  head-to-head record.
+- `windows.py`, the causal primitive: every window ends at the last row
+  **strictly earlier by date**. `shift(1).rolling(k)` counts rows, so two
+  matches on the same date let the earlier one — earlier only by an arbitrary
+  tiebreak — inform the later.
+- `registry.py`, where each feature declares the canonical columns it reads.
+  Whether it *can* leak is derived from that rather than declared separately,
+  so there is no field to set wrongly. Seven of the twenty read nothing but the
+  fixture list.
+- `src/validation/features.py` — 10 checks, including a table-level leakage
+  gate: every window feature has a companion count, and a value where the count
+  is zero came from somewhere it should not have. It runs over every row
+  written, where the probes see one sampled competition.
+- `src/pipelines/features.py`, `scripts/build_features.py`, `make features`
+  (~10 seconds) and `make feature-list`.
+- A CI invariant: `src/feature_engineering` may import the canonical schema and
+  `src/utils`, nothing else. A builder that reached for the store could pass
+  every probe while reading the future, because the probes work by handing it
+  truncated frames.
+
+### Changed
+
+- **`src/pipelines/derived.py` extracted.** The ratings and feature pipelines
+  had the same shape — run producers, probe, check, persist, report — and
+  written twice the two would drift, with the drifting half always being the
+  probe nobody looked at again. The ratings pipeline moved onto it with its
+  tests unchanged.
+- Feature checks are scoped to what a build claims to have produced, so
+  `--builder head_to_head` is not reported as twelve null columns. A warning
+  that fires on a legitimate command is one people learn to ignore.
+
+### Measured
+
+Home win rate by the gap between the two sides' five-match form:
+
+| Form gap | Matches | Home | Draw | Away |
+|---|---:|---:|---:|---:|
+| below −1.2 | 38,186 | 31.7% | 27.2% | 41.1% |
+| −0.2 to 0.2 | 61,169 | 45.1% | 27.5% | 27.3% |
+| above 1.2 | 26,201 | 61.1% | 22.2% | 16.7% |
+
+A thirty-point spread from one feature — and the draw rate peaks between evenly
+matched sides and falls at both extremes, which football says should happen and
+the feature was not built to produce.
+
+Venue form is worth ±0.275 points per game, symmetric between the two sides to
+three decimals: a home team takes 1.618 at home against 1.343 overall, an away
+team 1.119 away against 1.392.
+
+**Rest days carry no marginal signal**: 43.7% to 45.6% home wins across the
+range, and not even monotone. Kept for the interaction rather than the
+marginal; Milestone 8's ablation is where it earns its place or is dropped.
+
 ### Fixed
 
 - **Five of the provider's early files are copies of `SP1.csv` served under

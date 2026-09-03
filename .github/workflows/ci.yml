@@ -215,6 +215,21 @@ jobs:
           fi
           echo "src/ratings depends only on src.ratings and src.utils"
 
+      - name: Features read the schema; they do not fetch, rate or store
+        # src/feature_engineering turns a frame into a frame. It is allowed the
+        # canonical schema — that is what a feature reads — and nothing else.
+        # A builder that reached for the store or the ratings would be one the
+        # causality probes could not test, because they work by handing it
+        # truncated frames and a builder that went elsewhere for the rest would
+        # pass every probe while reading the future.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/feature_engineering \
+                      | grep -vE 'src\.(feature_engineering|utils)\.|src\.ingestion\.base' || true)
+          if [ -n "$offenders" ]; then
+            echo "src/feature_engineering reaches past the schema:"; echo "$offenders"; exit 1
+          fi
+          echo "src/feature_engineering depends only on the schema and utils"
+
       - name: No network access from the unit suite
         # The suite must stay runnable offline. requests is only ever reached
         # through src/utils/http, and unit tests inject a stubbed session.

@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -55,6 +55,12 @@ ratings: ## Build the ratings table (~20 min; Dixon-Coles refits per competition
 
 ratings-elo: ## Build Elo only (~2 seconds), for a quick check
 	$(BIN)/python scripts/build_ratings.py --model elo
+
+features: ## Build the feature table (~10 seconds)
+	$(BIN)/python scripts/build_features.py
+
+feature-list: ## List the feature registry and which side of kick-off each reads
+	$(BIN)/python scripts/build_features.py --list
 
 validate: ## Run the data checks and regenerate docs/DATASET_CARD.md
 	$(BIN)/python scripts/validate_data.py

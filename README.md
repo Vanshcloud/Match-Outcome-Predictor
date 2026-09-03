@@ -8,13 +8,14 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 4 of 14 — ratings.**
+> **Status: Milestone 5 of 14 — feature engineering.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
-> **23 validation rules** on every ingest. Two ratings now run over it, and the
+> **24 validation rules** on every ingest. Two ratings now run over it, and the
 > stronger one — Dixon-Coles — already reaches **0.9774 log loss** on the
 > Premier League against **0.9619** for the bookmaker's closing line, on the
-> same 8,818 matches. Features and the model zoo are next.
+> same 8,818 matches. **Twenty features** join them, every one proved causal by
+> recomputation rather than by review. Splits and the model zoo are next.
 
 ---
 
@@ -139,6 +140,31 @@ The per-competition Elo fitting the plan called for was built, measured and
 removed for making the ratings worse. **[docs/RATINGS.md](docs/RATINGS.md)** has
 every number, including the ones that did not work.
 
+## Features
+
+Twenty columns — form, venue form, rest, congestion, head-to-head — each a
+window over what happened before the match. Three mechanisms keep them honest,
+and none of them relies on anyone reading the code correctly:
+
+1. **Windows cut on the date, not the row.** `shift(1).rolling(k)` lets two
+   matches on the same date inform each other, ordered only by an arbitrary
+   tiebreak. Every window here ends at the last row strictly earlier *by date*.
+2. **The registry says which features have anything to prove.** Each declares
+   the columns it reads; whether it can leak follows from that rather than from
+   a field somebody might set wrongly. Seven of the twenty read nothing but who
+   is playing and when.
+3. **The probes recompute it** — truncate the history, rewrite a scoreline —
+   on every build, and the build exits non-zero if either fails.
+
+They carry real signal. Home win rate moves from **31.7% to 61.1%** across the
+form-gap range, and the draw rate peaks between evenly matched sides and falls
+at both extremes, which is what football says should happen and is not
+something the feature was built to produce. Rest days, honestly, carry none at
+all — two points of spread and not even monotone. It is kept for the
+interaction and will earn its place in Milestone 8's ablation or be dropped.
+
+**[docs/FEATURES.md](docs/FEATURES.md)** has every number, including that one.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -189,16 +215,20 @@ src/
   storage/          DuckDB views over Parquet             [Milestone 3] ✅
     base.py           the MatchStore protocol
     duckdb_store.py   the analytical store; point-in-time reads
-  validation/       23 data-quality checks as a report    [Milestone 3] ✅
+  validation/       24 + 9 + 10 checks, as one report      [Milestone 3] ✅
     report.py         Check, three outcomes, two severities
     matches.py        the suite: schema, integrity, referential, distribution
     card.py           the generated dataset card
+  feature_engineering/  windows over the past             [Milestone 5] ✅
+    windows.py        the causal primitive: cut on date, not on row
+    registry.py       what each feature reads, and so what it must prove
+    team_history.py   form, venue form, rest, congestion
+    head_to_head.py   prior meetings
   ratings/          Elo and Dixon-Coles, strictly causal  [Milestone 4] ✅
     base.py           the RatingModel protocol and schema
     elo.py            one pool per country, online updates
     dixon_coles.py    bivariate Poisson, refitted per competition
   validation/temporal.py  prefix invariance, outcome independence  ✅
-  feature_engineering/  registry, rolling windows          [Milestone 5]
   models/           splits, zoo, tuning, calibration    [Milestones 7-9]
   evaluation/       backtests, metrics, model cards       [Milestone 10]
   explainability/   SHAP, permutation importance         [Milestone 10]
@@ -219,7 +249,8 @@ make leagues   # list the 39 configured competitions
 make data      # download and ingest everything (~15 min first time)
 make refresh   # incremental re-run: conditional requests only, 0 MB if unchanged
 make validate  # run the data checks and regenerate docs/DATASET_CARD.md
-make ratings   # build Elo + Dixon-Coles (~20 min); make ratings-elo is seconds
+make ratings   # build Elo + Dixon-Coles (~10 min); make ratings-elo is seconds
+make features  # build the 20-feature table (~10 seconds)
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -258,8 +289,8 @@ imports is a supply-chain surface with no upside.
 | 2 | Ingestion — adapters, canonical schema, league registry | ✅ |
 | 3 | Storage and validation — DuckDB over Parquet, 23 checks, dataset card | ✅ |
 | 4 | Ratings — Elo, Dixon-Coles, causality probes | ✅ |
-| 5 | Feature engineering — registry, rolling windows | |
-| 6 | Leakage suite — temporal integrity enforced in CI | |
+| 5 | Feature engineering — registry, causal windows, 20 features | ✅ |
+| 6 | Leakage suite — extended to every derived column, enforced in CI | |
 | 7 | Splits and baselines — walk-forward CV, RPS/log loss | |
 | 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | |
 | 9 | Ensembling and calibration | |

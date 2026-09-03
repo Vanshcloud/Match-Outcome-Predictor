@@ -75,7 +75,7 @@ jobs:
         # loop names the offending file instead of failing with a bare code.
         run: |
           set -e
-          for path in data/raw data/processed data/features models; do
+          for path in data/raw data/processed data/features data/reports models; do
             count=$(find "$path" -type f -not -name '.gitkeep' | wc -l | tr -d ' ')
             if [ "$count" -ne 0 ]; then
               echo "expected $path to be empty on a clean checkout; found $count file(s):"
@@ -236,6 +236,32 @@ jobs:
             echo "src/feature_engineering reaches past the schema:"; echo "$offenders"; exit 1
           fi
           echo "src/feature_engineering depends only on the schema and utils"
+
+      - name: Metrics compute; they know nothing about where data comes from
+        # src/evaluation is arithmetic over an array and a list of outcomes.
+        # A metric that reached for a store or a schema beyond the canonical
+        # result labels would be one that could not score a forecast held in
+        # memory, which is exactly how every caller here holds one.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/evaluation \
+                      | grep -vE 'src\.(evaluation|utils)\.|src\.ingestion\.base' || true)
+          if [ -n "$offenders" ]; then
+            echo "src/evaluation reaches past the schema:"; echo "$offenders"; exit 1
+          fi
+          echo "src/evaluation depends only on the schema and utils"
+
+      - name: Splits and models take frames; they do not fetch or store
+        # A split is a function of a frame and a baseline is a function of two.
+        # That is what lets the boundary probe hand them slices and get a
+        # truthful answer — a model that went to disk for the rest of the
+        # history would pass every fold check while training on the future.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/models \
+                      | grep -vE 'src\.(models|utils|evaluation|validation)\.|src\.(ingestion|ratings)\.base' || true)
+          if [ -n "$offenders" ]; then
+            echo "src/models reaches past the schema:"; echo "$offenders"; exit 1
+          fi
+          echo "src/models depends only on schemas, metrics, the probes and utils"
 
       - name: No network access from the unit suite
         # The suite must stay runnable offline. requests is only ever reached

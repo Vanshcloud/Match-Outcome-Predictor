@@ -166,6 +166,30 @@ def test_ratings_can_be_attached_beside_the_matches(matches_parquet: Path, tmp_p
         assert int(joined.iloc[0]["n"]) == len(frame)
 
 
+def test_the_ratings_can_be_read_back_whole(matches_parquet: Path, tmp_path: Path) -> None:
+    """Unfiltered on purpose: the caller joins them to the slice it already has."""
+    ratings = tmp_path / "ratings.parquet"
+    frame = pd.read_parquet(matches_parquet)[["match_id"]].copy()
+    frame["elo_home"] = 1500.0
+    frame.to_parquet(ratings, index=False)
+
+    with DuckDBStore.open_matches(matches_parquet, ratings=ratings) as store:
+        read = store.read_ratings()
+    assert list(read.columns) == ["match_id", "elo_home"]
+    assert len(read) == len(frame)
+
+
+def test_reading_ratings_that_were_never_attached_says_which_file_is_missing(
+    matches_parquet: Path,
+) -> None:
+    """The clean-checkout case. "Unknown table ratings" is not an answer."""
+    with (
+        DuckDBStore.open_matches(matches_parquet) as store,
+        pytest.raises(StorageError, match="build_ratings"),
+    ):
+        store.read_ratings()
+
+
 def test_a_half_attachable_open_attaches_nothing(matches_parquet: Path, tmp_path: Path) -> None:
     """The matches file exists and the ratings file does not.
 

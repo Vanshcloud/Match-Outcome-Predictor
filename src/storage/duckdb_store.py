@@ -276,6 +276,26 @@ class DuckDBStore:
         frame = self.query(sql, params)
         return frame.astype({column: CANONICAL_SCHEMA[column] for column in selected})
 
+    def read_ratings(self) -> pd.DataFrame:
+        """Return the ratings table, keyed by ``match_id``.
+
+        Unfiltered, and deliberately so: the ratings are one narrow row per
+        match and the caller joins them to whatever slice of the canonical
+        table it already holds. A second filter API here would be a second
+        place for a point-in-time read to be subtly different.
+
+        Raises:
+            StorageError: If no ratings view is attached. That is the
+                clean-checkout case, and the message has to say which file is
+                missing rather than report an unknown table.
+        """
+        if RATINGS_VIEW not in self.views():
+            raise StorageError(
+                f"no {RATINGS_VIEW} view attached; open the store with "
+                "`ratings=` or run scripts/build_ratings.py first"
+            )
+        return self.query(f"SELECT * FROM {RATINGS_VIEW}")
+
     def _resolve_columns(self, columns: Sequence[str] | None) -> tuple[str, ...]:
         """Validate a projection, preserving canonical order.
 

@@ -10,6 +10,96 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.7.0] — unreleased
+
+Milestone 7: splits and baselines. The first milestone that produces a number
+the whole project is aimed at, and it is not a flattering one.
+
+### Added
+
+- `src/models/splits.py` — walk-forward folds. Expanding training window, five
+  folds of a year each, anchored at the end of the history. **The cut is a
+  date, never a row**: a boundary at row *n* puts two matches played on the
+  same afternoon on opposite sides of it, so the model trains on the 3pm
+  results and is scored on the 5.30 kick-off. Every fold runs through
+  `split_boundary` before it is yielded, and a violation raises.
+- `src/models/baselines.py` — four forecasters. Home-always, the class prior
+  counted on the training half, Dixon-Coles from the ratings table, and the
+  closing line with the overround removed. Each returns null for a match it
+  cannot price; nothing invents a number to fill a gap.
+- `src/evaluation/metrics.py` — log loss, RPS and accuracy, in that order of
+  importance. Log loss is **not clipped**: a forecast that ruled out what
+  happened scores infinity, and reporting that as a large finite number would
+  be a kindness the metric does not extend. RPS is what still ranks such a
+  forecast, because it is bounded and knows H, D and A are ordered.
+- `src/pipelines/backtest.py`, `scripts/backtest.py`, `make backtest` (~5
+  seconds) and **[docs/EVALUATION.md](docs/EVALUATION.md)**.
+- `PathsConfig.reports_dir` and `data/reports/`. A backtest result is evidence
+  about a particular set of forecasters and outlives them; a feature table is
+  rebuilt whenever the feature set changes. Different lifetimes, different
+  directories.
+- `DuckDBStore.read_ratings()`, unfiltered on purpose: the caller joins to the
+  slice it already holds, and a second filter API is a second place for a
+  point-in-time read to be subtly different.
+- Two CI invariants: `src/evaluation` may import the canonical result labels
+  and `src/utils`, and `src/models` may import schemas, the metrics, the probes
+  and `src/utils`. A model that went to disk for the rest of the history would
+  pass every fold check while training on the future.
+
+### Measured
+
+Five yearly folds, 62,036 evaluation matches, scored on the 59,001 every
+forecaster could price:
+
+| | log loss | RPS | accuracy |
+|---|---:|---:|---:|
+| Bookmaker closing odds, overround removed | **0.9993** | **0.2031** | 50.6% |
+| Dixon-Coles | 1.0277 | 0.2114 | 48.5% |
+| Class prior, counted per fold | 1.0751 | 0.2284 | 43.7% |
+| Home always | ∞ | 0.4316 | 43.7% |
+
+**0.0284 of log loss** between the rating and the closing line. That is the
+honest size of what the model zoo has to close, and it is measured on identical
+matches rather than on two convenient subsets — the bookmaker quotes 99.8% of
+these matches and Dixon-Coles prices 95.3%, which are not the same matches.
+
+Fold to fold the rating moves over 0.008 and the line over 0.008, with the gap
+never leaving 0.021–0.028. Nothing here is a lucky year.
+
+Two findings, both pinned by integration tests:
+
+- **The rating's edge over the prior tracks the spread of team strength at
+  r = 0.90** across the 39 competitions. A strength model has the most to say
+  where strengths differ most, which is what it should do and is not something
+  anyone told it to do.
+- **The gap to the closing line tracks that same spread at −0.14** — that is,
+  not at all. Whatever the bookmaker knows on top of the rating is not
+  strength, and it is worth about the same amount in every competition. That is
+  the target for Milestone 8, stated as a number before any feature is chosen.
+
+**Dixon-Coles loses to counting base rates in one competition of 39**: the
+Argentine cup, 1.1329 against 1.0902. The obvious explanation is wrong — all 32
+of its recent clubs also play in ARG_1, and its Elo spread is the seventh
+*narrowest* of the 39. The sides are closely matched, so a strength model has
+little to add, and the model refits per competition, so the cup's fit sees 610
+matches while the same clubs' 2,211 league matches sit next door unused. Left
+in rather than special-cased; what it argues for is pooling a cup's fit with
+its country's league, which is a change to the rating and needs an ablation to
+justify it.
+
+### Changed from the approved scope
+
+- **The metrics live in `src/evaluation/`, which the plan gave to Milestone
+  10.** They are needed to report a baseline at all, and writing them in
+  `src/models` to move them later is churn with a rename in it. The same
+  precedent as Milestone 4 writing the temporal probes that Milestone 6 owned.
+- **Home-always is reported, and the class prior is what it is compared
+  against.** The scope named home-always as the baseline to beat. It is not a
+  probability forecast anybody should be scored against — its log loss is
+  infinite — so it is reported for what it does show (43.7% accuracy, and what
+  a proper scoring rule does to certainty) and the honest floor is the class
+  prior counted per fold.
+
 ## [0.6.0] — unreleased
 
 Milestone 6: the leakage suite. Two more probes, and a change of principle —

@@ -107,6 +107,17 @@ class PathsConfig(_Strict):
         """The feature store. Parquet, partitioned, rebuildable from processed."""
         return self.data_dir / "features"
 
+    @property
+    def reports_dir(self) -> Path:
+        """Measurements, not data: backtest scores and the tables built from them.
+
+        Separate from ``features_dir`` because the two have different
+        lifetimes. A feature table is rebuilt whenever the feature set changes;
+        a backtest result is evidence about a particular set of forecasters and
+        is worth keeping after they change.
+        """
+        return self.data_dir / "reports"
+
 
 class HttpConfig(_Strict):
     """Outbound request policy, shared by every ingestion adapter."""

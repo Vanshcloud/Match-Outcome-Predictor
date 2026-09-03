@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 6 of 14 — the leakage suite.**
+> **Status: Milestone 7 of 14 — splits and baselines.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings now run over it, and the
@@ -194,6 +194,41 @@ odds column, which is enforced rather than remembered.
 **[docs/LEAKAGE.md](docs/LEAKAGE.md)** traces all thirty derived columns back to
 the canonical columns they read, and says what the trace cannot tell you.
 
+## Splits and baselines
+
+Walk-forward: five folds of a year each, expanding training window, anchored at
+the end of the history. The cut is a **date**, so a full Saturday programme
+never lands on both sides of it, and every fold is checked by the split-boundary
+probe before it is used.
+
+| 59,001 matches every forecaster could price | log loss | RPS | accuracy |
+|---|---:|---:|---:|
+| Bookmaker closing odds, overround removed | **0.9993** | **0.2031** | 50.6% |
+| Dixon-Coles | 1.0277 | 0.2114 | 48.5% |
+| Class prior, counted per fold | 1.0751 | 0.2284 | 43.7% |
+| Home always | ∞ | 0.4316 | 43.7% |
+
+Two subsets, always: each forecaster over what *it* could price, and all of
+them over what *every* one could price. The bookmaker quotes 99.8% of these
+matches and Dixon-Coles prices 95.3%, and putting one number from each beside
+the other compares two different questions.
+
+Home-always scores infinite log loss and it is not clipped — a forecast that
+ruled out what happened was infinitely wrong. RPS still ranks it, because RPS
+is bounded and knows H, D and A are ordered. That contrast is why both are
+reported.
+
+Two findings came out of it. The rating's edge over the prior tracks the spread
+of team strength in a competition at **r = 0.90** — which is what a strength
+model should do and nobody told it to. And the gap to the closing line tracks
+that same spread at **−0.14**, meaning what the bookmaker knows on top of the
+rating is not strength, and is worth about the same amount everywhere. That is
+the target for Milestone 8.
+
+**[docs/EVALUATION.md](docs/EVALUATION.md)** has the fold table, the
+per-competition breakdown, and the one competition where Dixon-Coles loses to
+counting base rates.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -259,8 +294,13 @@ src/
     dixon_coles.py    bivariate Poisson, refitted per competition
   validation/temporal.py  four probes: prefix, outcome, split, reads   ✅
   validation/leakage.py   every producer, found rather than listed [Milestone 6] ✅
-  models/           splits, zoo, tuning, calibration    [Milestones 7-9]
-  evaluation/       backtests, metrics, model cards       [Milestone 10]
+  models/           splits and baselines; the zoo next    [Milestone 7] ✅
+    splits.py         walk-forward folds, cut on the date, probed
+    baselines.py      home-always, class prior, Dixon-Coles, the closing line
+    (zoo, tuning, calibration)                          [Milestones 8-9]
+  evaluation/       log loss, RPS, accuracy                [Milestone 7] ✅
+    metrics.py        two proper scoring rules and one improper one
+    (backtests, model cards)                            [Milestone 10]
   explainability/   SHAP, permutation importance         [Milestone 10]
   pipelines/        the orchestration each stage exposes
 api/                FastAPI service                      [Milestone 11]
@@ -282,6 +322,7 @@ make validate  # run the data checks and regenerate docs/DATASET_CARD.md
 make ratings   # build Elo + Dixon-Coles (~10 min); make ratings-elo is seconds
 make features  # build the 20-feature table (~10 seconds)
 make audit     # probe every producer, trace every column (~3 min)
+make backtest  # score every baseline over walk-forward folds (~5 seconds)
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -322,7 +363,7 @@ imports is a supply-chain surface with no upside.
 | 4 | Ratings — Elo, Dixon-Coles, causality probes | ✅ |
 | 5 | Feature engineering — registry, causal windows, 20 features | ✅ |
 | 6 | Leakage suite — every producer found and probed, every column traced | ✅ |
-| 7 | Splits and baselines — walk-forward CV, RPS/log loss | |
+| 7 | Splits and baselines — walk-forward CV, RPS/log loss | ✅ |
 | 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | |
 | 9 | Ensembling and calibration | |
 | 10 | Evaluation and explainability — backtests, SHAP, model cards | |

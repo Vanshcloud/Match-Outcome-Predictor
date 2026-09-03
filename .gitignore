@@ -30,9 +30,11 @@ env/
 data/raw/*
 data/processed/*
 data/features/*
+data/reports/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/features/.gitkeep
+!data/reports/.gitkeep
 
 # ---- Models ----
 models/*

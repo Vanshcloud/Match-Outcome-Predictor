@@ -484,12 +484,86 @@ the code.
 
 ---
 
-## Milestone 7 — Splits and baselines (next)
+## Milestone 7 — Splits and baselines ✅
+
+**Delivered.** The first milestone that produces the number the whole project
+is aimed at.
+
+| Module | Responsibility |
+|---|---|
+| `models/splits.py` | Walk-forward folds, cut on the date, every one gated by the boundary probe. |
+| `models/baselines.py` | Home-always, class prior, Dixon-Coles, the closing line. |
+| `evaluation/metrics.py` | Log loss, RPS, accuracy — and what they refuse to score. |
+| `pipelines/backtest.py` | Two subsets, per competition and pooled, written at the finest grain. |
+| `scripts/backtest.py` | `make backtest`, five seconds. |
+
+**Verified:** 100% coverage of `src`, ruff/black/mypy clean, 768 unit tests and
+43 integration tests. Both new CI invariants hold.
+
+Full measurements are in `docs/EVALUATION.md`.
+
+### The headline
+
+Five yearly folds, 62,036 evaluation matches, scored on the 59,001 every
+forecaster could price:
+
+| | log loss | RPS |
+|---|---:|---:|
+| Bookmaker closing odds | **0.9993** | **0.2031** |
+| Dixon-Coles | 1.0277 | 0.2114 |
+| Class prior | 1.0751 | 0.2284 |
+| Home always | ∞ | 0.4316 |
+
+**0.0284 of log loss** between the rating and the line, measured on identical
+matches. The rating is 0.047 clear of the prior, so it is worth building; the
+line is ahead everywhere, in all 39 competitions, which is the result a public-
+data model should expect.
+
+### Two findings the model milestone should start from
+
+The rating's edge over the prior tracks the spread of team strength in a
+competition at **r = 0.90** — a strength model has the most to say where
+strengths differ most, which nobody told it to do. The gap to the closing line
+tracks that same spread at **−0.14**, meaning what the bookmaker knows on top
+of the rating is *not* strength, and is worth about the same amount everywhere.
+
+That is the target stated as a number before a single feature is chosen: a
+constant 0.028 that has nothing to do with how lopsided the league is.
+
+Dixon-Coles also loses to the class prior in exactly one competition, the
+Argentine cup. The obvious explanation — a cup mixes tiers — is contradicted by
+the data: all 32 clubs also play in ARG_1, and the cup's Elo spread is the
+seventh narrowest of 39. It is a narrow field fitted per competition on 610
+matches while the same clubs' 2,211 league matches sit unused next door. Left
+in; it argues for pooling a cup with its country's league, which is a change to
+the rating and needs an ablation behind it.
+
+### Changed from the approved scope
+
+- **Metrics landed in `src/evaluation/`, which the plan gave to Milestone 10.**
+  A baseline cannot be reported without them, and writing them in `src/models`
+  to move them later is churn with a rename in it. Same precedent as Milestone
+  4 writing the probes Milestone 6 owned.
+- **Home-always is reported; the class prior is the floor.** The scope named
+  home-always as a baseline to beat. As a probability forecast its log loss is
+  infinite, so it is reported for what it does show — 43.7% accuracy, and what
+  a proper scoring rule does to certainty — and the honest floor is the class
+  prior counted per fold.
+- **Two tables, not one.** The bookmaker prices 99.8% of these matches and
+  Dixon-Coles 95.3%. Reporting a single table would have compared numbers
+  computed over different sets of matches, which is what `docs/RATINGS.md`
+  already refused to do once.
+
+---
+
+## Milestone 8 — Model zoo (next)
 
 Scope, for approval:
 
-- Walk-forward cross-validation over the canonical table, with the split
-  boundary probe from this milestone gating every fold.
-- Baselines to beat: home-always, the bookmaker's closing line, and
-  Dixon-Coles' own three-class probabilities.
-- Log loss and RPS as the reported metrics, per competition and pooled.
+- Logistic regression, random forest, XGBoost, LightGBM, CatBoost and an MLP
+  over the twenty features plus the ratings, scored on the folds this milestone
+  built and against the baselines it measured.
+- An ablation per feature group, which is where rest days earn their place or
+  are dropped, and where a cup-shaped fixture list earns Dixon-Coles a pooled
+  fit or a note saying not to use it there.
+- Optuna for tuning and MLflow for the runs, now that there are runs.

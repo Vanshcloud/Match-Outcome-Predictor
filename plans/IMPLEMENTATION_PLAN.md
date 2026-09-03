@@ -9,7 +9,7 @@ re-litigated later. Milestone sections are filled in as each is delivered.
 
 | # | Decision | Chosen | Rationale |
 |---|---|---|---|
-| 1 | Data provider | football-data.co.uk only, behind an adapter interface | Free, keyless, static CSV, no rate limit. Measured after a full ingest: 39 competitions, 305,499 matches, 1993-2026. Verified live before committing to it. Other providers plug in later without downstream change. |
+| 1 | Data provider | football-data.co.uk only, behind an adapter interface | Free, keyless, static CSV, no rate limit. Measured after a full ingest: 39 competitions, 303,517 matches, 1993-2026. Verified live before committing to it. Other providers plug in later without downstream change. |
 | 2 | Model zoo | Pruned zoo first (M8), then a separate Research Models milestone (M14) | Prove the pipeline end to end with models that reliably win on tabular data, then benchmark TabNet / FT-Transformer / AutoML against the best GBDT under *identical* time-aware validation, with a written verdict on whether the complexity is justified. |
 | 3 | Storage & MLOps | DuckDB + Parquet (analytics, feature store), PostgreSQL (application data, prediction serving), MLflow (tracking, registry), Docker Compose (orchestration) | Storage sits behind interfaces so Postgres can be replaced or scaled without touching business logic. Checksum-based dataset versioning now; the layout stays compatible with adding DVC or S3/MinIO later. |
 | 4 | Commit policy | `commit-msg` authorship guard, no attribution trailers | Matches the sibling Transfer Value Predictor and predictive-maintenance repositories. Installed via version-controlled `core.hooksPath`, so it survives a reclone. |
@@ -105,8 +105,8 @@ expensive at Milestone 5.
 ## Milestone 2 — Ingestion ✅
 
 **Delivered.** 39 competitions across 27 countries, two provider file layouts,
-one canonical 35-column schema. A full ingest produced 305,499 matches and
-1,363 teams spanning 1993-2026, with zero unreadable files. No downstream module can tell which feed a
+one canonical 35-column schema. A full ingest produced 303,517 matches and
+1,323 teams spanning 1993-2026, with zero unreadable files. No downstream module can tell which feed a
 match came from — CI enforces it.
 
 | Module | Responsibility |
@@ -191,11 +191,11 @@ every ingest.
 | `scripts/validate_data.py` | The gate. Non-zero exit on a blocking failure. |
 
 **Verified:** 378 unit tests, 100% coverage of `src`, ruff/black/mypy clean,
-12 integration tests against the real 305,499-row table.
+12 integration tests against the real 303,517-row table.
 
 ### Three decisions worth recording
 
-1. **Views, not tables.** `CREATE TABLE AS` would have copied 305,499 rows into
+1. **Views, not tables.** `CREATE TABLE AS` would have copied 303,517 rows into
    the catalog and then served yesterday's copy after every re-ingest. A view
    keeps the Parquet as the single source of truth, and DuckDB reads it in
    place — so the "database" is a few kilobytes of view definition.
@@ -227,7 +227,7 @@ declares which side it draws from, and CI fails any that can see its own match.
 
 ### What the gate found on day one
 
-- **One row in 305,499 is filed under the wrong season.** An Argentinian match
+- **One row in 303,517 is filed under the wrong season.** An Argentinian match
   played 2015-01-29, labelled 2013-14 in the provider's own file, 213 days
   outside the widest defensible window. Reported as a warning and left in
   place: one misfiled row does not justify refusing the dataset, and silently
@@ -282,7 +282,7 @@ match it is rating.
 
 **Verified:** 498 unit tests, 100% coverage of `src`, ruff/black/mypy clean,
 plus 21 integration tests against the real table. The full build rates all
-305,499 matches in about ten minutes — Dixon-Coles pricing 92.1% and Elo all of
+303,517 matches in about ten minutes — Dixon-Coles pricing 92.1% and Elo all of
 them — with every causality probe holding and 9 of 9 checks passing, none
 skipped. Both probes were checked against planted leaks before being trusted.
 

@@ -195,6 +195,56 @@ def test_shots_on_target_above_shots_are_caught() -> None:
     assert "'away': 1" in failed["shots on target never exceed shots"]
 
 
+def test_the_same_fixture_under_two_competitions_is_caught() -> None:
+    """`match_id` hashes the competition, so a fixture published under two
+    division codes gets two ids and survives deduplication. Every copy is
+    internally consistent, so no per-row check can see it — and a rolling
+    feature quietly averages a team's form over fixtures it played once.
+
+    This is what five of the provider's early files did: copies of SP1.csv
+    served as P1, SC1 and SP2, which put 380 Spanish matches into Portugal's
+    first season and duplicated 1,222 more into Spain's second division.
+    """
+    first = league_frame()
+    copy = first.assign(
+        competition_id="ENG_2",
+        competition="Championship",
+        tier=pd.array([2] * len(first), dtype="Int8"),
+        match_id=first["match_id"] + "-copy",
+    )
+    together = (
+        pd.concat([first, copy], ignore_index=True)
+        .sort_values(["date", "competition_id", "match_id"], kind="stable")
+        .reset_index(drop=True)
+    )
+    assert "no fixture appears in two competitions" in failures(together, REGISTRY)
+
+
+def test_fixtures_are_matched_on_names_not_ids() -> None:
+    """Ids are country-scoped, so the Portuguese copies carried `por:` ids and
+    were invisible to an id-based comparison. Names are what survive the
+    mislabelling."""
+    first = league_frame()
+    copy = first.assign(
+        competition_id="POR_1",
+        country="Portugal",
+        competition="Primeira Liga",
+        match_id=first["match_id"] + "-copy",
+        home_team_id=first["home_team_id"].str.replace("eng:", "por:", regex=False),
+        away_team_id=first["away_team_id"].str.replace("eng:", "por:", regex=False),
+    )
+    together = (
+        pd.concat([first, copy], ignore_index=True)
+        .sort_values(["date", "competition_id", "match_id"], kind="stable")
+        .reset_index(drop=True)
+    )
+    assert "no fixture appears in two competitions" in failures(together, REGISTRY)
+
+
+def test_an_empty_table_has_no_duplicate_fixtures() -> None:
+    assert checks._fixtures_are_not_duplicated(canonical_frame([])).outcome is Outcome.PASSED
+
+
 def test_an_unordered_table_is_caught() -> None:
     """Every temporal split downstream assumes this; relying on an incidental
     ordering is how a time-aware split quietly stops being one."""
@@ -342,7 +392,7 @@ def test_a_competition_with_no_tier_agrees_with_a_null_tier() -> None:
 
 
 def test_a_match_outside_its_season_window_is_a_warning() -> None:
-    """Measured on the real ingest: one row in 305,499, an Argentinian match
+    """Measured on the real ingest: one row in 303,517, an Argentinian match
     played in 2015 and labelled 2013-14 in the provider's own file. Reported,
     not refused."""
     frame = league_frame()
@@ -403,7 +453,12 @@ def test_a_competition_with_too_little_history_is_a_warning() -> None:
     play-off matches carried as a league."""
     big = league_frame()
     tiny = league_frame(
-        competition_id="ENG_2", name="Championship", tier=2, seasons=["2020-21"], teams=4
+        competition_id="ENG_2",
+        name="Championship",
+        tier=2,
+        seasons=["2020-21"],
+        teams=4,
+        team_prefix="Club",
     )
     frame = pd.concat([big, tiny], ignore_index=True).sort_values(
         ["date", "competition_id", "match_id"], kind="stable"

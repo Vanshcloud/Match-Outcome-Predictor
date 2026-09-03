@@ -6,7 +6,7 @@ Every number here comes from walking matches in date order with each prediction
 made from prior matches only, so they are out-of-sample figures rather than
 fits — the only kind worth printing.
 
-The Elo figures are over all **305,499 matches**; a single expected-score error
+The Elo figures are over all **303,517 matches**; a single expected-score error
 is comparable across competitions, so pooling them means something. The
 Dixon-Coles figures are **per competition**, because attack and defence are
 only identifiable among teams that play each other, and a log loss pooled
@@ -34,11 +34,11 @@ Mean squared error of the expected score against the actual 1 / 0.5 / 0:
 
 | Model | MSE | Δ |
 |---|---|---|
-| Plain Elo: no home advantage, margin, damping or carry-over | 0.16882 | — |
-| ...with home advantage | 0.16217 | −3.9% |
-| ...with margin of victory | 0.16208 | −0.06% |
-| ...with autocorrelation damping | 0.16173 | −0.22% |
-| ...with season carry-over (**as shipped**) | **0.16169** | −0.02% |
+| Plain Elo: no home advantage, margin, damping or carry-over | 0.16884 | — |
+| ...with home advantage | 0.16225 | −3.9% |
+| ...with margin of victory | 0.16216 | −0.06% |
+| ...with autocorrelation damping | 0.16181 | −0.22% |
+| ...with season carry-over (**as shipped**) | **0.16177** | −0.02% |
 
 **Home advantage is the only one that matters.** The other three are worth a
 few parts in a thousand each. They are kept because each is about three lines

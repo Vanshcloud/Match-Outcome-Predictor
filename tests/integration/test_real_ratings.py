@@ -28,7 +28,7 @@ SETTINGS = load_settings()
 MATCHES = SETTINGS.paths.processed_dir / MATCHES_FILENAME
 RATINGS = SETTINGS.paths.features_dir / RATINGS_FILENAME
 
-# Measured over the full 305,499-match ingest with the shipped constants. The
+# Measured over the full 303,517-match ingest with the shipped constants. The
 # band is wide enough to survive the provider adding a season and narrow enough
 # that a broken update cannot slip through.
 ELO_MSE_RANGE = (0.160, 0.165)

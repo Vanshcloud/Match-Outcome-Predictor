@@ -434,6 +434,41 @@ class FootballDataProvider:
         )
         return path
 
+    @staticmethod
+    def _rows_for_this_division(
+        rows: list[dict[str, str]], competition: Competition
+    ) -> list[dict[str, str]]:
+        """Drop primary-feed rows whose own ``Div`` names a different division.
+
+        The URL says which division a file is; the file says it too, in every
+        row. They are not always the same, and when they disagree the file is
+        right — it is the data, and the URL is only where it was published.
+
+        Five cached files are affected, all copies of ``SP1.csv`` served under
+        another name: ``1993-94/P1.csv`` and ``1993-94/SC1.csv``, and ``SP2.csv``
+        for 1993-94, 1994-95 and 1995-96. Trusting the URL put 380 Spanish
+        matches into Portugal's first season wearing ``por:`` team ids, and
+        duplicated 1,222 more into Spain's second division — every one of them
+        internally consistent, so no per-row check could see it.
+
+        Rows with a blank ``Div`` are kept: some early files leave it empty on
+        the odd row, and dropping those would trade a rare provider error for a
+        common one.
+        """
+        expected = competition.code
+        kept = [row for row in rows if (row.get("Div") or "").strip() in ("", expected)]
+        dropped = len(rows) - len(kept)
+        if dropped:
+            found = sorted({(row.get("Div") or "").strip() for row in rows} - {"", expected})
+            logger.warning(
+                "%s: dropped %d row(s) labelled %s in a file served as %s",
+                competition.id,
+                dropped,
+                found,
+                expected,
+            )
+        return kept
+
     def _read_country_file(self, competition: Competition) -> list[dict[str, str]]:
         """Read a secondary-feed country file, filtered to one competition."""
         rows = read_provider_csv(self.ensure_file(competition))
@@ -452,7 +487,9 @@ class FootballDataProvider:
             SeasonUnavailableError: If the provider holds no such season.
         """
         if competition.feed is Feed.MAIN:
-            rows = read_provider_csv(self.ensure_file(competition, season))
+            rows = self._rows_for_this_division(
+                read_provider_csv(self.ensure_file(competition, season)), competition
+            )
             column_map = MAIN_COLUMNS
         else:
             rows = [
@@ -516,7 +553,7 @@ class FootballDataProvider:
                 continue
 
             # The provider's own result column is cross-checked rather than
-            # trusted. Measured across all 305,499 ingested matches it never
+            # trusted. Measured across all 303,517 ingested matches it never
             # disagreed with
             # the score, which is exactly why a disagreement now would mean
             # something structural is wrong rather than one typo.

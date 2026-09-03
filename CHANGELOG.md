@@ -10,6 +10,37 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.5.0] — unreleased
+
+### Fixed
+
+- **Five of the provider's early files are copies of `SP1.csv` served under
+  another name**, and the adapter believed the URL. `1993-94/P1.csv`,
+  `1993-94/SC1.csv` and `SP2.csv` for 1993-94, 1994-95 and 1995-96 all carry
+  Spanish La Liga rows — with `Div` inside each file saying `SP1`. The result
+  was 380 fabricated Portuguese matches and 380 fabricated Scottish ones,
+  Spanish clubs wearing `por:` and `sco:` team ids, plus 1,222 La Liga
+  fixtures duplicated into Spain's second division.
+
+  Every copy was internally consistent — same teams, same date, same score —
+  so no per-row check could see it, and `match_id` hashes the competition, so
+  deduplication kept both. The adapter now trusts each file's own `Div` column
+  and drops rows that name a different division; a new validation check,
+  **"no fixture appears in two competitions"**, is what says it worked.
+
+  Found by an assumption check written for the feature layer: rolling form
+  needs a team never to play twice on one date, and 2,444 team-days said
+  otherwise.
+
+### Changed
+
+- The ingest is **303,517 matches and 1,323 teams**, down from 305,499 and
+  1,363. Portugal's first league season now starts 1994-08-20 and Scotland's
+  second tier 1994-08-13, rather than both starting in Spain in September 1993.
+- Every measured figure moved in the fourth decimal. Elo's error over the
+  corrected table is 0.16177 against 0.16169 before; the Premier League
+  Dixon-Coles numbers are unchanged, because England was never affected.
+
 ## [0.4.0] — 2026-09-03
 
 Milestone 4: ratings. Two of them, and the machinery that proves neither can

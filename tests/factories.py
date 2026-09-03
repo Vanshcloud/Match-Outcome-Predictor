@@ -68,6 +68,7 @@ def league_frame(
     tier: int | None = 1,
     seasons: Sequence[str] | None = None,
     teams: int = 20,
+    team_prefix: str = "Team",
     with_stats: bool = True,
     with_odds: bool = True,
 ) -> pd.DataFrame:
@@ -81,7 +82,11 @@ def league_frame(
         seasons = season_labels(2012, 14)
 
     prefix = competition_id.split("_")[0]
-    names = [f"Team {index:02d}" for index in range(teams)]
+    # `team_prefix` exists so two synthetic competitions can be combined
+    # without sharing club names. Two competitions fielding "Team 00" against
+    # "Team 01" on the same date is a duplicated fixture as far as the
+    # validation suite is concerned, and it is right about that.
+    names = [f"{team_prefix} {index:02d}" for index in range(teams)]
     identifiers = {team: f"{prefix.lower()}:{team.lower().replace(' ', '-')}" for team in names}
 
     records: list[dict[str, Any]] = []

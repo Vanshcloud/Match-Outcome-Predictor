@@ -70,7 +70,7 @@ def test_no_check_is_silently_skipped_on_the_full_ingest(matches: pd.DataFrame) 
 
 
 def test_the_only_known_warning_is_the_one_we_documented(matches: pd.DataFrame) -> None:
-    """One row in 305,499 — an Argentinian match played 2015-01-29 and filed
+    """One row in 303,517 — an Argentinian match played 2015-01-29 and filed
     under season 2013-14 in the provider's own file. Pinned so a *second*
     upstream defect cannot hide behind the first."""
     report = run_checks(matches, match_checks(load_registry()))

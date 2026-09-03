@@ -29,9 +29,10 @@ data are marked `integration` and skip when it is absent.
 
 ## Discovered quirks
 
-Fifteen, all load-bearing. Where a fix lives in code, the module is named.
-The last two were found only by running a full ingest and asserting
-football-shaped invariants over all 305,499 resulting matches.
+Sixteen, all load-bearing. Where a fix lives in code, the module is named.
+The last three were found only by running a full ingest and asserting
+invariants over all 303,517 resulting matches — the last of them by an
+assumption check written two milestones later, for the feature layer.
 
 ### 1. A missing file returns HTTP 300, not 404
 
@@ -181,6 +182,41 @@ all.
 There is no way to tell which of the pair is wrong, so both are nulled and the
 match kept — a rolling shot-accuracy feature computed over "0 shots, 5 on
 target" is worse than one computed over a gap.
+
+### 16. Five files are copies of another division, served under its name
+
+The worst of them, because every row is individually perfect.
+
+| File | Contains | Cost of believing the URL |
+|---|---|---|
+| `1993-94/P1.csv` | Spanish La Liga | 380 fabricated Portuguese matches |
+| `1993-94/SC1.csv` | Spanish La Liga | 380 fabricated Scottish matches |
+| `1993-94/SP2.csv` | Spanish La Liga | 380 duplicated fixtures |
+| `1994-95/SP2.csv` | Spanish La Liga | 380 duplicated fixtures |
+| `1995-96/SP2.csv` | Spanish La Liga | 462 duplicated fixtures |
+
+**1,982 matches, 0.65% of the table.** Barcelona, Real Madrid and Athletic
+Bilbao appeared in Portugal's and Scotland's first seasons wearing `por:` and
+`sco:` team ids — forty phantom clubs whose entire history was one season, and
+which the rename detector duly reported as one-season teams for two milestones
+without anyone asking why.
+
+Nothing per-row could catch it. Every copy has the right teams, the right date
+and the right score; the schema is valid, the results agree with the scores,
+the odds imply a real book. And because `match_id` hashes the competition, the
+same fixture under two division codes gets two ids and survives deduplication.
+
+**The file says so itself.** Every primary-feed row carries a `Div` column, and
+in all five of these it reads `SP1`. The URL is only where a file was
+published; the file is the data. The adapter now drops rows whose `Div` names
+a different division, and keeps rows where it is blank — some early files leave
+it empty on the odd row, and dropping those would trade a rare provider error
+for a common one.
+→ `football_data._rows_for_this_division`,
+  `validation.matches` ("no fixture appears in two competitions")
+
+Found by asking whether a team ever plays twice on one date — the assumption
+every rolling feature rests on. It did, 2,444 times.
 
 ### A note on the Swiss "Challenge League"
 

@@ -14,7 +14,7 @@ Four groups, in the order a problem is worth catching:
    is invisible to every per-row check and obvious in the home-win rate.
 
 Every threshold here is a measurement, not a guess, and the comment on each
-says what was measured over the 305,499-row ingest of 2026-09-03. A bound
+says what was measured over the 303,517-row ingest of 2026-09-03. A bound
 invented from intuition either never fires or fires constantly, and both teach
 people to ignore the report.
 """
@@ -240,6 +240,39 @@ def _shots_are_consistent(matches: pd.DataFrame) -> str | None:
     return f"shots on target exceed shots: {offending}" if offending else None
 
 
+@check("no fixture appears in two competitions")
+def _fixtures_are_not_duplicated(matches: pd.DataFrame) -> str | None:
+    """The check that was missing, and what it cost.
+
+    `match_id` hashes the competition, so the *same* fixture published under
+    two division codes gets two ids and survives deduplication. Every copy is
+    internally consistent — same teams, same date, same score — so no per-row
+    check can see it, and a rolling feature quietly averages a team's form over
+    fixtures it played once.
+
+    Found in Milestone 5 by an assumption check for the feature layer: five of
+    the provider's early files are copies of `SP1.csv` served under another
+    name, which put 380 Spanish matches into Portugal's first season and
+    duplicated 1,222 more into Spain's second division. The adapter now trusts
+    each file's own `Div` column; this is the check that says it worked.
+
+    Matched on team *names* rather than ids, because ids are country-scoped:
+    the Portuguese copies carried `por:` ids and were invisible to an id-based
+    comparison. Two clubs of the same name in different countries cannot both
+    play on the same date against another identically-named pair, so the
+    comparison is safe.
+    """
+    keys = ["date", "home_team", "away_team"]
+    if not set(keys) <= set(matches.columns) or matches.empty:
+        return None
+    spread = matches.groupby(keys, observed=True)["competition_id"].nunique()
+    shared = spread[spread > 1]
+    if shared.empty:
+        return None
+    examples = [f"{d.date()} {h} v {a}" for d, h, a in list(shared.index)[:3]]
+    return f"{len(shared)} fixture(s) published under more than one competition, e.g. {examples}"
+
+
 @check("the table is chronological")
 def _table_is_chronological(matches: pd.DataFrame) -> str | None:
     """Every temporal split and every rolling feature downstream assumes this.
@@ -333,6 +366,7 @@ _STANDALONE_CHECKS: tuple[Check, ...] = (
     _goals_are_plausible,
     _half_time_is_consistent,
     _shots_are_consistent,
+    _fixtures_are_not_duplicated,
     _table_is_chronological,
     _season_labels_are_canonical,
     _team_ids_match_their_country,
@@ -398,7 +432,7 @@ def _registry_checks(registry: Registry) -> tuple[Check, ...]:
     def _dates_match_their_season(matches: pd.DataFrame) -> str | None:
         """A warning, not an error, because it fires on genuine upstream noise.
 
-        Measured over the full ingest: exactly one row in 305,499 — an
+        Measured over the full ingest: exactly one row in 303,517 — an
         Argentinian match played 2015-01-29 and labelled season 2013-14, in the
         provider's file itself, 213 days outside the widest defensible window.
         One misfiled row does not justify refusing the dataset; silently

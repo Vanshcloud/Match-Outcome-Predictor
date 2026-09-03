@@ -9,7 +9,7 @@ tests here need to know nothing about how the value was produced.
 
 **Prefix invariance.** Truncate the input after match *n* and recompute. Every
 surviving row must be byte-identical. Anything that consulted a later match, or
-any statistic over the whole table, moves — a mean over all 305,499 rows is a
+any statistic over the whole table, moves — a mean over all 303,517 rows is a
 different number when there are only 50,000 of them.
 
 **Outcome independence.** Rewrite one match's scoreline and recompute. Rows up

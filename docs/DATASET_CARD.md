@@ -4,7 +4,7 @@
      validation run overwrites it, and a hand-edited figure is a figure
      that no longer describes the data. -->
 
-Generated 2026-09-03 07:17 UTC by match-outcome-predictor 0.3.0.
+Generated 2026-09-03 12:15 UTC by match-outcome-predictor 0.4.0.
 
 ## What this is
 
@@ -17,15 +17,15 @@ table any of them read.
 
 | | |
 |---|---|
-| Matches | 305,499 |
+| Matches | 303,517 |
 | Competitions | 39 |
 | Countries | 27 |
-| Teams | 1,363 |
+| Teams | 1,323 |
 | Seasons | 49 |
 | Date range | 1993-07-23 to 2026-09-01 |
 | Home / draw / away | 45% / 27% / 28% |
 | File | `matches.parquet`, 10.7 MB |
-| SHA-256 | `8d489ed341a99ccb5f5fdb50001ecd2e475f127584742e52195724c178cc02aa` |
+| SHA-256 | `41ad0914e21bd4506331a326113e628a4e122ecbea4c1db55c07c117c7b0792a` |
 
 ## The prediction target
 
@@ -54,7 +54,7 @@ are unavailable.
 
 ## Validation
 
-22 passed, 1 failed, 0 skipped over 305,499 matches.
+23 passed, 1 failed, 0 skipped over 303,517 matches.
 
 | | Check | Severity | Detail |
 |---|---|---|---|
@@ -70,6 +70,7 @@ are unavailable.
 | pass | goals are within plausible bounds | error | ok |
 | pass | the half-time score never exceeds full-time | error | ok |
 | pass | shots on target never exceed shots | error | ok |
+| pass | no fixture appears in two competitions | error | ok |
 | pass | the table is chronological | error | ok |
 | pass | season labels are canonical | error | ok |
 | pass | team ids carry their competition's country | error | ok |
@@ -116,15 +117,15 @@ breakdown says which.
 | Eredivisie (`NED_1`) | Netherlands | 1 | 10,057 | 34 | 34 | 1993-08-14 | 2026-08-30 | 27% | 88% | 73% | 47% |
 | Eliteserien (`NOR_1`) | Norway | 1 | 3,526 | 15 | 31 | 2012-03-23 | 2026-08-30 | 0% | 0% | 100% | 47% |
 | Ekstraklasa (`POL_1`) | Poland | 1 | 4,129 | 15 | 36 | 2012-08-17 | 2026-08-30 | 0% | 0% | 100% | 44% |
-| Primeira Liga (`POR_1`) | Portugal | 1 | 9,677 | 34 | 70 | 1993-09-05 | 2026-08-31 | 29% | 83% | 71% | 46% |
+| Primeira Liga (`POR_1`) | Portugal | 1 | 9,297 | 33 | 50 | 1994-08-20 | 2026-08-31 | 30% | 87% | 73% | 46% |
 | Superliga (`ROU_1`) | Romania | 1 | 4,237 | 15 | 43 | 2012-07-20 | 2026-08-31 | 0% | 0% | 100% | 43% |
 | Premier League (`RUS_1`) | Russia | 1 | 3,416 | 15 | 38 | 2012-07-20 | 2026-08-02 | 0% | 0% | 97% | 44% |
 | Premiership (`SCO_1`) | Scotland | 1 | 6,978 | 33 | 20 | 1994-08-13 | 2026-08-30 | 84% | 97% | 78% | 44% |
-| Championship (`SCO_2`) | Scotland | 2 | 6,072 | 34 | 56 | 1993-09-05 | 2026-08-29 | 31% | 76% | 70% | 42% |
+| Championship (`SCO_2`) | Scotland | 2 | 5,692 | 33 | 36 | 1994-08-13 | 2026-08-29 | 33% | 81% | 75% | 41% |
 | League One (`SCO_3`) | Scotland | 3 | 5,133 | 30 | 37 | 1997-08-05 | 2026-08-29 | 37% | 89% | 82% | 43% |
 | League Two (`SCO_4`) | Scotland | 4 | 5,132 | 30 | 31 | 1997-08-05 | 2026-08-29 | 37% | 89% | 82% | 43% |
 | La Liga (`ESP_1`) | Spain | 1 | 12,734 | 34 | 49 | 1993-09-05 | 2026-08-31 | 63% | 94% | 72% | 47% |
-| Segunda Division (`ESP_2`) | Spain | 2 | 15,033 | 34 | 100 | 1993-09-05 | 2026-08-31 | 28% | 92% | 73% | 45% |
+| Segunda Division (`ESP_2`) | Spain | 2 | 13,811 | 31 | 95 | 1996-08-31 | 2026-08-31 | 30% | 97% | 79% | 45% |
 | Allsvenskan (`SWE_1`) | Sweden | 1 | 3,534 | 15 | 36 | 2012-03-31 | 2026-08-31 | 0% | 0% | 100% | 43% |
 | Super League (`SUI_1`) | Switzerland | 1 | 2,700 | 15 | 18 | 2012-07-13 | 2026-08-30 | 0% | 0% | 100% | 44% |
 | Super Lig (`TUR_1`) | Turkey | 1 | 10,119 | 33 | 67 | 1994-08-13 | 2026-08-31 | 30% | 84% | 75% | 47% |

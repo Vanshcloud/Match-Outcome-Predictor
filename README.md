@@ -9,7 +9,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 > **Status: Milestone 4 of 14 — ratings.**
-> **305,499 matches** across 39 competitions, 27 countries and 33 years reduce
+> **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **23 validation rules** on every ingest. Two ratings now run over it, and the
 > stronger one — Dixon-Coles — already reaches **0.9774 log loss** on the
@@ -63,7 +63,7 @@ behind one canonical interface:
 | Main (`/mmz4281/{season}/{div}.csv`) | 22 divisions across England, Scotland, Germany, Italy, Spain, France, Netherlands, Belgium, Portugal, Turkey, Greece | 1993/94 → present | Result, half-time score, shots, shots on target, corners, fouls, cards, referee, odds |
 | Extra (`/new/{COUNTRY}.csv`) | 17 competitions in 16 country files: Argentina (league + cup), Austria, Brazil, China, Denmark, Finland, Ireland, Japan, Mexico, Norway, Poland, Romania, Russia, Sweden, Switzerland, USA | ~2012 → present | Result and closing odds only |
 
-**39 competitions, 27 countries, 305,499 matches, 1,363 teams, 1993-2026.**
+**39 competitions, 27 countries, 303,517 matches, 1,323 teams, 1993-2026.**
 Those are measured from a real full ingest, not estimated.
 The two schemas differ deliberately in what
 they carry, and that difference is modelled rather than hidden: each
@@ -82,9 +82,10 @@ run transfers **0 files and 0.00 MB** and produces a **byte-identical** Parquet
 `data/raw/manifest.json`, so which bytes produced a given table is checkable.
 
 **Every quirk that shaped this design is documented, with the file it was found
-in, in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)** — fifteen of them,
+in, in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)** — sixteen of them,
 including a missing file that returns HTTP 300 with an HTML body, a header
-narrower than its own rows, and a country file that mixes a league with a cup.
+narrower than its own rows, a country file that mixes a league with a cup, and
+five files that are copies of another division served under its name.
 
 > **No data is redistributed by this repository, and none is committed** — not
 > even a test slice. The provider publishes no licence granting redistribution.
@@ -153,7 +154,7 @@ measurement rather than a guess, and the comment on it says what was measured.
 They report rather than gate: a table you can inspect beats one the pipeline
 refused to save, and severity decides what stops a caller.
 
-The suite earned its keep immediately. It found one row in 305,499 filed under
+The suite earned its keep immediately. It found one row in 303,517 filed under
 the wrong season — an Argentinian match played 2015-01-29 and labelled 2013-14
 in the provider's own file — which is reported as a warning and left in place.
 

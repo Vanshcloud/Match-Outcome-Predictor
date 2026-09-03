@@ -7,7 +7,7 @@ seasons are cached permanently, so the misses are paid once, and a miss is
 routine rather than an error.
 
 The output is a single Parquet file. Partitioning by competition would help a
-serving layer, and is deliberately not done yet: the full 305,499 rows are 10.7 MB of Parquet,
+serving layer, and is deliberately not done yet: the full 303,517 rows are 10.7 MB of Parquet,
 which pandas reads in well under a second. Partition when that stops being
 true, not in anticipation of it.
 """

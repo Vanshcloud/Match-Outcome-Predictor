@@ -20,17 +20,17 @@ every fixture is played.
 
 ## What each refinement is worth
 
-Measured by walking all 305,499 matches — every prediction made from prior
+Measured by walking all 303,517 matches — every prediction made from prior
 matches only, so this is an out-of-sample number, not a fit. Mean squared error
 of the expected score against the actual 1 / 0.5 / 0:
 
 | Model | MSE |
 |---|---|
-| Plain Elo: no home advantage, margin, damping or carry-over | 0.16882 |
-| ...with home advantage | 0.16217 |
-| ...with margin of victory | 0.16208 |
-| ...with autocorrelation damping | 0.16173 |
-| ...with season carry-over (as shipped) | **0.16169** |
+| Plain Elo: no home advantage, margin, damping or carry-over | 0.16884 |
+| ...with home advantage | 0.16225 |
+| ...with margin of victory | 0.16216 |
+| ...with autocorrelation damping | 0.16181 |
+| ...with season carry-over (as shipped) | **0.16177** |
 
 Home advantage is the one that matters — it is worth 4% on its own. The other
 three are worth a few parts in a thousand each, and are kept because each is

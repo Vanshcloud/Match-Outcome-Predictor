@@ -400,7 +400,7 @@ def test_the_league_filter_tolerates_the_providers_own_whitespace(tmp_path: Path
 
 
 def test_a_result_contradicting_the_score_is_dropped(tmp_path: Path) -> None:
-    """Measured across all 305,499 ingested matches, the stated result never
+    """Measured across all 303,517 ingested matches, the stated result never
     disagreed with
     the score. That is precisely why a disagreement now means something
     structural is wrong rather than one typo."""
@@ -652,3 +652,66 @@ def test_equal_shots_and_shots_on_target_is_allowed(tmp_path: Path) -> None:
     frame = make_provider(tmp_path).fetch(ENG, "2024-25")
     assert frame.iloc[0]["home_shots"] == 5
     assert frame.iloc[0]["home_shots_on_target"] == 5
+
+
+# ---- the file's own Div is authoritative ------------------------------------
+
+# `1993-94/SP2.csv` as the provider actually serves it: a copy of SP1, with the
+# Div column inside still saying so. Four of its siblings are the same file
+# under other names, including Portugal's and Scotland's first seasons.
+MISLABELLED_MAIN = (
+    "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,,,,\n"
+    "SP1,05/09/93,Ath Bilbao,Albacete,4,1,H,,,,\n"
+    "SP1,05/09/93,Barcelona,Osasuna,4,0,H,,,,\n"
+)
+
+MIXED_MAIN = MODERN_MAIN + (
+    "SP1,18/08/2024,15:00,Barcelona,Osasuna,4,0,H,2,0,H,J Ruiz,"
+    "20,4,9,1,8,12,9,2,1,2,0,0,1.20,7.00,12.0\n"
+)
+
+
+def test_rows_naming_another_division_are_dropped(tmp_path: Path) -> None:
+    """The URL says which division a file is; the file says it too, in every
+    row. When they disagree the file is right — it is the data, and the URL is
+    only where it was published."""
+    seed(tmp_path, ENG, "2024-25", MIXED_MAIN)
+    frame = make_provider(tmp_path).fetch(ENG, "2024-25")
+    assert len(frame) == 2
+    assert "Barcelona" not in set(frame["home_team"])
+
+
+def test_a_whole_file_of_another_division_yields_nothing(tmp_path: Path) -> None:
+    """The real case: five cached files are copies of SP1.csv served under
+    another name. Trusting the URL put 380 Spanish matches into Portugal's
+    first season wearing `por:` team ids, every one internally consistent, so
+    no per-row check could see it."""
+    seed(tmp_path, ENG, "1993-94", MISLABELLED_MAIN)
+    with pytest.raises(SeasonUnavailableError):
+        make_provider(tmp_path).fetch(ENG, "1993-94")
+
+
+def test_a_blank_div_is_kept(tmp_path: Path) -> None:
+    """Some early files leave the column empty on the odd row. Dropping those
+    would trade a rare provider error for a common one."""
+    body = (
+        "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,,,,\n"
+        "E0,14/08/93,Arsenal,Coventry,0,3,A,,,,\n"
+        ",14/08/93,Chelsea,Blackburn,1,2,A,,,,\n"
+    )
+    seed(tmp_path, ENG, "1993-94", body)
+    assert len(make_provider(tmp_path).fetch(ENG, "1993-94")) == 2
+
+
+def test_the_drop_is_reported(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Silently discarding rows is how a provider error becomes a mystery."""
+    seed(tmp_path, ENG, "2024-25", MIXED_MAIN)
+    with caplog.at_level("WARNING"):
+        make_provider(tmp_path).fetch(ENG, "2024-25")
+    assert "dropped 1 row(s) labelled ['SP1']" in caplog.text
+
+
+def test_the_secondary_feed_is_unaffected(tmp_path: Path) -> None:
+    """Country files carry no Div column; they are filtered by League instead."""
+    seed(tmp_path, BRA, "", EXTRA_FEED)
+    assert not make_provider(tmp_path).fetch(BRA, "2024").empty

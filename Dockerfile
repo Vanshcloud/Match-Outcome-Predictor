@@ -45,7 +45,6 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     DATA_DIR=/app/data \
     MODEL_DIR=/app/models \
-    API_HOST=0.0.0.0 \
     API_PORT=8000
 
 # curl is here for the HEALTHCHECK below and nothing else. A container that
@@ -78,9 +77,19 @@ EXPOSE 8000
 # a liveness probe; readiness is the `status` field, and the compose file gates
 # on it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${API_PORT}/health" || exit 1
+  CMD curl -fsS "http://127.0.0.1:${API_PORT:-8000}/health" || exit 1
 
-# Exec form, so uvicorn is PID 1 and receives SIGTERM directly. Through a shell
-# it would not, and every stop would take the full grace period and then a
-# SIGKILL.
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# `sh -c` with an explicit `exec`, so `$API_PORT` is expanded *and* uvicorn
+# still replaces the shell as PID 1 and receives SIGTERM directly. Plain exec
+# form does not expand variables, which is how the port came to be hardcoded
+# here while the HEALTHCHECK above read the variable — set API_PORT and the app
+# served on 8000 while the probe asked the new port and failed forever. Without
+# the `exec`, the shell stays PID 1, every stop takes the full grace period and
+# ends in a SIGKILL.
+#
+# The host is fixed at 0.0.0.0 and is deliberately *not* a variable. Binding a
+# container to anything narrower is a mistake — the published port is how
+# exposure is controlled — and a configurable bind address is one a health
+# probe on 127.0.0.1 can be configured out of, which is the failure this change
+# exists to remove rather than reintroduce.
+CMD ["sh", "-c", "exec uvicorn api.main:app --host 0.0.0.0 --port \"${API_PORT:-8000}\""]

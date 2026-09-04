@@ -230,13 +230,19 @@ port; see [SECURITY.md](../SECURITY.md).
 
 | Variable | Default | |
 |---|---|---|
-| `API_HOST` | `0.0.0.0` | |
-| `API_PORT` | `8000` | |
+| `API_HOST` | `0.0.0.0` | Not read inside the container — see below |
+| `API_PORT` | `8000` | The container binds and health-checks this |
 | `API_MAX_BATCH` | `50` | Fixtures per batch request |
 | `MODEL_DIR` | `models` | Where `servable.joblib` is read from |
 | `DATA_DIR` | `data` | The three tables the fixture index is built from |
 | `LOG_LEVEL` | `INFO` | |
 | `PREDICTION_LOG_DSN` | unset | PostgreSQL for served predictions. Unset disables it |
+
+The image fixes the bind address at `0.0.0.0` and ignores `API_HOST`, because a
+container narrower than that is a mistake — the published port is how exposure
+is controlled, and a configurable bind is one a health probe on loopback can be
+configured out of. `API_PORT` *is* honoured, by both the server and the health
+check, so `-e API_PORT=9000` moves them together.
 
 `PREDICTION_LOG_DSN` is the one secret in this project and is **environment
 only**: `configs/config.yaml` is committed, and a setting with no line in that

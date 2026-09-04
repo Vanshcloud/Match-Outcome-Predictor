@@ -83,6 +83,16 @@ the response and every prediction saying whether it was in-sample.
 
 ### Fixed
 
+- The serving image honours `API_PORT`. It declared the variable, the
+  `HEALTHCHECK` read it and the `CMD` hardcoded the port, so `-e API_PORT=9000`
+  left the app serving on 8000 while the probe asked 9000 and failed every
+  time — a container reported unhealthy forever while answering correctly. The
+  command is now `sh -c` with an explicit `exec`, which expands the variable
+  *and* keeps uvicorn as PID 1, so a stop is still half a second rather than
+  the full grace period and a SIGKILL. `API_HOST` is dropped from the image
+  rather than honoured: a container bound narrower than `0.0.0.0` is a mistake,
+  and a configurable bind is one a loopback health probe can be configured out
+  of.
 - `pd.Timedelta(days=1)` now raises a `DeprecationWarning` under the installed
   numpy. Caught by the suite's `-W error::DeprecationWarning`, which is what it
   is for.

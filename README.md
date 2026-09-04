@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 10 of 14 — evaluation and explainability.**
+> **Status: Milestone 11 of 14 — the inference service.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -18,9 +18,11 @@ football competitions, from ingestion through to a served API and dashboard.
 > loss** on the 59,001 matches every forecaster could price, against **0.9993**
 > for the bookmaker — 0.0121 of the original 0.0284 gap closed, and the last
 > 0.0163 looking more like missing information than missing capacity. Three
-> attribution methods now say which feature blocks that model uses, and a
+> attribution methods now say which feature blocks that model uses, a
 > **generated model card** says where its probabilities are honest and where
-> they are not.
+> they are not, and that model is now **served over HTTP** from a container —
+> with the card's limitations reachable from the response, and every prediction
+> saying whether the fixture was inside the served model's own training window.
 
 ---
 
@@ -359,6 +361,51 @@ least useful (the model states about a quarter every time, and about a quarter
 of matches are drawn), and per competition, where the Argentine cup is the
 least reliable of the 39 at 0.0270 against a pooled 0.0015.
 
+## Serving it
+
+A FastAPI service over the shipped blend: one fixture in, three calibrated
+probabilities out, in a container that runs as a non-root user and mounts its
+model rather than baking it in.
+
+Two things about it are worth stating before the endpoint list, because both
+are decisions rather than defaults.
+
+**It prices the fixtures in the feature table, and does not compute features on
+demand.** That reads like a limitation and is mostly a fact about the data: the
+provider publishes *results*, not a fixture list, so there is no feed of next
+Saturday's matches anywhere in this project and a "predict this upcoming match"
+endpoint would have nothing to be handed. Even with one, recomputing a design
+row inside a request handler would be a second implementation of the feature
+layer living outside every probe that guards the first — and the whole
+Milestone 6 argument is that a leak has no symptom, it simply makes the model
+look better. So the service reads the row the audited pipeline wrote.
+
+**Every response says whether the fixture was in the model's training window.**
+`make model` fits the blend on the whole history, because that is the model you
+would want to serve; the 1.0156 on this page is measured walk-forward, each
+fold trained strictly earlier than what it scores. Those are two different
+numbers about two different models, and one boolean on every response is what
+keeps them from being quoted as one.
+
+| | | |
+|---|---|---|
+| `POST` | `/predict`, `/predict/batch` | Fixtures priced, named by id or by competition + clubs + date |
+| `GET` | `/fixtures` | Which matches can be priced — there is no other way to find out |
+| `GET` | `/health`, `/version` | Readiness per component; the model's provenance and library drift |
+| `GET` | `/model-card/limitations` | What it must not be used for, served from the card's own text |
+
+`/health` is **200 while the process is alive** and reports `degraded` when the
+artefact or the tables are missing, which is exactly what a clean checkout
+produces. The container starts anyway and names the command that fixes it, so
+the first thing a new reader tries fails with a sentence rather than a stack
+trace. Served predictions are written to PostgreSQL with the inputs they were
+made from — the first application state in this project, and the condition
+Milestone 3 set for adding a second store — and a log that refuses never fails
+a request.
+
+**[docs/API.md](docs/API.md)** has the request shapes, the status codes, the
+configuration and what the service deliberately is not.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -443,9 +490,23 @@ src/
   pipelines/        the orchestration each stage exposes
     tables.py         the three tables, joined once for every command
     report.py         the breakdowns, and the card assembled from them
-api/                FastAPI service                      [Milestone 11]
+    serving.py        the artefact: fit once, persist, load, look a fixture up
+  models/artifact.py  the shipped blend, fitted — frames in, arrays out
+  storage/predictions.py  served predictions, in PostgreSQL   [Milestone 11] ✅
+api/                the inference service                 [Milestone 11] ✅
+  main.py             lifespan, middleware, error mapping
+  routes.py           six endpoints, each a call and a return
+  service.py          the model, the fixture index and the log, held once
+  schemas.py          the request and response models, and the OpenAPI document
 dashboard/          Streamlit + Plotly                   [Milestone 12]
 ```
+
+`api` imports `src`; nothing in `src` imports `api`. CI enforces that, and the
+tighter rule that keeps the service off the feature layer: a design row is
+thirty columns the leakage suite probes on every build, and rebuilding one
+inside a request handler would put an unprobed copy of that layer on the
+request path. **[docs/API.md](docs/API.md)** has the endpoints and the
+reasoning.
 
 `src/utils` is the bottom of the dependency graph and imports nothing else from
 `src`. CI enforces that, because a cycle is far cheaper to prevent than to
@@ -468,6 +529,9 @@ make ablation  # what each feature block is worth (~10 minutes)
 make ensemble  # the blend, the calibration scalar, the reliability tables (~20 min)
 make explain   # what each feature block is worth, by SHAP and permutation (~2 min)
 make card      # regenerate docs/MODEL_CARD.md (~5 minutes)
+make model     # fit the shipped model on the whole history and persist it (~1 min)
+make api       # serve it at http://127.0.0.1:8000/docs
+make docker-run # the API and its prediction log, via compose
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -484,10 +548,10 @@ to work forever.
 ### Reproducing every number in this README
 
 ```bash
-make reproduce   # the whole project, clean checkout to model card (~60 min)
+make reproduce   # the whole project, clean checkout to a served model (~60 min)
 ```
 
-One command, because eight commands listed in a paragraph is eight chances to
+One command, because nine commands listed in a paragraph is nine chances to
 get the order wrong. It runs the stages in the only order they work in, each
 reading the table the one before it wrote:
 
@@ -501,9 +565,10 @@ reading the table the one before it wrote:
 | 6 | Ensemble | `make ensemble` | 20 min | `data/reports/ensemble/` |
 | 7 | Explainability | `make explain` | 2 min | the attribution tables, as markdown on stdout |
 | 8 | Model card | `make card` | 5 min | `docs/MODEL_CARD.md` |
+| 9 | Servable model | `make model` | 1 min | `models/servable.joblib` and its manifest |
 
 `make validate`, `make audit`, `make backtest` and `make ablation` are
-deliberately not in the sequence: none of the eight stages reads what they
+deliberately not in the sequence: none of the nine stages reads what they
 write, and each roughly doubles the wall clock. Run `make ablation` before
 stage 7 and the attribution tables gain an ablation column; leave it out and
 they print without one.
@@ -531,9 +596,10 @@ requirements file.
 | Lint | ruff | `make lint`, CI |
 | Format | black | `make format-check`, CI |
 | Types | mypy, strict | `make typecheck`, CI |
-| Tests | pytest, 100% coverage | `make test-cov`, CI |
+| Tests | pytest, 100% coverage of `src` and `api` | `make test-cov`, CI |
 | Deprecations | `-W error::DeprecationWarning` | pytest config |
 | Authorship | `scripts/hooks/commit-msg` | git hook + CI |
+| Serving image | `docker build`, then a live `/health` against it | CI |
 
 Lint tooling is pinned **exactly**. Unpinned, a formatter release turns CI red
 with no code change and disagrees with every local run.
@@ -555,10 +621,16 @@ imports is a supply-chain surface with no upside.
 | 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | ✅ |
 | 9 | Ensembling and calibration — error-correlation selection, temperature scaling, reliability | ✅ |
 | 10 | Evaluation and explainability — SHAP, permutation importance, model card | ✅ |
-| 11 | API — FastAPI, PostgreSQL for served predictions | |
+| 11 | API — FastAPI, Docker, PostgreSQL for served predictions | ✅ |
 | 12 | Dashboard — Streamlit + Plotly | |
 | 13 | MLOps — Docker, CI/CD, retraining, drift monitoring, deployment | |
 | 14 | Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best GBDT with a written verdict | |
+
+## Security
+
+No personal data, no credentials, no user accounts; the one secret is the
+prediction log's DSN, and it is environment-only for that reason. See
+[SECURITY.md](SECURITY.md) for what is in scope and how to report something.
 
 ## Licence
 

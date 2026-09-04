@@ -9,14 +9,18 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-data/raw/
-data/processed/
-data/features/
+# data/ and models/ are mounted at run time, never built in. An image with a
+# model baked in has to be rebuilt to retrain; one with the match table inside
+# is hundreds of megabytes that change every match week.
+data/
 models/
 mlruns/
 mlartifacts/
 notebooks/
 plans/
+docs/
+tests/
+scripts/
 
 .pytest_cache/
 .mypy_cache/

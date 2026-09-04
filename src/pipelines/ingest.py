@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.ingestion.base import CANONICAL_SCHEMA, SeasonUnavailableError
+from src.ingestion.base import CANONICAL_SCHEMA, MATCHES_FILENAME, SeasonUnavailableError
 from src.ingestion.csv_reader import ProviderFileError
 from src.ingestion.football_data import FootballDataProvider
 from src.ingestion.manifest import write_manifest
@@ -30,7 +30,7 @@ from src.validation.report import Outcome, ValidationReport, run_checks
 
 logger = get_logger(__name__)
 
-MATCHES_FILENAME = "matches.parquet"
+
 MANIFEST_FILENAME = "manifest.json"
 RAW_MANIFEST_FILENAME = "manifest.json"
 

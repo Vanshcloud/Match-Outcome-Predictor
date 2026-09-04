@@ -24,8 +24,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.ingestion.base import MATCHES_FILENAME
 from src.pipelines.features import FEATURES_FILENAME
-from src.pipelines.ingest import MATCHES_FILENAME
 from src.pipelines.ratings import RATINGS_FILENAME
 from src.storage.duckdb_store import DuckDBStore
 from src.utils.config import PathsConfig

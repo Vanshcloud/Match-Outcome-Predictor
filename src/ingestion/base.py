@@ -249,6 +249,21 @@ against rather than spent as an input. See the note on :data:`ODDS_COLUMNS`."""
 TARGET_COLUMN = "result"
 """The prediction target: :class:`Result`, three ordered classes."""
 
+MATCHES_FILENAME = "matches.parquet"
+"""What the canonical table is called on disk.
+
+Here rather than in :mod:`src.pipelines.ingest`, which writes it, because
+several readers need the name and only one writer needs the pipeline. Importing
+it from the pipeline meant importing the provider adapter, the registry, the
+cache and — through them — ``requests``, which is how the Milestone 11 serving
+image came to need an HTTP library to look up a string. This module is the
+schema: the columns, the classes, and the name of the file they live in.
+
+:mod:`src.pipelines.ingest` re-exports it, so the fifteen call sites that
+already say ``from src.pipelines.ingest import MATCHES_FILENAME`` keep working
+and keep meaning the same thing.
+"""
+
 
 def make_match_id(
     provider: str,

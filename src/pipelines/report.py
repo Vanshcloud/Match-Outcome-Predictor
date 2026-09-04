@@ -38,22 +38,12 @@ from src.evaluation.reliability import (
 from src.ingestion.base import TARGET_COLUMN
 from src.models.calibration import Calibrated
 from src.models.dataset import DESIGN_COLUMNS
-from src.models.ensemble import FORECAST_COLUMNS, MEMBERS, ensemble
+from src.models.ensemble import FORECAST_COLUMNS, MEMBERS, SHIPPED, ensemble
 from src.models.splits import DEFAULT_FOLDS
 from src.pipelines.backtest import COMMON, pooled_table
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-SHIPPED = "ensemble-calibrated"
-"""The model the card is written about.
-
-The blend of three, with the temperature applied — the best row in Milestone
-9's table, by 0.0005 over the best single family and by very little over the
-blend alone. Named here rather than inferred from whichever row scored best,
-because the card is a document about a decision and the decision is reviewable
-in a diff.
-"""
 
 MIN_COMPETITION_MATCHES = 200
 """Below this a competition's calibration error is a sampling artefact.

@@ -45,13 +45,13 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Lint
-        run: ruff check src tests scripts
+        run: ruff check src api tests scripts
 
       - name: Format check
-        run: black --check src tests scripts
+        run: black --check src api tests scripts
 
       - name: Types
-        run: mypy src
+        run: mypy src api
 
       - name: Leakage suite
         # Every producer in the codebase, found by walking the packages rather
@@ -67,7 +67,7 @@ jobs:
         #
         # --cov-fail-under is what keeps the README's coverage claim honest.
         # Without it the number in the README is prose, not a measurement.
-        run: pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=100
+        run: pytest -m "not integration" --cov=src --cov=api --cov-report=term-missing --cov-fail-under=100
 
       - name: Confirm the suite is green with no data present
         # `test ! -d` would prove nothing here: a Parquet file is a *file*, so
@@ -151,7 +151,7 @@ jobs:
           patterns='^[[:space:]]*@(app\.on_event|validator|root_validator)\b'
           patterns="$patterns"'|[A-Za-z0-9_)][[:space:]]*\.(parse_obj|dict)\(\)'
           patterns="$patterns"'|^[[:space:]]*class Config:'
-          if grep -rEn "$patterns" src tests scripts 2>/dev/null; then
+          if grep -rEn "$patterns" src api tests scripts 2>/dev/null; then
             echo "found a removed or deprecated API above"; exit 1
           fi
           echo "no removed APIs in use"
@@ -186,7 +186,7 @@ jobs:
         # features, models or the API is that abstraction quietly dissolving,
         # and it is far cheaper to catch here than to unpick later.
         run: |
-          leaked=$(grep -rEln 'football-data\.co\.uk|mmz4281' src scripts \
+          leaked=$(grep -rEln 'football-data\.co\.uk|mmz4281' src api scripts \
                    | grep -v '^src/ingestion/' || true)
           if [ -n "$leaked" ]; then
             echo "provider details outside src/ingestion:"; echo "$leaked"; exit 1
@@ -200,7 +200,7 @@ jobs:
         # opened a path has to be rewritten. src/pipelines writes the file, so
         # it is the one package allowed to name the format.
         run: |
-          leaked=$(grep -rEln 'read_parquet' src scripts \
+          leaked=$(grep -rEln 'read_parquet' src api scripts \
                    | grep -v '^src/storage/' || true)
           if [ -n "$leaked" ]; then
             echo "the canonical table is read outside src/storage:"; echo "$leaked"; exit 1
@@ -285,12 +285,82 @@ jobs:
           fi
           echo "src/explainability depends only on models, metrics, the schema and utils"
 
+      - name: The API is a caller of src, never a dependency of it
+        # The arrow points one way. `src` is the library `make reproduce` runs
+        # and it must not learn that a web server exists — the day it does,
+        # every pipeline in this project needs FastAPI installed to import, and
+        # the leakage suite starts walking a package full of route handlers.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) api\b' src scripts || true)
+          if [ -n "$offenders" ]; then
+            echo "src imports the api package:"; echo "$offenders"; exit 1
+          fi
+          echo "api depends on src; src does not depend on api"
+
+      - name: The API reaches no further than the pipeline layer
+        # The one shortcut that would undo Milestone 6. A design row is thirty
+        # columns built by producers the leakage suite walks and probes;
+        # rebuilding one inside a request handler would be a second, unprobed
+        # implementation of the feature layer sitting on the request path.
+        #
+        # So `api` may have the pipelines, the artefact, the storage protocols,
+        # the config and the card — and not `src.ratings`,
+        # `src.feature_engineering` or `src.ingestion`. The registry names are
+        # excluded by name rather than by a loose pattern, for the same reason
+        # the `src/utils` check excludes `from src import __version__`.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' api \
+                      | grep -vE 'src\.(pipelines|models|storage|utils|evaluation)\.' || true)
+          if [ -n "$offenders" ]; then
+            echo "api reaches past the pipeline layer:"; echo "$offenders"; exit 1
+          fi
+          echo "api depends only on pipelines, models, storage, evaluation and utils"
+
       - name: No network access from the unit suite
         # The suite must stay runnable offline. requests is only ever reached
         # through src/utils/http, and unit tests inject a stubbed session.
         run: |
-          if grep -rEn '^[[:space:]]*(import|from) (requests|urllib|http\.client|socket)\b' src \
+          if grep -rEn '^[[:space:]]*(import|from) (requests|urllib|http\.client|socket)\b' src api \
              | grep -v '^src/utils/http.py'; then
             echo "HTTP is being made outside src/utils/http"; exit 1
           fi
           echo "outbound HTTP confined to src/utils/http"
+
+  image:
+    name: Serving image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The Dockerfile is deployment code, and deployment code that is only
+      # ever built by hand is deployment code that is broken on the morning it
+      # is needed. Its own job, because it is minutes rather than seconds and
+      # nothing else in this workflow waits on it.
+      - name: Build
+        run: docker build --target runtime -t match-outcome-predictor:ci .
+
+      - name: It starts with no data, reports degraded, and says what is missing
+        # The clean-checkout state, which is exactly what this image is: no
+        # artefact and no tables are copied into it, both are mounted. A
+        # container that refused to start here would be one nobody could try
+        # before building three hundred thousand rows of football.
+        run: |
+          set -e
+          docker run -d --name api -p 8000:8000 match-outcome-predictor:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          health=$(curl -fsS http://127.0.0.1:8000/health)
+          echo "$health"
+          echo "$health" | grep -q '"status":"degraded"'
+          curl -fsS http://127.0.0.1:8000/version | grep -q '"prediction_log":"disabled"'
+          curl -fsS http://127.0.0.1:8000/openapi.json | grep -q '/predict/batch'
+          # The limitations have to be reachable from the service itself, not
+          # only from a document in a repository nobody serving it has open.
+          curl -fsS http://127.0.0.1:8000/model-card/limitations | grep -q 'Betting'
+          test "$(docker inspect -f '{{.Config.User}}' match-outcome-predictor:ci)" = "app"
+          docker rm -f api
+
+      - name: The compose file is valid
+        run: docker compose config --quiet

@@ -79,6 +79,19 @@ module's selection rule is arranged to avoid — it would be odd to avoid it for
 three members and commit it for one.
 """
 
+SHIPPED = "ensemble-calibrated"
+"""The model this project ships, by the name it is scored under.
+
+The blend of three, with the temperature applied — the best row in Milestone
+9's table, by 0.0005 over the best single family and by very little over the
+blend alone. Named rather than inferred from whichever row scored best, because
+it is a decision and a decision should be reviewable in a diff.
+
+It lives here rather than beside the card that describes it because Milestone
+11 serves it: the model layer names the model, and the reporting layer and the
+API both read the name from one place instead of agreeing about a string.
+"""
+
 MEMBERS: tuple[str, ...] = ("xgboost", "logistic_regression", "mlp")
 """The blend, chosen by :func:`select_members` on the tuning slice.
 

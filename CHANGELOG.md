@@ -10,6 +10,95 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.11.0] — unreleased
+
+Milestone 11: the inference service. The shipped blend, fitted once and served
+over HTTP from a container, with the model card's limitations reachable from
+the response and every prediction saying whether it was in-sample.
+
+### Added
+
+- `api/` — a new top-level package, and a caller of `src` rather than a part of
+  it. Six endpoints: `/predict` and `/predict/batch`, `/fixtures`, `/health`,
+  `/version`, `/model-card/limitations`. The request and response models *are*
+  the OpenAPI document, so a field that changes shape cannot leave the
+  documentation describing the old one.
+- `src/models/artifact.py` — the fitted counterpart of the blend. Every
+  forecaster before this one fits inside its own `forecast(train, evaluate)`,
+  which is what makes the folds causal and exactly the wrong shape for a
+  process that answers requests. Same members, same mean, same temperature
+  fitted the same way — called rather than reimplemented, because a served
+  probability that differed from a backtested one would make every number in
+  `docs/MODEL_CARD.md` a claim about a different model. Frames in, arrays out:
+  no path, no store, no format.
+- `src/pipelines/serving.py` — persisting that object and reading it back, plus
+  the fixture index the service answers from. The loader checks the manifest's
+  checksum *before* unpickling, because a truncated artefact raises at best and
+  produces something plausible at worst, and compares the libraries that fitted
+  it against the ones running now.
+- `src/storage/predictions.py` — the served-prediction log. PostgreSQL, which
+  `src/storage/base.py` has named as the store that would arrive with the first
+  thing to persist since Milestone 3. Optional: with no DSN the service runs
+  without a database, which is what CI and a clean checkout do.
+- `scripts/build_model.py` and `make model` — fit on the whole history, write
+  the artefact and a manifest. Joined `make reproduce` as its ninth stage, so
+  the one command now ends at something servable rather than at a document.
+- `Dockerfile`, `docker-compose.yml`, `requirements-api.txt` — a two-stage
+  build, non-root, with a health check. `data/` and `models/` are mounted
+  read-only rather than copied in: retraining is then a restart instead of a
+  rebuild. The serving requirements are a subset with a reason written beside
+  each omission.
+- `SECURITY.md`, `docs/API.md`.
+- Two CI invariants and a third job. `src` must not import `api`, and `api` must
+  not reach past the pipeline layer into the ratings, features or ingestion —
+  the one shortcut that would put an unprobed copy of the feature layer on the
+  request path. The new job builds the image and curls `/health` against it,
+  because deployment code that is only ever built by hand is broken on the
+  morning it is needed.
+
+### Changed
+
+- `MATCHES_FILENAME` moved from `src/pipelines/ingest.py` to
+  `src/ingestion/base.py`, which `ingest` re-exports. Reading one string meant
+  importing the provider adapter, the registry, the cache and — through them —
+  `requests`, so the serving process was loading the ingestion stack to learn a
+  filename. Found by the image failing to start, not by review.
+- The three boosted libraries are imported when their family is built rather
+  than when `src/models/zoo.py` is. They are separate wheels of a few hundred
+  megabytes each and the served blend contains one of them; at module scope,
+  the serving image had to carry LightGBM and CatBoost to satisfy an `import`
+  no request reaches.
+- `SHIPPED` moved from `src/pipelines/report.py` to `src/models/ensemble.py`.
+  The model layer names the model; the reporting layer and the API now read the
+  name from one place instead of agreeing about a string.
+- The model card's limitations are a constant, `LIMITATIONS`, that `render()`
+  splices in — so the four bullets the API serves and the four the document
+  states are the same object. The rendered card is byte-identical.
+- Coverage, lint, format and type-check cover `api` as well as `src`; the
+  threshold is still 100%.
+- `ApiConfig` gained `max_batch` and `prediction_log_dsn`. The DSN is
+  environment-only and has no line in `configs/config.yaml`, because that file
+  is committed and a setting with nowhere to write it is one nobody commits by
+  accident.
+
+### Fixed
+
+- `pd.Timedelta(days=1)` now raises a `DeprecationWarning` under the installed
+  numpy. Caught by the suite's `-W error::DeprecationWarning`, which is what it
+  is for.
+
+### Deviations from the plan, with reasons
+
+- **No SQLAlchemy.** `requirements.txt` pencilled it in beside psycopg. One
+  table, created if absent, with no column ever dropped or renamed: an ORM and
+  a directory of versioned migrations would be a second description of a table
+  that fits on a screen. psycopg alone, with every value bound.
+- **The service does not price unplayed fixtures**, because the provider
+  publishes no fixture list — see the note in `docs/API.md`. The scope said
+  "one fixture in, three probabilities out", and what it can be handed is a
+  fixture the batch build has a design row for.
+
+
 Repository polish. No model, feature, evaluation or calibration behaviour
 changes; every reported number is byte-identical.
 

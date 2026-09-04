@@ -97,6 +97,14 @@ ignore_missing_imports = true
 module = ["shap.*"]
 ignore_missing_imports = true
 
+# Milestone 11. joblib ships no `py.typed` marker. Two calls are made against
+# it — `dump` and `load` — and both are wrapped by src/pipelines/serving.py,
+# which re-checks what came back with an `isinstance` before returning it. The
+# untyped surface is two names wide and the boundary is guarded.
+[[tool.mypy.overrides]]
+module = ["joblib.*"]
+ignore_missing_imports = true
+
 # ---- pytest ----
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -115,13 +123,23 @@ filterwarnings = [
   # every run of the two tests that import it. Targeted at the module rather
   # than the category, so a pending deprecation anywhere else still shows.
   "ignore:The set_(bad|over|under) function will be deprecated:PendingDeprecationWarning:shap.plots.colors._colors",
+  # Milestone 11. Starlette's TestClient names `anyio.abc.BlockingPortal`, an
+  # alias anyio has deprecated in favour of `anyio.from_thread.BlockingPortal`.
+  # The reference is inside starlette, at import time, so there is nothing here
+  # to fix and no version of this project that does not trigger it while using
+  # the framework's own test client. Anchored to the message rather than to the
+  # category, so the next anyio deprecation still fails the run.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
 ]
 markers = [
   "integration: needs downloaded data or a trained model (deselect with -m 'not integration')",
 ]
 
 [tool.coverage.run]
-source = ["src"]
+# `api` joined `src` in Milestone 11. The service is first-party code on the
+# request path; measuring the library and not the thing that serves it would
+# put the 100% badge on the half nobody calls in production.
+source = ["src", "api"]
 omit = ["*/__init__.py"]
 
 [tool.coverage.report]

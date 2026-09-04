@@ -87,9 +87,22 @@ mlflow>=3.0
 # repository is a number that goes stale without a diff to show for it.
 shap>=0.46
 
+# ---- Serving (M11) ----
+# The API. FastAPI's request models are pydantic, which is already here for the
+# config, so the schemas and the OpenAPI document cost one dependency rather
+# than three. `uvicorn[standard]` pulls httptools and uvloop; both are wheels
+# and both are the difference between a demo and a server that can be measured.
+fastapi>=0.115
+uvicorn[standard]>=0.32
+# The serialisation format for the fitted artefact. It ships with scikit-learn
+# and is what scikit-learn's own documentation persists estimators with —
+# listed explicitly because src/pipelines/serving.py imports it by name.
+joblib>=1.4
+# The served-prediction log. psycopg 3, no ORM: one table, created if absent,
+# with every value bound. SQLAlchemy was in the plan for this milestone and is
+# not installed — see the Milestone 11 deviations in
+# plans/IMPLEMENTATION_PLAN.md.
+psycopg[binary]>=3.2
+
 # ---- Added in later milestones (recorded so the order is deliberate) --------
-# M11 serving storage .... psycopg[binary], SQLAlchemy  (PostgreSQL arrives with
-#                         the first prediction to serve, not before — see the
-#                         Milestone 3 note in plans/IMPLEMENTATION_PLAN.md)
-# M11 api ................ fastapi, uvicorn[standard]
 # M12 dashboard .......... streamlit, plotly

@@ -8,10 +8,12 @@ asked a store for rows does not.
 
 **Read-shaped on purpose.** There is no ``write_matches`` here, because nothing
 but :mod:`src.pipelines.ingest` writes matches, and a protocol method with no
-caller is a promise nobody is holding anyone to. The writing counterpart
-arrives with the store that needs it — PostgreSQL, in the milestone that first
-persists a prediction. Declaring it now would mean two implementations of a
-method that is only ever called by tests.
+caller is a promise nobody is holding anyone to. The writing counterpart is
+:class:`PredictionLog`, added by Milestone 11 — the milestone that first has
+something to persist. It is a *separate* protocol rather than two more methods
+on this one: a served prediction is application state with a different shape,
+a different lifetime and a different store, and a store that had to implement
+both to satisfy either would be a store nobody could write.
 
 A Protocol rather than an abstract base class, matching
 :class:`src.ingestion.base.MatchProvider`: implementations share a shape, not
@@ -21,10 +23,10 @@ to satisfy it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from datetime import date
 
     import pandas as pd
@@ -64,4 +66,46 @@ class MatchStore(Protocol):
 
     def count(self) -> int:
         """Number of matches held, without materialising them."""
+        ...
+
+
+@runtime_checkable
+class PredictionLog(Protocol):
+    """Append-only record of what the service said, and what it said it from.
+
+    The reason this exists is stated in the plan and is worth restating here:
+    the backtest measures the model over folds, and a *served* model is a
+    different thing — a different training window, a different population of
+    requests, and outcomes that arrive later. Writing every prediction down
+    with the inputs it was made from is what lets the served calibration be
+    measured against what happened rather than assumed to match the backtest.
+
+    The outcome is deliberately not a column. It lives in the canonical match
+    table already, and a second copy is a second thing to keep in step; a
+    consumer joins on ``match_id``.
+    """
+
+    enabled: bool
+    """Whether this log actually stores anything.
+
+    On the protocol rather than discovered with ``getattr`` at the call site,
+    because "is the audit trail on?" is a question the API answers in
+    ``/health`` and ``/version`` and one an implementation should have to
+    answer rather than be inspected for.
+    """
+
+    def ensure_schema(self) -> None:
+        """Create whatever the log needs, if it is not there. Idempotent."""
+        ...
+
+    def record(self, predictions: Sequence[Mapping[str, Any]]) -> int:
+        """Append predictions. Returns how many rows were written."""
+        ...
+
+    def recent(self, limit: int = 20) -> pd.DataFrame:
+        """The most recently written predictions, newest first."""
+        ...
+
+    def close(self) -> None:
+        """Release the connection. Idempotent."""
         ...

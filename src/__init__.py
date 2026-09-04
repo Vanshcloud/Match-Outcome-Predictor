@@ -5,4 +5,4 @@ The version here is the single source of truth. pyproject.toml reads it via
 ``tests/unit/test_version.py`` fails if any other copy drifts from it.
 """
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"

@@ -31,6 +31,32 @@ from src.evaluation.reliability import expected_calibration_error
 
 CARD_FILENAME = "MODEL_CARD.md"
 
+LIMITATIONS: tuple[str, ...] = (
+    "- **Betting.** The bookmaker's closing line beats this model in every",
+    "  one of the competitions it was scored on, before any margin is taken",
+    "  off. A model that lost to the market on public data and was staked",
+    "  anyway would lose the margin as well as the gap.",
+    "- **A club with no history in the table.** A promoted side, a first",
+    "  season, a competition's first year: the form windows are null and the",
+    "  ratings are at their priors, and the forecast is close to the base",
+    "  rate. That is the correct answer and a weak one.",
+    "- **Anything that needs the reason.** These probabilities are ranked,",
+    "  not explained. `docs/EXPLAINABILITY.md` says which blocks the model",
+    "  leans on across many matches; none of that is a claim about why one",
+    "  fixture came out the way it did.",
+    "- **Live or in-play prediction.** Every input is knowable before",
+    "  kick-off by construction, and nothing here updates during a match.",
+)
+"""The section that changes what someone does with the model, as lines.
+
+A constant rather than a literal inside :meth:`ModelCard.render`, because
+Milestone 11 serves these four bullets from the API — the plan asked for the
+card's limitations to be reachable from a response rather than buried in a
+repository, and the only way that stays true is for the served text and the
+rendered text to be the same object. Wrapped at the width the card is written
+at, so splicing them into the document needs no reflow.
+"""
+
 
 def _table(frame: pd.DataFrame, *, decimals: int = 4) -> list[str]:
     """A frame as GitHub-flavoured markdown rows.
@@ -189,20 +215,7 @@ class ModelCard:
         lines += [
             "## What it must not be used for",
             "",
-            "- **Betting.** The bookmaker's closing line beats this model in every",
-            "  one of the competitions it was scored on, before any margin is taken",
-            "  off. A model that lost to the market on public data and was staked",
-            "  anyway would lose the margin as well as the gap.",
-            "- **A club with no history in the table.** A promoted side, a first",
-            "  season, a competition's first year: the form windows are null and the",
-            "  ratings are at their priors, and the forecast is close to the base",
-            "  rate. That is the correct answer and a weak one.",
-            "- **Anything that needs the reason.** These probabilities are ranked,",
-            "  not explained. `docs/EXPLAINABILITY.md` says which blocks the model",
-            "  leans on across many matches; none of that is a claim about why one",
-            "  fixture came out the way it did.",
-            "- **Live or in-play prediction.** Every input is knowable before",
-            "  kick-off by construction, and nothing here updates during a match.",
+            *LIMITATIONS,
             "",
             "## How it was built",
             "",

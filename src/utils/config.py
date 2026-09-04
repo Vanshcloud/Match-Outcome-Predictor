@@ -45,6 +45,8 @@ ENV_OVERRIDES: dict[str, str] = {
     "MODEL_DIR": "paths.model_dir",
     "API_HOST": "api.host",
     "API_PORT": "api.port",
+    "API_MAX_BATCH": "api.max_batch",
+    "PREDICTION_LOG_DSN": "api.prediction_log_dsn",
     "LOG_LEVEL": "logging.level",
 }
 
@@ -133,10 +135,29 @@ class HttpConfig(_Strict):
 
 
 class ApiConfig(_Strict):
-    """Bind address for the FastAPI service."""
+    """How the FastAPI service binds, batches and logs what it served."""
 
     host: str = "0.0.0.0"
     port: int = Field(default=8000, gt=0, lt=65536)
+
+    max_batch: int = Field(default=50, gt=0, le=1000)
+    """How many fixtures one request may ask for.
+
+    A bound rather than a preference: every fixture in a batch is a row of the
+    same design matrix, so the cost is linear and unbounded, and an unbounded
+    request is the cheapest denial of service there is. Fifty is a round of
+    fixtures across the competitions this project covers.
+    """
+
+    prediction_log_dsn: str | None = None
+    """PostgreSQL connection string for the served-prediction log.
+
+    ``None`` disables the log and the service runs without a database — the
+    clean-checkout and CI case. **Environment only**: it carries a password,
+    and ``configs/config.yaml`` is committed. There is deliberately no entry
+    for it in that file, so there is no line for someone to fill in by
+    accident.
+    """
 
 
 class LoggingConfig(_Strict):

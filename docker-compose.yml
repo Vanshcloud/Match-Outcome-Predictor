@@ -1,0 +1,71 @@
+# The deployment, reproduced locally: the API, and the PostgreSQL it writes
+# served predictions to.
+#
+#   make model            # fit the artefact into ./models (needs the tables)
+#   docker compose up     # http://localhost:8000/docs
+#
+# `data/` and `models/` are mounted read-only rather than copied into the
+# image. Retraining is then `make model` and a restart, instead of a rebuild,
+# and the image stays the same bytes across every model it serves.
+#
+# NOT A PRODUCTION DEPLOYMENT. The password below is a literal, there is no
+# TLS, and the database port is published to the host. It is a local
+# reproduction — see SECURITY.md. A real deployment supplies
+# PREDICTION_LOG_DSN from a secret store, publishes nothing but the API, and
+# terminates TLS in front of it.
+
+name: match-outcome-predictor
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    image: match-outcome-predictor:local
+    ports:
+      - "8000:8000"
+    environment:
+      # A DSN, not a set of PG* variables. One string is one thing to inject
+      # from a secret store, and the code has one setting to read.
+      PREDICTION_LOG_DSN: postgresql://predictor:predictor@postgres:5432/predictions
+      LOG_LEVEL: INFO
+      API_MAX_BATCH: "50"
+    volumes:
+      # Read-only, both of them. The service reads a feature table and an
+      # artefact and writes neither, and a container that cannot corrupt its
+      # own inputs is one restart away from healthy whatever else goes wrong.
+      - ./data:/app/data:ro
+      - ./models:/app/models:ro
+    depends_on:
+      postgres:
+        # `service_healthy`, not `service_started`. The API creates its table at
+        # startup, so a database that is merely *running* — Postgres runs an
+        # init pass before it accepts connections — would fail the first boot
+        # and rely on the restart policy to paper over it.
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: predictor
+      POSTGRES_PASSWORD: predictor
+      POSTGRES_DB: predictions
+    ports:
+      # Published so `make test-int` and psql can reach it from the host. Bound
+      # to localhost explicitly: the unqualified form listens on every
+      # interface, which on a laptop on a café network is a database on the
+      # internet with the password in this file.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - predictions:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U predictor -d predictions"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  predictions:

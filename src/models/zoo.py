@@ -23,6 +23,15 @@ families read NaN directly and do better for it: "this club has no five-match
 form yet" is information. The three that cannot — logistic regression, the
 forest, the MLP — get an explicit imputer in their own pipeline rather than a
 silently pre-filled matrix.
+
+**The three boosted libraries are imported when their family is built, not when
+this module is.** They are separate wheels of a few hundred megabytes each, and
+Milestone 11 serves a blend that contains one of them — so importing all three
+at module scope made the serving image carry LightGBM and CatBoost to satisfy
+an `import` that nothing in a request ever reaches. The failure was not subtle:
+the container would not start. scikit-learn stays at the top because three
+families and both preprocessing steps need it, so nothing that imports this
+module can avoid it.
 """
 
 from __future__ import annotations
@@ -33,15 +42,12 @@ from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
-from lightgbm import LGBMClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from xgboost import XGBClassifier
 
 from src.evaluation.metrics import CLASSES
 from src.models.dataset import DESIGN_COLUMNS, design_matrix, targets
@@ -217,6 +223,8 @@ def random_forest(columns: Sequence[str] = DESIGN_COLUMNS, **overrides: Any) -> 
 
 
 def xgboost(columns: Sequence[str] = DESIGN_COLUMNS, **overrides: Any) -> TrainedForecaster:
+    from xgboost import XGBClassifier
+
     settings = {**XGBOOST, **overrides}
     return TrainedForecaster(
         name="xgboost",
@@ -233,6 +241,8 @@ def xgboost(columns: Sequence[str] = DESIGN_COLUMNS, **overrides: Any) -> Traine
 
 
 def lightgbm(columns: Sequence[str] = DESIGN_COLUMNS, **overrides: Any) -> TrainedForecaster:
+    from lightgbm import LGBMClassifier
+
     settings = {**LIGHTGBM, **overrides}
     return TrainedForecaster(
         name="lightgbm",
@@ -249,6 +259,8 @@ def lightgbm(columns: Sequence[str] = DESIGN_COLUMNS, **overrides: Any) -> Train
 
 
 def catboost(columns: Sequence[str] = DESIGN_COLUMNS, **overrides: Any) -> TrainedForecaster:
+    from catboost import CatBoostClassifier
+
     settings = {**CATBOOST, **overrides}
     return TrainedForecaster(
         name="catboost",

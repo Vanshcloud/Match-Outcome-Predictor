@@ -1,0 +1,58 @@
+# What the *serving* image installs. A subset of requirements.txt, not a
+# second copy of it: the versions here are the same specifiers, and the file
+# exists because the container that answers HTTP does not need most of what the
+# training pipeline needs.
+#
+# Left out, deliberately, and each for a reason that is checkable:
+#
+#   catboost, lightgbm  Not in MEMBERS. The served blend is xgboost, logistic
+#                       regression and the MLP; the other two families are
+#                       scored in the backtest and never unpickled here.
+#   optuna, mlflow      Search and run tracking. Neither runs in a request.
+#   shap                Explainability, which is a report rather than a route.
+#
+# What that buys is not only size: it is the list of things a CVE feed can
+# match against. If a member is ever added to the blend, its library is added
+# here in the same commit — the artefact will not unpickle without it, and the
+# service will say so at startup rather than on the first request.
+#
+# `requests` IS here, and not because anything serves over it. `HttpConfig`'s
+# user-agent default is the one in `src/utils/http`, so loading the settings
+# loads that module. Chasing the constant out of the config to shorten this
+# list would put cleverness in the module every entry point reads, to save
+# three small wheels. What actually confines outbound HTTP is the CI invariant
+# that keeps `requests` reachable from `src/utils/http.py` and nowhere else.
+
+# ---- Configuration ----
+PyYAML>=6.0
+python-dotenv>=1.0
+pydantic>=2.9
+
+# ---- Data ----
+pandas>=2.2,<3
+pyarrow>=17.0
+numpy>=2.0,<3
+# minimize_scalar, for the calibration temperature carried in the artefact.
+scipy>=1.14
+
+# ---- Configuration's one transitive need ----
+# See the note at the top: reached through `src/utils/http`, never called on a
+# request path.
+requests>=2.32
+
+# ---- Storage ----
+# DuckDB reads the three Parquet tables the fixture index is built from.
+duckdb>=1.1
+# The served-prediction log.
+psycopg[binary]>=3.2
+
+# ---- The model that is actually served ----
+# scikit-learn covers logistic regression and the MLP, plus the imputer and
+# scaler inside their pipelines. Both must be present to unpickle the artefact.
+scikit-learn>=1.5
+xgboost>=2.1
+joblib>=1.4
+
+# ---- The service ----
+fastapi>=0.115
+uvicorn[standard]>=0.32

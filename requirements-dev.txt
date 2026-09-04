@@ -9,3 +9,7 @@
 
 pytest==9.1.1
 pytest-cov==7.1.0
+# Milestone 11. FastAPI's TestClient is a thin wrapper over httpx, which
+# fastapi does not install itself — without it every API test fails at import
+# with a message about starlette rather than about a missing test dependency.
+httpx==0.28.1

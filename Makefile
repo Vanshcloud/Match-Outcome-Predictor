@@ -6,16 +6,17 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
 BIN    := $(VENV)/bin
+IMAGE  := match-outcome-predictor:local
 
 # Directories that hold first-party Python. Kept in one variable so a new
-# package (api/, added in Milestone 11) is wired into lint, format and
-# type-check by editing one line instead of six.
-CODE := src tests scripts
+# package is wired into lint, format and type-check by editing one line instead
+# of six. `api/` joined it in Milestone 11; `dashboard/` will in Milestone 12.
+CODE := src api tests scripts
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -64,7 +65,8 @@ reproduce: ## Rebuild every reported number from a clean checkout (~60 min)
 	$(MAKE) ensemble
 	$(MAKE) explain
 	$(MAKE) card
-	@echo "Reproduced: data/, models/, data/reports/ and docs/MODEL_CARD.md rebuilt."
+	$(MAKE) model
+	@echo "Reproduced: data/, models/, data/reports/, docs/MODEL_CARD.md and the served artefact rebuilt."
 
 ratings: ## Build the ratings table (~10 min; Dixon-Coles refits per competition)
 	$(BIN)/python scripts/build_ratings.py
@@ -99,6 +101,21 @@ explain: ## What each feature block is worth, by SHAP and by permutation (~2 min
 card: ## Regenerate docs/MODEL_CARD.md for the shipped model (~5 min)
 	$(BIN)/python scripts/model_card.py
 
+model: ## Fit the shipped model on the whole history and persist it (~1 min)
+	$(BIN)/python scripts/build_model.py
+
+api: ## Serve the API on http://127.0.0.1:8000/docs, reloading on edit
+	$(BIN)/uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+
+docker-build: ## Build the serving image
+	docker build -t $(IMAGE) .
+
+docker-run: ## Run the API and its prediction log via compose
+	docker compose up --build
+
+docker-stop: ## Stop the compose stack, keeping the database volume
+	docker compose down
+
 audit: ## Probe every producer and trace every derived column (~3 min; prints the table in docs/LEAKAGE.md)
 	$(BIN)/python scripts/audit_columns.py --competition ENG_1 --competition ESP_1 --markdown
 
@@ -115,7 +132,7 @@ test-int: ## Run integration tests (needs `make data` first; skips without it)
 	$(BIN)/pytest -m integration
 
 test-cov: ## Run tests with a coverage report and enforce the threshold
-	$(BIN)/pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=100
+	$(BIN)/pytest -m "not integration" --cov=src --cov=api --cov-report=term-missing --cov-fail-under=100
 
 lint: ## Run ruff
 	$(BIN)/ruff check $(CODE)
@@ -128,7 +145,7 @@ format-check: ## Check formatting without writing
 	$(BIN)/black --check $(CODE)
 
 typecheck: ## Run mypy
-	$(BIN)/mypy src
+	$(BIN)/mypy src api
 
 quality: lint format-check typecheck ## Run every quality gate
 

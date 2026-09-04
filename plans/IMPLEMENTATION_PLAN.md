@@ -794,16 +794,105 @@ could not price in Milestone 7.
 
 ---
 
-## Milestone 11 — API (next)
+## Milestone 11 — API ✅
+
+**Delivered.** The shipped blend, fitted once, behind HTTP, in a container.
+
+| Module | Responsibility |
+|---|---|
+| `models/artifact.py` | The blend as a *fitted* object: members, the mean, one temperature. Frames in, arrays out. |
+| `pipelines/serving.py` | Persisting it with a manifest, reading it back with the checksum checked first, and the fixture index. |
+| `storage/predictions.py` | The served-prediction log: PostgreSQL, and the no-op that stands in when none is configured. |
+| `api/service.py` | What answers a request: one model, one index, one log. |
+| `api/routes.py` | Six endpoints, each a call and a return. |
+| `api/main.py` | Lifespan, access logging, and the four exceptions mapped to status codes in one place. |
+| `api/schemas.py` | The request and response models, which are also the OpenAPI document. |
+| `scripts/build_model.py` | `make model`. |
+
+**Verified:** 1,131 unit tests, 100% coverage of `src` **and** `api`,
+ruff/black/mypy clean, plus integration suites against the real tables and
+against a real PostgreSQL. CI gained two invariants and a job that builds the
+image and curls `/health` against it.
+
+Full API reference in `docs/API.md`. The rest of this section records the
+decisions that changed.
+
+### The one design decision the plan did not anticipate
+
+The scope said "one fixture in". It did not say where the fixture's thirty
+columns come from, and there are only two answers: look them up, or recompute
+them.
+
+**Recomputing was rejected, and the data settles it.** The provider publishes
+*results*, not a fixture list — there is no feed of next Saturday's matches
+anywhere in this project — so a "price this upcoming match" endpoint has
+nothing to be handed. And even with such a feed, a design row built inside a
+request handler would be a second implementation of the feature layer, living
+outside every probe `src/validation/leakage.py` runs on the first. Milestone 6's
+whole argument is that a leak has no symptom: it simply makes the model look
+better. So the service reads the row the audited pipeline wrote, and says so.
+
+What that costs is on every response rather than in a footnote. `make model`
+fits on the whole history, so a fixture in the table is a fixture the artefact
+trained on; `in_sample` is what keeps that probability from being quoted as the
+walk-forward one.
+
+### The artefact is a new object, not a serialised old one
+
+`TrainedForecaster` holds its `build` as a lambda — the right shape for a zoo
+that wants a fresh estimator per fold, and unpicklable. `FittedMember` stores
+the family *name* and its columns instead and rebuilds the wrapper from the zoo
+on demand, so the scatter that puts `predict_proba` back into `CLASSES` order
+stays one implementation. An artefact naming a family the zoo no longer has
+fails on load, naming it.
+
+### Changed from the approved scope, with reasons
+
+- **SQLAlchemy: not installed.** `requirements.txt` pencilled it in beside
+  psycopg. There is one table, created if absent, with no column ever dropped
+  or renamed; an ORM plus a directory of versioned migrations would be a second
+  description of a table that fits on a screen. psycopg alone, every value
+  bound, and the connection injected so the unit suite drives every branch
+  offline — the same arrangement `src/utils/http.py` already uses for a stubbed
+  session.
+- **The prediction log is optional.** The plan implies it is always there. A
+  clean checkout has no PostgreSQL and neither does CI, and an API that would
+  not start without one is an API nobody can try. `PREDICTION_LOG_DSN` unset
+  means a no-op log, and `/health` says so rather than leaving it to be
+  inferred from silence.
+- **A `/fixtures` endpoint was added.** Not in the scope, and without it
+  nothing else in the service is usable: the fixtures that exist are the ones
+  the batch build wrote, and a caller has no other way to learn which those
+  are.
+- **`docker-compose.yml` arrived here rather than in Milestone 13.** Milestone
+  3 deferred it on the grounds that there was no application state and nothing
+  to serve. Both now exist, and a Postgres service with no compose file is a
+  dependency nobody can run.
+
+### Two bugs the image found that review did not
+
+Both were `ModuleNotFoundError` at container start, and neither is visible in a
+diff.
+
+`src/pipelines/tables.py` imported `MATCHES_FILENAME` from
+`src/pipelines/ingest.py`, which pulls the provider adapter, the registry, the
+cache and `requests` — so the serving process loaded the whole ingestion stack
+to read one string. The constant now lives in `src/ingestion/base.py`, with the
+canonical schema it names, and `ingest` re-exports it.
+
+`src/models/zoo.py` imported all six families at module scope. The served blend
+contains one boosted library; at module scope the image had to carry all three
+to satisfy an `import` no request reaches. Each is now imported when its family
+is built.
+
+---
+
+## Milestone 12 — Dashboard (next)
 
 Scope, for approval:
 
-- FastAPI over the shipped model: one fixture in, three calibrated
-  probabilities out, with the model card's limitations reachable from the
-  response rather than buried in a repository.
-- PostgreSQL for served predictions — the first thing in this project that is
-  application state rather than a derived table, which is the condition
-  Milestone 3 set for adding it.
-- A prediction is logged with the inputs it was made from, so the served
-  model's calibration can be measured against outcomes later rather than
-  assumed to match the backtest.
+- Streamlit over the same service: reliability tables a reader can filter, the
+  per-competition breakdown the card reports pooled, and the fixture search the
+  API already exposes.
+- No second copy of the arithmetic. The dashboard is a client of `api/` or of
+  `src/pipelines`, never a place where a probability is computed again.

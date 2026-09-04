@@ -14,7 +14,7 @@ from src.models.dataset import DESIGN_COLUMNS
 from src.pipelines.backtest import BACKTEST_FILENAME
 from src.pipelines.features import FEATURES_FILENAME
 from src.pipelines.ratings import RATINGS_FILENAME
-from src.pipelines.train import ABLATION_SUBDIR, ZOO_SUBDIR
+from src.pipelines.train import ABLATION_SUBDIR, ENSEMBLE_SUBDIR, ZOO_SUBDIR
 from src.ratings.base import DIXON_COLES_COLUMNS, ELO_COLUMNS
 from src.utils.paths import PROJECT_ROOT
 from tests.factories import modelled_frame, season_labels
@@ -113,6 +113,42 @@ def test_an_ablation_reports_a_delta_per_block(
     printed = capsys.readouterr().out
     assert "delta_log_loss" in printed
     assert "elo" in printed
+
+
+def test_the_blend_and_the_calibration_layer_are_reported_together(
+    tables: dict[str, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "reports"
+    code = CLI.main(
+        _argv(
+            tables,
+            out,
+            "--ensemble",
+            "logistic_regression",
+            "--member",
+            "logistic_regression",
+            "--member",
+            "random_forest",
+        )
+    )
+    assert code == 0
+    assert (out / ENSEMBLE_SUBDIR / BACKTEST_FILENAME).is_file()
+    printed = capsys.readouterr().out
+    assert "ensemble-calibrated" in printed
+    assert "calibration_error" in printed
+    # The before-and-after the milestone exists to report, by stated probability.
+    assert "logistic_regression, by stated probability:" in printed
+
+
+def test_the_correlations_are_measured_where_the_report_cannot_see_them(
+    tables: dict[str, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Members chosen on errors measured over the folds they are then scored on
+    is selection on the test set with an extra step."""
+    assert CLI.main(_argv(tables, tmp_path / "reports", "--correlations")) == 0
+    printed = capsys.readouterr().out
+    assert "earlier than the first reported fold" in printed
+    assert "MEMBERS: tuple[str, ...] = (" in printed
 
 
 def test_a_search_runs_on_matches_earlier_than_every_reported_fold(

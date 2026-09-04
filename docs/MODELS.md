@@ -1,8 +1,10 @@
 # Models
 
-Six families over thirty columns, scored on the folds Milestone 7 built and
-against the baselines it measured. What each one is worth, what tuning bought,
-and what each feature block contributes.
+Six families over thirty columns, a blend of the three that are not
+substitutes, and a calibration layer over both — all scored on the folds
+Milestone 7 built and against the baselines it measured. What each one is
+worth, what tuning bought, what each feature block contributes, and what the
+last two layers did not buy.
 
 ---
 
@@ -14,10 +16,12 @@ every forecaster could price:
 | | log loss | RPS | accuracy |
 |---|---:|---:|---:|
 | Bookmaker closing odds | **0.9993** | **0.2031** | 50.6% |
-| CatBoost | **1.0159** | 0.2083 | 49.3% |
+| Blend of three, calibrated | **1.0156** | **0.2082** | 49.3% |
+| Blend of three | 1.0156 | 0.2082 | 49.3% |
+| CatBoost | 1.0159 | 0.2083 | 49.2% |
 | XGBoost | 1.0161 | 0.2084 | 49.3% |
 | LightGBM | 1.0161 | 0.2083 | 49.3% |
-| Logistic regression | 1.0162 | 0.2083 | 49.3% |
+| Logistic regression | 1.0162 | 0.2083 | 49.2% |
 | Random forest | 1.0172 | 0.2087 | 49.2% |
 | MLP | 1.0203 | 0.2091 | 49.1% |
 | Dixon-Coles (Milestone 4) | 1.0277 | 0.2114 | 48.5% |
@@ -25,8 +29,15 @@ every forecaster could price:
 | Home always | ∞ | 0.4316 | 43.7% |
 
 **Every family beats the rating it was built on**, in all 39 competitions. The
-best of them closes **0.0118 of the 0.0284** Milestone 7 measured between
-Dixon-Coles and the closing line — 42% of the gap — and leaves 0.0166.
+zoo closes **0.0118 of the 0.0284** Milestone 7 measured between Dixon-Coles
+and the closing line — 42% of the gap — and the blend and the calibration layer
+together close **0.0003 more**, leaving 0.0163.
+
+That last number is the honest headline of the ensembling work: averaging three
+models whose errors are as uncorrelated as this zoo gets is worth a fortieth of
+what the zoo itself was worth over the rating, and temperature scaling is worth
+nothing at all in log loss. What calibration *does* buy is stated in its own
+section below, and it is not a score.
 
 And the finding that matters more than the ranking: **the top four are within
 0.0003 of each other.** Logistic regression, on thirty columns, is not
@@ -210,6 +221,135 @@ rating, stated in one competition.
 
 ---
 
+## The blend, and why it is these three
+
+Averaging models that are wrong about the same matches produces a model that is
+wrong about those matches with slightly less confidence. Milestone 8 refused to
+build an ensemble for exactly that reason — its top four sat within 0.0003 of
+each other — so the members here are chosen on **the correlation of their
+per-match errors**, and their individual scores decide only the order
+candidates are considered in.
+
+Per-match log loss, correlated pairwise over 34,306 matches of the tuning slice
+— every one of them earlier than the first reported fold, for the same reason
+the hyperparameters were chosen there:
+
+| | catboost | lightgbm | logistic_regression | mlp | random_forest | xgboost |
+|---|---:|---:|---:|---:|---:|---:|
+| catboost | 1.0000 | 0.9915 | 0.9872 | 0.9212 | 0.9922 | **0.9960** |
+| lightgbm | 0.9915 | 1.0000 | 0.9826 | 0.9201 | 0.9860 | 0.9953 |
+| logistic_regression | 0.9872 | 0.9826 | 1.0000 | 0.9231 | 0.9796 | 0.9857 |
+| mlp | 0.9212 | 0.9201 | 0.9231 | 1.0000 | **0.9153** | 0.9213 |
+| random_forest | 0.9922 | 0.9860 | 0.9796 | 0.9153 | 1.0000 | 0.9934 |
+| xgboost | 0.9960 | 0.9953 | 0.9857 | 0.9213 | 0.9934 | 1.0000 |
+
+The pairs are not evenly spread, and the gap in them is the whole decision. The
+four tree-based families sit between 0.9934 and 0.9960 of each other — they are
+substitutes, which is the quantitative form of Milestone 8's finding that the
+top four were indistinguishable. Logistic regression is a little further out at
+0.9857. The MLP is the only family that is wrong about different matches at
+all, at 0.92 against everything, and it is also the worst model here.
+
+`MAX_ERROR_CORRELATION = 0.99` sits in the empty band between 0.9857 and
+0.9934. It is read off the measurement rather than chosen in advance, and it
+admits, best-first: **XGBoost, logistic regression, the MLP**.
+
+| 59,001 matches | log loss | RPS |
+|---|---:|---:|
+| Blend of the three | **1.0156** | **0.2082** |
+| CatBoost, the best single family | 1.0159 | 0.2083 |
+| XGBoost, the blend's own best member | 1.0161 | 0.2084 |
+| MLP, the blend's worst member | 1.0203 | 0.2091 |
+
+**The blend beats every family that went into it, and the one that did not.**
+It is worth 0.0005 over its best member and 0.0002 over CatBoost, which did not
+make it in — a plain mean of a good model, a mediocre one and the worst one in
+the zoo beats every model in the zoo. That is what choosing on error
+correlation is for, and it is the argument against the obvious alternative of
+averaging the top three, all of which correlate above 0.9915.
+
+It is also very small. Per competition the blend beats XGBoost in 28 of 39 —
+not 39 — and it beats Dixon-Coles and the class prior in all 39, as every
+family already did.
+
+**No fitted weights, and no log pool.** Weights fitted on any holdout small
+enough to be honest are noise with three decimal places at this margin, and a
+log pool sharpens a blend that the next section shows is already slightly too
+confident.
+
+---
+
+## Calibration: it buys reliability, not loss
+
+Temperature scaling: one scalar, `p ** (1/T)` renormalised, fitted on **the
+last year of each fold's own training half** with the model refitted on
+everything before it. The evaluation half is never read, which costs a second
+fit per fold and is the only arrangement under which a calibrated model has
+seen exactly the matches the uncalibrated one saw.
+
+The fitted temperatures, per fold:
+
+| Fold | 0 | 1 | 2 | 3 | 4 |
+|---|---:|---:|---:|---:|---:|
+| XGBoost | 1.1152 | 1.0210 | 0.9913 | 1.0338 | 1.0271 |
+| Blend | 1.0926 | 1.0416 | 0.9936 | 1.0612 | 1.0331 |
+
+Above one is a forecast being flattened, so both were slightly overconfident in
+four folds of five, and the blend marginally more so than the single model.
+
+What that did to the two numbers:
+
+| 59,001 matches | log loss | calibration error |
+|---|---:|---:|
+| Blend, calibrated | **1.01560** | **0.0015** |
+| Blend | 1.01565 | 0.0045 |
+| XGBoost | 1.01614 | 0.0037 |
+| XGBoost, calibrated | 1.01622 | 0.0020 |
+
+**The scalar halves the calibration error and does not move the log loss.** On
+XGBoost it makes the loss 0.00008 *worse*; on the blend, 0.00005 better. Both
+are noise. The calibration error — the mean gap between a stated probability
+and how often it happened, weighted by how many statements are behind each bin
+— falls by 46% and 67%.
+
+That is the answer to the question the milestone asked, and it is not a
+disappointment. A layer that improved the score *and* the honesty would have
+meant the score was the thing that was wrong; log loss is a proper scoring rule
+and these models were fitted on it, so they were already close to proper. What
+was left was a small, systematic overconfidence that log loss barely charges
+for and a reliability table shows immediately:
+
+| stated | statements | mean stated | happened | gap | gap after |
+|---|---:|---:|---:|---:|---:|
+| 0.0–0.1 | 3,309 | 0.0758 | 0.0728 | −0.0030 | −0.0102 |
+| 0.1–0.2 | 19,331 | 0.1604 | 0.1654 | +0.0050 | +0.0007 |
+| 0.2–0.3 | 77,867 | 0.2603 | 0.2635 | +0.0032 | +0.0001 |
+| 0.3–0.4 | 36,148 | 0.3431 | 0.3410 | −0.0021 | −0.0020 |
+| 0.4–0.5 | 25,130 | 0.4467 | 0.4374 | **−0.0093** | −0.0033 |
+| 0.5–0.6 | 14,012 | 0.5437 | 0.5438 | +0.0001 | +0.0069 |
+| 0.6–0.7 | 6,045 | 0.6421 | 0.6422 | +0.0001 | +0.0104 |
+| 0.7–0.8 | 3,087 | 0.7451 | 0.7399 | −0.0052 | +0.0013 |
+| 0.8–0.9 | 1,171 | 0.8371 | 0.8292 | −0.0079 | +0.0091 |
+| 0.9–1.0 | 8 | 0.9067 | 1.0000 | +0.0933 | +0.0952 |
+
+XGBoost before the scalar, and the gap after it. The three bins carrying 90% of
+the statements are where the error falls: the 0.4–0.5 band promised nine points
+more than it delivered and now promises three.
+
+**Every probability is binned, not only the confident one.** A three-class
+forecast makes three statements per match and all 3n of them are here, which is
+why the totals are triple the match count. Binning only the model's favourite
+class would measure a classifier's confidence and say nothing about the draw
+column — which, at 77,867 statements between 0.2 and 0.3, is most of what this
+model says.
+
+The last row is eight statements. A football model on 39 competitions almost
+never claims 90%, and the bin is left in the table rather than merged away
+because "the model is confident four times in sixty thousand matches" is worth
+seeing.
+
+---
+
 ## By competition
 
 LightGBM beats Dixon-Coles in **39 of 39** competitions and the class prior in
@@ -217,6 +357,11 @@ all 39; the bookmaker beats it in all 39. The gap to the closing line ranges
 from 0.0059 to 0.0615, with a median of 0.0154 — against Dixon-Coles' median of
 0.0263 at the same point in Milestone 7. The zoo took about 40% of the gap in
 the median competition, which is the same share it took overall.
+
+The blend does not change that picture: 39 of 39 against the rating and the
+prior, 0 of 39 against the bookmaker, and a median gap of 0.0153 against
+LightGBM's 0.0154. It beats its own best member in 28 of the 39, which is worth
+knowing before anyone reads 0.0005 as a property of every competition.
 
 The widest remaining gap is the Chinese Super League at 0.0615, and the
 narrowest is the Russian Premier League at 0.0059. Neither is a competition
@@ -228,15 +373,22 @@ strength — which was Milestone 7's finding and survives the zoo.
 
 ## What is not here
 
-**No ensemble, and no calibration.** Both are Milestone 9. Averaging the top
-four would be the obvious next move and it is deliberately not taken here — the
-four are within 0.0003 of each other and heavily correlated, so an ensemble
-built now would report a number that says more about the averaging than about
-the models.
+**No fitted ensemble weights, and no stacking.** A meta-model over three
+correlated members, fitted on a holdout, is a fourth model to tune and validate
+for a margin already down at 0.0005. The plain mean is the version whose number
+can be attributed to the members.
+
+**No per-class or per-competition calibration.** Vector scaling — a weight per
+class — and a temperature per competition are both reachable from here, and
+neither is justified by a reliability table whose largest bins are already
+within 0.0001 after one scalar.
 
 **No feature added to close the gap.** The ablation says where the remaining
-value is not, and Milestone 7 says what is left is not team strength. Choosing
-what to add on that evidence is worth doing carefully rather than immediately.
+value is not, and Milestone 7 says what is left is not team strength. Two
+milestones of model work have now bought 0.0121 of the 0.0284 and the last two
+layers bought 0.0003 of that, which is the strongest evidence yet that the
+remaining 0.0163 is information this project does not have rather than
+modelling it has not done.
 
 **No per-competition model.** The Argentine cup result above is the case that
 would have justified one, and it turned out not to need it.
@@ -246,15 +398,22 @@ would have justified one, and it turned out not to need it.
 ## Re-running it
 
 ```bash
-make train                                   # six families, five folds (~10 min)
+make train                                   # six families, five folds (~5 min)
 make ablation                                # what each block is worth
+make ensemble                                # the blend, the scalar, the reliability tables
+make correlations                            # the matrix the members were read off
 python scripts/train.py --model lightgbm
 python scripts/train.py --tune xgboost --trials 20
+python scripts/train.py --ensemble lightgbm --member lightgbm --member mlp
 python scripts/train.py --markdown           # the tables above
 ```
 
-The score table goes to `data/reports/zoo/backtest.parquet` and the ablation to
-`data/reports/ablation/backtest.parquet`, both written by the unchanged
-evaluation pipeline with a manifest beside them. Runs are logged to a local
+The score table goes to `data/reports/zoo/backtest.parquet`, the ablation to
+`data/reports/ablation/backtest.parquet` and the blend to
+`data/reports/ensemble/backtest.parquet`, all written by the unchanged
+evaluation pipeline with a manifest beside them. `make ensemble` walks the
+folds twice: once through the backtest for the scores, and once more for the
+reliability tables, because the backtest persists means and reliability is a
+question about individual probabilities. Runs are logged to a local
 SQLite MLflow store under `models/` — not a server, and not MLflow's own
 directory store, which 3.x refuses to write to at all.

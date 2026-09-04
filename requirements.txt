@@ -35,7 +35,8 @@ numpy>=2.0,<3
 # Dixon-Coles is a maximum-likelihood fit — two strengths per team plus a home
 # term and the low-score correction — refitted every thirty days per
 # competition. scipy.optimize.minimize (L-BFGS-B) is the whole reason this is
-# a dependency; nothing else here needs it.
+# a dependency. Milestone 9 added a second caller, minimize_scalar, for the one
+# temperature the calibration layer fits per fold.
 scipy>=1.14
 
 # ---- Storage (M3) ----

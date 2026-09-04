@@ -20,8 +20,11 @@ import pandas as pd
 import pytest
 
 from src.evaluation.metrics import score
+from src.evaluation.reliability import expected_calibration_error, reliability
 from src.models.baselines import ClassPrior
+from src.models.calibration import Calibrated
 from src.models.dataset import BLOCKS, DESIGN_COLUMNS, design_matrix
+from src.models.ensemble import BEST, MEMBERS
 from src.models.splits import walk_forward
 from src.models.tuning import tuning_slice
 from src.models.zoo import build
@@ -34,7 +37,13 @@ from src.pipelines.backtest import (
 from src.pipelines.features import FEATURES_FILENAME
 from src.pipelines.ingest import MATCHES_FILENAME
 from src.pipelines.ratings import RATINGS_FILENAME
-from src.pipelines.train import ABLATION_SUBDIR, ZOO_SUBDIR, ablation_table
+from src.pipelines.train import (
+    ABLATION_SUBDIR,
+    ENSEMBLE_SUBDIR,
+    ZOO_SUBDIR,
+    ablation_table,
+    reliability_tables,
+)
 from src.utils.config import load_settings
 from src.validation.temporal import split_boundary
 
@@ -46,6 +55,7 @@ RATINGS = SETTINGS.paths.features_dir / RATINGS_FILENAME
 FEATURES = SETTINGS.paths.features_dir / FEATURES_FILENAME
 TRAINED = SETTINGS.paths.reports_dir / ZOO_SUBDIR / BACKTEST_FILENAME
 ABLATED = SETTINGS.paths.reports_dir / ABLATION_SUBDIR / BACKTEST_FILENAME
+BLENDED = SETTINGS.paths.reports_dir / ENSEMBLE_SUBDIR / BACKTEST_FILENAME
 ABLATED_MODEL = "lightgbm"
 """Which family `make ablation` uses. The top four are within 0.0003 of each
 other — smaller than anything the ablation measures — so the fastest of them
@@ -221,3 +231,82 @@ def test_the_best_model_beats_the_rating_in_every_competition(trained: pd.DataFr
 def test_the_bookmaker_still_wins_in_every_competition(trained: pd.DataFrame) -> None:
     table = per_competition_table(trained)
     assert (table["bookmaker"] < table["lightgbm"]).all()
+
+
+# ---- the blend and the calibration layer ------------------------------------
+
+
+@pytest.fixture(scope="module")
+def blended() -> pd.DataFrame:
+    if not BLENDED.is_file():
+        pytest.skip(f"no ensemble scores at {BLENDED}; run scripts/train.py --ensemble")
+    return pd.read_parquet(BLENDED)
+
+
+def test_the_four_variants_are_scored_over_the_same_matches(blended: pd.DataFrame) -> None:
+    """One backtest, so the difference between two rows is the layer rather
+    than the subset it was computed over."""
+    pooled = pooled_table(blended, COMMON).set_index("forecaster")
+    assert {BEST, f"{BEST}-calibrated", "ensemble", "ensemble-calibrated"} <= set(pooled.index)
+    assert pooled["n"].nunique() == 1
+
+
+def test_the_blend_beats_every_family_that_went_into_it(
+    blended: pd.DataFrame, trained: pd.DataFrame
+) -> None:
+    """Which is the whole claim, and it is worth 0.0005 of log loss. The two
+    runs share a common subset — both include the two baselines whose coverage
+    defines it — so the tables are comparable."""
+    pooled = pooled_table(blended, COMMON).set_index("forecaster")
+    zoo = pooled_table(trained, COMMON).set_index("forecaster")
+    assert zoo["n"].max() == pooled["n"].max()
+    for member in MEMBERS:
+        assert pooled.loc["ensemble", "log_loss"] < zoo.loc[member, "log_loss"], member
+
+
+def test_the_blend_beats_the_best_single_family_by_very_little(
+    blended: pd.DataFrame, trained: pd.DataFrame
+) -> None:
+    """A tenth of what the zoo bought over the rating. Pinned as a band rather
+    than asserted as a win, because the interesting property is the size."""
+    blend = pooled_table(blended, COMMON).set_index("forecaster").loc["ensemble", "log_loss"]
+    best_single = pooled_table(trained, COMMON).drop(index=[0])["log_loss"].min()
+    assert 0 < best_single - blend < 0.002
+
+
+def test_the_bookmaker_still_wins_after_both_layers(blended: pd.DataFrame) -> None:
+    pooled = pooled_table(blended, COMMON).set_index("forecaster")
+    assert pooled["log_loss"].idxmin() == "bookmaker"
+
+
+def test_calibration_buys_reliability_and_not_loss(blended: pd.DataFrame) -> None:
+    """The milestone's reportable answer. The scalar moves log loss by less
+    than a ten-thousandth in either direction — these models were already close
+    to proper — and the reliability table is where it shows up."""
+    pooled = pooled_table(blended, COMMON).set_index("forecaster")
+    for name in (BEST, "ensemble"):
+        moved = pooled.loc[f"{name}-calibrated", "log_loss"] - pooled.loc[name, "log_loss"]
+        assert abs(moved) < 0.001, name
+
+
+def test_the_calibrated_model_states_probabilities_that_happen(matches: pd.DataFrame) -> None:
+    """Two folds rather than five, and the one assertion the score table cannot
+    make: after the scalar, a stated probability is closer to the rate the
+    thing happens at."""
+    model = build(BEST)
+    tables = reliability_tables(matches, [model, Calibrated(model)], folds=2)
+    before = expected_calibration_error(tables[BEST])
+    after = expected_calibration_error(tables[f"{BEST}-calibrated"])
+    assert after < before
+
+
+def test_a_reliability_table_covers_the_probabilities_a_model_actually_states(
+    matches: pd.DataFrame,
+) -> None:
+    """Three statements per match, all of them binned. A football forecast
+    lives between 0.05 and 0.85, so the extreme bins are thin or empty and the
+    table has to say which."""
+    fold = next(iter(walk_forward(matches, folds=2)))
+    table = reliability(build(BEST).forecast(fold.train, fold.evaluate), fold.evaluate["result"])
+    assert table["n"].sum() == 3 * len(fold.evaluate)
+    assert table["n"].idxmax() in table.index

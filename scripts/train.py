@@ -1,9 +1,11 @@
 #!/usr/bin/env python
-"""Fit the model zoo over the walk-forward folds, ablate it, or tune it.
+"""Fit the model zoo over the walk-forward folds, ablate it, blend it, or tune it.
 
     python scripts/train.py                       # every model, beside the baselines
     python scripts/train.py --model lightgbm --model xgboost
     python scripts/train.py --ablate lightgbm     # what each feature block is worth
+    python scripts/train.py --ensemble            # the blend and the calibration layer
+    python scripts/train.py --correlations        # whose errors are alike, and who that admits
     python scripts/train.py --tune xgboost        # search, then print the constants
     python scripts/train.py --markdown            # the tables in docs/
 
@@ -13,8 +15,11 @@ its own `forecast`, so nothing in the evaluation layer knows an estimator
 exists. The baselines are included in the run by default, because a model's log
 loss means nothing without the class prior beside it on the same matches.
 
-A full run is about ten minutes, most of it the MLP and the random forest.
-`--tune` is far longer: one trial is three fits over most of the history.
+A full run is about five minutes, most of it the MLP and the random forest.
+`--ensemble` is about four times that: the calibration layer fits its inner
+model twice per fold, and the reliability tables need a second pass over the
+folds because the backtest persists means rather than matches. `--tune` is
+longer still: one trial is three fits over most of the history.
 
 Exits non-zero if the tables cannot be read or no fold can be built.
 """
@@ -29,19 +34,45 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd  # noqa: E402
 
+from src.evaluation.reliability import (  # noqa: E402
+    DEFAULT_BINS,
+    expected_calibration_error,
+)
 from src.models.dataset import BLOCKS  # noqa: E402
+from src.models.ensemble import (  # noqa: E402
+    BEST,
+    MAX_ERROR_CORRELATION,
+    MEMBERS,
+    by_log_loss,
+    error_correlations,
+    fold_forecasts,
+    select_members,
+)
 from src.models.splits import (  # noqa: E402
     DEFAULT_FOLDS,
     DEFAULT_HORIZON_DAYS,
     SplitError,
 )
-from src.models.tuning import DEFAULT_TRIALS, as_constants, tune, tuning_slice  # noqa: E402
-from src.models.zoo import FAMILIES, ModelError  # noqa: E402
+from src.models.tuning import (  # noqa: E402
+    DEFAULT_TRIALS,
+    TUNING_FOLDS,
+    as_constants,
+    tune,
+    tuning_slice,
+)
+from src.models.zoo import FAMILIES, ModelError, default_zoo  # noqa: E402
 from src.pipelines.backtest import COMMON, PRICED, pooled_table  # noqa: E402
 from src.pipelines.features import FEATURES_FILENAME  # noqa: E402
 from src.pipelines.ingest import MATCHES_FILENAME  # noqa: E402
 from src.pipelines.ratings import RATINGS_FILENAME  # noqa: E402
-from src.pipelines.train import ablation_table, run_ablation, run_training  # noqa: E402
+from src.pipelines.train import (  # noqa: E402
+    ablation_table,
+    ensemble_forecasters,
+    reliability_tables,
+    run_ablation,
+    run_ensemble,
+    run_training,
+)
 from src.storage.duckdb_store import DuckDBStore  # noqa: E402
 from src.utils.config import Settings, load_settings  # noqa: E402
 from src.utils.logging import configure_logging, get_logger  # noqa: E402
@@ -80,6 +111,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=sorted(FAMILIES),
         help="score this model with each feature block withheld, in one run",
     )
+    parser.add_argument(
+        "--ensemble",
+        nargs="?",
+        const=BEST,
+        default=None,
+        metavar="MODEL",
+        choices=sorted(FAMILIES),
+        help="score the blend and MODEL's calibration layer beside MODEL. Defaults to the "
+        "best family.",
+    )
+    parser.add_argument(
+        "--member",
+        action="append",
+        default=[],
+        choices=sorted(FAMILIES),
+        help="a blend member. Repeatable. Defaults to the measured set.",
+    )
+    parser.add_argument(
+        "--correlations",
+        action="store_true",
+        help="print how alike the families' errors are, on matches earlier than every reported fold",
+    )
+    parser.add_argument("--bins", type=int, default=DEFAULT_BINS, help="reliability bins")
     parser.add_argument(
         "--tune",
         metavar="MODEL",
@@ -224,6 +278,87 @@ def report_ablation(frame: pd.DataFrame, args: argparse.Namespace, settings: Set
     return 0
 
 
+def report_ensemble(frame: pd.DataFrame, args: argparse.Namespace, settings: Settings) -> int:
+    """The blend, the calibration layer, and how honest each of them is.
+
+    Two passes over the folds, which is deliberate. The first is the unchanged
+    backtest, and it produces the scored table beside the same baselines. The
+    second re-forecasts the folds to get the matches back, because reliability
+    is a question about individual probabilities and the backtest persists
+    means — the alternative is a side channel out of a scoring pipeline whose
+    ignorance of what it scores is the reason a model and a baseline can share
+    a table.
+    """
+    paths = settings.paths
+    members = args.member or MEMBERS
+    report = run_ensemble(
+        frame,
+        args.output or paths.reports_dir,
+        model=args.ensemble,
+        members=members,
+        baselines=not args.no_baselines,
+        folds=args.folds,
+        horizon_days=args.horizon_days,
+    )
+    if report.scores is None:  # pragma: no cover - run_backtest always writes one
+        logger.error("nothing was scored")
+        return 1
+
+    print(f"\n{report.folds} fold(s), {report.matches:,} matches scored\n")
+    print("Every forecaster over the matches all of them could price:")
+    print(render(pooled_table(report.scores, COMMON), markdown=args.markdown))
+
+    tables = reliability_tables(
+        frame,
+        ensemble_forecasters(args.ensemble, members),
+        folds=args.folds,
+        horizon_days=args.horizon_days,
+        bins=args.bins,
+    )
+    print("\nHow honest each is — mean gap between a stated probability and how")
+    print("often it happened, over the same folds:")
+    errors = pd.DataFrame(
+        [
+            {"forecaster": name, "calibration_error": expected_calibration_error(table)}
+            for name, table in tables.items()
+        ]
+    ).sort_values("calibration_error")
+    print(render(errors, markdown=args.markdown))
+
+    for name in (args.ensemble, f"{args.ensemble}-calibrated"):
+        print(f"\n{name}, by stated probability:")
+        print(render(tables[name], markdown=args.markdown))
+
+    print(f"\nwritten to {report.output}")
+    return 0
+
+
+def report_correlations(frame: pd.DataFrame, args: argparse.Namespace) -> int:
+    """Whose mistakes are alike, and which members that admits.
+
+    On the tuning slice, for the reason `--tune` is: members chosen by looking
+    at errors on the folds they are then scored on is selection on the test set
+    with an extra step.
+    """
+    slice_ = tuning_slice(frame, folds=args.folds, horizon_days=args.horizon_days)
+    print(
+        f"correlating the zoo's errors on {len(slice_):,} matches to "
+        f"{slice_['date'].max():%Y-%m-%d} — every one earlier than the first reported fold\n"
+    )
+    forecasts = fold_forecasts(
+        slice_, default_zoo(), folds=TUNING_FOLDS, horizon_days=args.horizon_days
+    )
+    matrix = error_correlations(forecasts)
+    print(render(matrix.reset_index(names="forecaster"), markdown=args.markdown))
+
+    order = by_log_loss(forecasts)
+    chosen = select_members(matrix, order)
+    print(f"\nbest first: {', '.join(order)}")
+    print(f"admitted below {MAX_ERROR_CORRELATION}: {', '.join(chosen)}\n")
+    print(f"MEMBERS: tuple[str, ...] = {chosen!r}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     settings = load_settings()
@@ -236,6 +371,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.tune is not None:
             return run_tuning(frame, args)
+        if args.correlations:
+            return report_correlations(frame, args)
+        if args.ensemble is not None:
+            return report_ensemble(frame, args, settings)
         if args.ablate is not None:
             return report_ablation(frame, args, settings)
         return report_training(frame, args, settings)

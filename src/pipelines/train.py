@@ -1,4 +1,4 @@
-"""Fit the zoo over the walk-forward folds, and ablate it.
+"""Fit the zoo over the walk-forward folds, ablate it, blend it, calibrate it.
 
 Orchestration only, and deliberately thin: a trained model is a
 :class:`~src.models.baselines.Forecaster` that happens to fit inside its own
@@ -13,6 +13,20 @@ forecaster per variant — the model with all thirty columns, and the model with
 one block withheld — and runs them **in a single backtest**. Every variant is
 then scored on identical matches, and the difference between two rows is the
 block, not the subset.
+
+Milestone 9's ensemble and calibration layer arrive the same way: both are
+:class:`~src.models.baselines.Forecaster` implementations, so the blend, the
+calibrated model and the four baselines are one more list handed to the same
+unchanged backtest, and the 0.0166 that is left of Milestone 7's gap is
+measured on the same matches throughout.
+
+**Reliability costs a second pass, on purpose.** The backtest persists means —
+one score per fold, competition, forecaster and subset — which is right for a
+report and useless for asking whether a stated 30% happens 30% of the time.
+That question needs the matches back, so :func:`reliability_tables` walks the
+folds again through :func:`~src.models.ensemble.fold_forecasts`. The cheaper
+arrangement is a side channel out of the scoring pipeline, and the pipeline
+staying ignorant of what it is scoring is worth more than the minutes.
 """
 
 from __future__ import annotations
@@ -23,8 +37,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.evaluation.reliability import DEFAULT_BINS, reliability
+from src.ingestion.base import TARGET_COLUMN
 from src.models.baselines import Forecaster, default_forecasters
+from src.models.calibration import Calibrated
 from src.models.dataset import BLOCKS, DESIGN_COLUMNS, without
+from src.models.ensemble import BEST, FORECAST_COLUMNS, MEMBERS, ensemble, fold_forecasts
 from src.models.splits import DEFAULT_FOLDS, DEFAULT_HORIZON_DAYS
 from src.models.tracking import log_run
 from src.models.zoo import TrainedForecaster, build, default_zoo
@@ -40,6 +58,7 @@ logger = get_logger(__name__)
 
 ZOO_SUBDIR = "zoo"
 ABLATION_SUBDIR = "ablation"
+ENSEMBLE_SUBDIR = "ensemble"
 """Subdirectories of the reports directory.
 
 Each holds a ``backtest.parquet`` written by the unchanged evaluation pipeline.
@@ -219,3 +238,71 @@ def ablation_table(scores: pd.DataFrame, model: str) -> pd.DataFrame:
         if name.startswith(f"{model}-no-")
     ]
     return pd.DataFrame(rows).sort_values("delta_log_loss", ascending=False).reset_index(drop=True)
+
+
+def ensemble_forecasters(
+    model: str = BEST,
+    members: Sequence[str] = MEMBERS,
+    columns: Sequence[str] = DESIGN_COLUMNS,
+) -> tuple[Forecaster, ...]:
+    """The four rows Milestone 9 exists to compare.
+
+    The best single family, that family calibrated, the blend, and the blend
+    calibrated — in one list, so one backtest scores them on identical matches
+    and the difference between two rows is the layer rather than the subset.
+    Every one of them is measured against the same four baselines in the same
+    run, which is what keeps the remaining gap to the closing line a number
+    about football rather than about which table it was read off.
+    """
+    single = build(model, columns)
+    blend = ensemble(members, columns)
+    return (single, Calibrated(single), blend, Calibrated(blend))
+
+
+def run_ensemble(
+    matches: pd.DataFrame,
+    reports_dir: Path,
+    *,
+    model: str = BEST,
+    members: Sequence[str] = MEMBERS,
+    columns: Sequence[str] = DESIGN_COLUMNS,
+    baselines: bool = True,
+    folds: int = DEFAULT_FOLDS,
+    horizon_days: int = DEFAULT_HORIZON_DAYS,
+) -> BacktestReport:
+    """Score the blend and the calibration layer beside the model they are made
+    of, through the unchanged backtest."""
+    chosen = ensemble_forecasters(model, members, columns)
+    forecasters = (*default_forecasters(matches), *chosen) if baselines else chosen
+    return run_backtest(
+        matches,
+        reports_dir / ENSEMBLE_SUBDIR,
+        forecasters=forecasters,
+        folds=folds,
+        horizon_days=horizon_days,
+    )
+
+
+def reliability_tables(
+    matches: pd.DataFrame,
+    forecasters: Sequence[Forecaster],
+    *,
+    folds: int = DEFAULT_FOLDS,
+    horizon_days: int = DEFAULT_HORIZON_DAYS,
+    bins: int = DEFAULT_BINS,
+) -> dict[str, pd.DataFrame]:
+    """One reliability table per forecaster, over the same folds.
+
+    Unpriced rows are dropped per forecaster rather than reduced to a common
+    subset: reliability is a statement about the probabilities a forecaster
+    actually issued, and the bookmaker's line is not less honest for being
+    absent on the matches it never quoted.
+    """
+    forecasts = fold_forecasts(matches, forecasters, folds=folds, horizon_days=horizon_days)
+    priced = forecasts.dropna(subset=list(FORECAST_COLUMNS))
+    return {
+        str(name): reliability(
+            group[list(FORECAST_COLUMNS)].to_numpy(dtype=float), group[TARGET_COLUMN], bins=bins
+        )
+        for name, group in priced.groupby("forecaster")
+    }

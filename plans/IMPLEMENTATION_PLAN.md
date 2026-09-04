@@ -630,15 +630,96 @@ depend on.
 
 ---
 
-## Milestone 9 — Ensembling and calibration (next)
+## Milestone 9 — Ensembling and calibration ✅
+
+**Delivered.** Both layers built as scoped, and the reportable answer the scope
+allowed for is the one that came back.
+
+| Module | Responsibility |
+|---|---|
+| `models/ensemble.py` | The blend, its members chosen on error correlation, and the diagnostic pass that gets the matches back. |
+| `models/calibration.py` | One temperature, fitted on a holdout inside the training half. |
+| `evaluation/reliability.py` | Whether a stated probability happens at the rate it states. |
+| `pipelines/train.py` | `run_ensemble` and `reliability_tables`, both through the *unchanged* backtest. |
+| `scripts/train.py` | `make ensemble` (~20 min), `make correlations` (~3 min). |
+
+**Verified:** 100% coverage of `src`, ruff/black/mypy clean, 930 unit tests and
+68 integration tests. Every CI invariant holds.
+
+Full measurements are in `docs/MODELS.md`.
+
+### The headline
+
+| 59,001 matches | log loss | calibration error |
+|---|---:|---:|
+| Bookmaker closing odds | **0.9993** | — |
+| Blend of three, calibrated | **1.01560** | **0.0015** |
+| Blend of three | 1.01565 | 0.0045 |
+| CatBoost, Milestone 8's best | 1.01589 | — |
+| XGBoost, calibrated | 1.01622 | 0.0020 |
+| XGBoost | 1.01614 | 0.0037 |
+
+Both layers together close **0.0003** of the 0.0165 Milestone 8 left. That is
+the milestone's result, and it is worth stating as a result rather than
+apologising for: two layers that a great many projects report as a headline
+improvement are, on this problem and against a properly measured baseline,
+worth about a fortieth of what the model layer itself was worth.
+
+### Three findings
+
+**Choosing members on error correlation picked a blend nobody would have
+picked.** The four tree-based families correlate between 0.9934 and 0.9960 —
+substitutes, which is the quantitative form of Milestone 8's "the top four are
+within 0.0003". The rule admitted XGBoost, logistic regression and the **MLP**,
+the worst model in the zoo, because it is the only one wrong about different
+matches at 0.92. That blend beats every family that went into it *and*
+CatBoost, which did not. Averaging the top three would have averaged three
+near-substitutes and reported the averaging.
+
+**Calibration buys reliability and not loss.** The scalar halves the gap
+between what the model states and what happens — 0.0037 to 0.0020 — and moves
+log loss by 0.00008, in the wrong direction. Milestone 8's models were fitted
+on a proper scoring rule, so they were already close to proper; what was left
+was a systematic overconfidence in the 0.4–0.5 band that log loss barely
+charges for and a reliability table shows at a glance.
+
+**The remaining gap is looking less like a modelling problem every
+milestone.** Milestone 7 measured 0.0284 and said what the bookmaker knows on
+top of a strength rating is not strength. Milestone 8 closed 0.0118 and said it
+is not a non-linear function of these thirty columns. This one closes 0.0003
+with the two standard moves that are left, which is the strongest evidence yet
+that the last 0.0163 is information this project does not have.
+
+### Changed from the approved scope
+
+- **The calibration layer is measured over XGBoost, not CatBoost.** The scope
+  said "the best single model". CatBoost is best on the reported folds by
+  0.0002; XGBoost is best on the tuning slice. Choosing the subject of a
+  measurement by looking at the folds it is then measured on is the mistake the
+  member selection is arranged to avoid, so the constant follows the slice —
+  and the difference is smaller than the one Milestone 8 called
+  indistinguishable.
+- **Reliability costs a second pass over the folds.** The backtest persists
+  means, by design, and reliability needs the matches back. The alternative was
+  a side channel out of the scoring pipeline; the pipeline's ignorance of what
+  it is scoring is the reason a model and a baseline can share a table, and it
+  was worth more than the minutes.
+- **The blend is scored beside the same four baselines rather than beside the
+  whole zoo.** The two runs share a common subset — both include the two
+  baselines whose coverage defines it — so the tables are comparable across
+  runs and re-fitting five families to reprint Milestone 8's numbers would have
+  bought nothing. There is an integration test asserting the two subsets match.
+
+---
+
+## Milestone 10 — Evaluation and explainability (next)
 
 Scope, for approval:
 
-- A calibration layer over the best single model, measured the way everything
-  else here is: reliability against the same folds, and log loss before and
-  after. A model whose probabilities are already proper may gain nothing, and
-  that is a reportable answer.
-- An ensemble of the families that are not substitutes for each other, chosen
-  on the correlation of their errors rather than on their individual scores.
-- Both scored by the unchanged backtest, against the same baselines, so the
-  0.0166 that remains is measured on the same matches throughout.
+- SHAP over the blend's members, reported per feature block so it can be read
+  against the ablation Milestone 8 already measured — two methods disagreeing
+  about which block matters is a finding, and agreeing is a check.
+- A model card per shipped model: what it was trained on, what it scores, where
+  it is reliable and where it is not, and what it must not be used for.
+- Per-class and per-competition breakdowns of the reliability table, which the
+  calibration work deliberately left at one pooled scalar.

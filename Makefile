@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit backtest train ablation validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -65,11 +65,17 @@ feature-list: ## List the feature registry and which side of kick-off each reads
 backtest: ## Score every baseline over walk-forward folds (~5 seconds)
 	$(BIN)/python scripts/backtest.py
 
-train: ## Fit the six model families over the walk-forward folds (~10 min)
+train: ## Fit the six model families over the walk-forward folds (~5 min)
 	$(BIN)/python scripts/train.py
 
 ablation: ## Score the best model with each feature block withheld (~10 min)
 	$(BIN)/python scripts/train.py --ablate lightgbm
+
+ensemble: ## Score the blend and the calibration layer, with reliability (~20 min)
+	$(BIN)/python scripts/train.py --ensemble
+
+correlations: ## Print how alike the families' errors are, on the tuning slice (~3 min)
+	$(BIN)/python scripts/train.py --correlations
 
 audit: ## Probe every producer and trace every derived column (~3 min; prints the table in docs/LEAKAGE.md)
 	$(BIN)/python scripts/audit_columns.py --competition ENG_1 --competition ESP_1 --markdown

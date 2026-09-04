@@ -8,14 +8,16 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 8 of 14 — the model zoo.**
+> **Status: Milestone 9 of 14 — ensembling and calibration.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
-> **24 validation rules** on every ingest. Two ratings now run over it, and the
-> stronger one — Dixon-Coles — already reaches **0.9774 log loss** on the
-> Premier League against **0.9619** for the bookmaker's closing line, on the
-> same 8,818 matches. **Twenty features** join them, every one proved causal by
-> recomputation rather than by review. Splits and the model zoo are next.
+> **24 validation rules** on every ingest. Two ratings and **twenty features**
+> run over it, every one proved causal by recomputation rather than by review,
+> and **six model families** are scored on walk-forward folds against the
+> closing line. A blend of the three whose errors disagree reaches **1.0156 log
+> loss** on the 59,001 matches every forecaster could price, against **0.9993**
+> for the bookmaker — 0.0121 of the original 0.0284 gap closed, and the last
+> 0.0163 looking more like missing information than missing capacity.
 
 ---
 
@@ -39,7 +41,9 @@ Three consequences shape the whole design:
    what the models are selected on.
 2. **Calibration is the deliverable.** A probability of 0.61 should be right
    about 61% of the time. That is the property a probability is *for*, and it
-   is measured here with reliability curves, not asserted.
+   is measured here with reliability tables, not asserted — Milestone 9
+   measures it, and reports that the scalar which fixes it does not improve the
+   score.
 3. **Draws are close to unpredictable.** They occur in roughly a quarter of
    matches and are almost never the most likely single outcome. A
    well-calibrated model that rarely *predicts* "draw" is behaving correctly,
@@ -272,6 +276,49 @@ Every search ran on matches strictly earlier than the first reported fold.
 **[docs/MODELS.md](docs/MODELS.md)** has the search budgets, the full ablation,
 and what is deliberately not in this milestone.
 
+## Ensembling and calibration
+
+Two layers over the zoo, and the interesting result is how little they are
+worth.
+
+**The blend's members are chosen on the correlation of their errors**, not on
+their scores. Per-match log loss, correlated pairwise over the tuning slice,
+puts the four tree-based families between 0.9934 and 0.9960 of each other —
+substitutes, which is the quantitative form of "the top four are within
+0.0003" — logistic regression at 0.9857, and the MLP alone at 0.92. The
+threshold sits in the empty band between 0.9857 and 0.9934 and admits **XGBoost,
+logistic regression and the MLP**: the best model, a mediocre one, and the worst
+one in the zoo.
+
+| 59,001 matches | log loss | RPS | calibration error |
+|---|---:|---:|---:|
+| Bookmaker closing odds | **0.9993** | **0.2031** | — |
+| Blend of three, calibrated | **1.0156** | **0.2082** | **0.0015** |
+| Blend of three | 1.0156 | 0.2082 | 0.0045 |
+| CatBoost, the best single family | 1.0159 | 0.2083 | — |
+| XGBoost, calibrated | 1.0162 | 0.2084 | 0.0020 |
+| XGBoost | 1.0161 | 0.2084 | 0.0037 |
+
+**The blend beats every family that went into it, and the one that did not** —
+by 0.0005 over its best member and 0.0002 over CatBoost. That is the argument
+for choosing on error correlation rather than on score, and it is also very
+little: per competition the blend beats XGBoost in 28 of 39, not 39.
+
+**Calibration buys reliability, not loss.** One temperature per fold, fitted on
+the last year of that fold's *training* half with the model refitted on
+everything before it, so the evaluation half is never read. It halves the gap
+between what the model states and what happens — 0.0037 to 0.0020 — and moves
+log loss by 0.00008, in the wrong direction. That is the right answer rather
+than a disappointment: log loss is a proper scoring rule and these models were
+fitted on it, so what was left was a small overconfidence the score barely
+charges for and a reliability table shows immediately.
+
+Together the two layers close **0.0003** of the 0.0165 Milestone 8 left,
+leaving 0.0163 to the closing line. Two milestones of model work have bought
+0.0121 of the original 0.0284, and the last two layers bought 2% of that — the
+strongest evidence yet that what remains is information this project does not
+have rather than modelling it has not done.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -337,17 +384,19 @@ src/
     dixon_coles.py    bivariate Poisson, refitted per competition
   validation/temporal.py  four probes: prefix, outcome, split, reads   ✅
   validation/leakage.py   every producer, found rather than listed [Milestone 6] ✅
-  models/           splits, baselines, and the zoo         [Milestone 7-8] ✅
+  models/           splits, baselines, the zoo, the blend [Milestone 7-9] ✅
     splits.py         walk-forward folds, cut on the date, probed
     baselines.py      home-always, class prior, Dixon-Coles, the closing line
     dataset.py        the thirty columns, derived from the two registries
     zoo.py            six families, one wrapper, a fresh fit per fold
     tuning.py         Optuna, on matches earlier than every reported fold
     tracking.py       MLflow to a local SQLite file, failure-tolerant
-    (calibration)                                       [Milestone 9]
-  evaluation/       log loss, RPS, accuracy                [Milestone 7] ✅
+    ensemble.py       members chosen on error correlation, not on score
+    calibration.py    one scalar, fitted on a holdout inside the training half
+  evaluation/       how good a forecast is, two ways       [Milestone 7-9] ✅
     metrics.py        two proper scoring rules and one improper one
-    (backtests, model cards)                            [Milestone 10]
+    reliability.py    does a stated probability happen at the rate it states
+    (model cards)                                       [Milestone 10]
   explainability/   SHAP, permutation importance         [Milestone 10]
   pipelines/        the orchestration each stage exposes
 api/                FastAPI service                      [Milestone 11]
@@ -370,8 +419,9 @@ make ratings   # build Elo + Dixon-Coles (~10 min); make ratings-elo is seconds
 make features  # build the 20-feature table (~10 seconds)
 make audit     # probe every producer, trace every column (~3 min)
 make backtest  # score every baseline over walk-forward folds (~5 seconds)
-make train     # fit the six model families over the folds (~8 minutes)
+make train     # fit the six model families over the folds (~5 minutes)
 make ablation  # what each feature block is worth (~5 minutes)
+make ensemble  # the blend, the calibration scalar, the reliability tables (~20 min)
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -414,7 +464,7 @@ imports is a supply-chain surface with no upside.
 | 6 | Leakage suite — every producer found and probed, every column traced | ✅ |
 | 7 | Splits and baselines — walk-forward CV, RPS/log loss | ✅ |
 | 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | ✅ |
-| 9 | Ensembling and calibration | |
+| 9 | Ensembling and calibration — error-correlation selection, temperature scaling, reliability | ✅ |
 | 10 | Evaluation and explainability — backtests, SHAP, model cards | |
 | 11 | API — FastAPI, PostgreSQL for served predictions | |
 | 12 | Dashboard — Streamlit + Plotly | |

@@ -10,6 +10,94 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.9.0] — unreleased
+
+Milestone 9: ensembling and calibration. Two layers over the zoo, and the
+result is how little they are worth.
+
+### Added
+
+- `src/models/ensemble.py` — a mean of several forecasters, as one forecaster,
+  whose members are chosen on **the correlation of their per-match errors**
+  rather than on their individual scores. Measured on the tuning slice, the
+  four tree-based families sit between 0.9934 and 0.9960 of each other,
+  logistic regression at 0.9857 and the MLP alone at 0.92; the threshold sits
+  in the empty band between 0.9857 and 0.9934 and admits XGBoost, logistic
+  regression and the MLP. Averaging the top three instead would have averaged
+  three near-substitutes and reported the averaging.
+- `src/models/calibration.py` — temperature scaling, one scalar, fitted on the
+  last year of each fold's own **training** half with the inner model refitted
+  on everything before it. That costs a second fit per fold and is the only
+  arrangement under which a calibrated model has seen exactly the matches the
+  uncalibrated one saw.
+- `src/evaluation/reliability.py` — does a stated probability happen as often
+  as it says? All 3n statements a three-class forecast makes are binned, not
+  only the model's favourite class: binning the favourite measures a
+  classifier's confidence and says nothing about the draw column, which is most
+  of what this model states.
+- `run_ensemble`, `ensemble_forecasters` and `reliability_tables` in
+  `src/pipelines/train.py`; `--ensemble`, `--member`, `--correlations` and
+  `--bins` on `scripts/train.py`; `make ensemble` (~20 min) and
+  `make correlations` (~3 min).
+- Selection constants baked into `src/models/ensemble.py` the way the
+  hyperparameters are baked into `zoo.py` — reviewed in a diff, re-derivable
+  with `--correlations`.
+
+### Measured
+
+Five yearly folds, the same 59,001 matches every forecaster could price:
+
+| | log loss | RPS | calibration error |
+|---|---:|---:|---:|
+| Bookmaker closing odds | **0.9993** | **0.2031** | — |
+| Blend of three, calibrated | **1.01560** | **0.2082** | **0.0015** |
+| Blend of three | 1.01565 | 0.2082 | 0.0045 |
+| CatBoost, best single family | 1.01589 | 0.2083 | — |
+| XGBoost, calibrated | 1.01622 | 0.2084 | 0.0020 |
+| XGBoost | 1.01614 | 0.2084 | 0.0037 |
+
+- **The blend beats every family that went into it, and the one that did not**
+  — 0.0005 over its best member, 0.0002 over CatBoost. Per competition it beats
+  XGBoost in 28 of 39, not 39.
+- **Calibration halves the calibration error and does not move the log loss.**
+  On XGBoost the loss is 0.00008 worse; on the blend, 0.00005 better. Both are
+  noise. That is the answer to the question rather than a disappointment: log
+  loss is a proper scoring rule and these models were fitted on it, so what was
+  left was a small overconfidence the score barely charges for.
+- Together the two layers close **0.0003** of the 0.0165 Milestone 8 left,
+  leaving 0.0163 to the closing line.
+
+### Changed
+
+- `docs/LEAKAGE.md` gains the two boundaries this milestone adds: the
+  calibration holdout, cut inside the training half on the date, and the member
+  selection, run on the tuning slice. Both are places where something is
+  *chosen*, which is a way for the evaluation half to reach a model without any
+  column moving.
+- `docs/MODELS.md` gains the correlation matrix, the per-fold temperatures and
+  the reliability table; `docs/EVALUATION.md`'s "not measured yet: calibration
+  curves" is now measured.
+- `src/models/ensemble.BEST` names XGBoost, which leads the **tuning slice**.
+  CatBoost leads the reported folds by 0.0002 — smaller than the difference
+  Milestone 8 called indistinguishable — and picking the subject of a
+  measurement by looking at the folds it is measured on is the mistake the
+  member selection is arranged to avoid.
+
+### Notes
+
+- No fitted ensemble weights and no stacking. A meta-model over three
+  correlated members is a fourth thing to tune and validate for a margin
+  already at 0.0005; the plain mean is the version whose number can be
+  attributed to the members.
+- No vector or matrix scaling. Three or twelve parameters instead of one, for a
+  reliability table whose largest bins are already within 0.0001 after the
+  scalar.
+- `make ensemble` walks the folds twice on purpose — once through the unchanged
+  backtest for the scores, once more for the reliability tables. The backtest
+  persists means, and reliability is a question about individual probabilities;
+  the alternative is a side channel out of a scoring pipeline whose ignorance
+  of what it scores is why a model and a baseline can share a table.
+
 ## [0.8.0] — unreleased
 
 Milestone 8: the model zoo. Six families, and a result that is more interesting

@@ -1,4 +1,4 @@
-"""Training, and the ablation — both of which are the *unchanged* backtest.
+"""Training, the ablation, the blend — all of them the *unchanged* backtest.
 
 A trained model is a forecaster that fits inside its own `forecast`, so
 Milestone 7's evaluation pipeline runs the zoo without knowing an estimator
@@ -11,20 +11,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
+from src.evaluation.reliability import DEFAULT_BINS
+from src.models.baselines import Bookmaker
 from src.models.dataset import BLOCKS, DESIGN_COLUMNS, without
 from src.models.zoo import ModelError
 from src.pipelines.backtest import BACKTEST_FILENAME, COMMON, POOLED, pooled_table
 from src.pipelines.train import (
     ABLATION_SUBDIR,
     ALL_BLOCKS,
+    ENSEMBLE_SUBDIR,
     ZOO_SUBDIR,
     TrainingReport,
     ablation_forecasters,
     ablation_table,
+    ensemble_forecasters,
+    reliability_tables,
     run_ablation,
+    run_ensemble,
     run_training,
     zoo_forecasters,
 )
@@ -195,3 +202,64 @@ def test_an_ablation_table_without_its_control_is_empty() -> None:
 
 def test_the_blocks_ablated_are_the_ones_the_registries_define() -> None:
     assert set(BLOCKS) == {"form", "schedule", "head_to_head", "elo", "dixon_coles"}
+
+
+# ---- the blend and the calibration layer ------------------------------------
+
+
+def test_the_four_rows_the_milestone_compares_are_built_together() -> None:
+    """The model, that model calibrated, the blend, and the blend calibrated.
+    One list, so one backtest scores them on identical matches and a difference
+    between two rows is the layer rather than the subset."""
+    names = [one.name for one in ensemble_forecasters("logistic_regression", QUICK)]
+    assert names == [
+        "logistic_regression",
+        "logistic_regression-calibrated",
+        "ensemble",
+        "ensemble-calibrated",
+    ]
+
+
+def test_the_blend_is_scored_by_the_unchanged_backtest(tmp_path: Path) -> None:
+    report = run_ensemble(
+        LEAGUE,
+        tmp_path,
+        model="logistic_regression",
+        members=["logistic_regression", "random_forest"],
+        folds=2,
+    )
+    assert report.output == tmp_path / ENSEMBLE_SUBDIR / BACKTEST_FILENAME
+    assert report.scores is not None
+    scored = set(report.scores["forecaster"])
+    assert {"ensemble", "ensemble-calibrated", "class_prior"} <= scored
+
+
+def test_the_blend_can_be_scored_without_the_baselines(tmp_path: Path) -> None:
+    report = run_ensemble(
+        LEAGUE, tmp_path, model="logistic_regression", members=QUICK, baselines=False, folds=2
+    )
+    assert report.scores is not None
+    assert "class_prior" not in set(report.scores["forecaster"])
+
+
+def test_reliability_is_reported_per_forecaster_over_the_same_folds() -> None:
+    tables = reliability_tables(LEAGUE, ensemble_forecasters("logistic_regression", QUICK), folds=2)
+    assert set(tables) == {
+        "logistic_regression",
+        "logistic_regression-calibrated",
+        "ensemble",
+        "ensemble-calibrated",
+    }
+    for table in tables.values():
+        assert 0 < len(table) <= DEFAULT_BINS
+
+
+def test_a_forecaster_is_measured_on_the_probabilities_it_actually_issued() -> None:
+    """Unpriced rows are dropped per forecaster rather than reduced to a common
+    subset: the bookmaker's line is not less honest for being absent on the
+    matches it never quoted."""
+    half_quoted = LEAGUE.copy()
+    half_quoted.loc[half_quoted.index[::2], "odds_home"] = np.nan
+    tables = reliability_tables(half_quoted, [Bookmaker()], folds=2)
+    both = reliability_tables(LEAGUE, [Bookmaker()], folds=2)
+    assert 0 < tables["bookmaker"]["n"].sum() < both["bookmaker"]["n"].sum()

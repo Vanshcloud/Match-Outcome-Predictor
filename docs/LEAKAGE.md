@@ -61,6 +61,31 @@ only a fit whose inputs the fold boundary already decided. What *is* checked,
 per family, is that rewriting the evaluation half's results does not move its
 forecast.
 
+### The two boundaries Milestone 9 adds
+
+An ensemble and a calibration layer are both places where something is
+*chosen*, and a choice is a way for the evaluation half to reach a model
+without any column moving.
+
+**The calibration holdout is cut inside the training half, on the date.**
+`Calibrated.split` keeps back the last year of what the fold was given, refits
+the inner model on everything before it, and fits one scalar on what that
+predicts. The evaluation half is not read, so a calibrated model sees exactly
+the matches the uncalibrated one saw — proved by
+`test_the_temperature_is_fitted_without_touching_the_matches_it_prices`, which
+rewrites every result in the evaluation half and asserts the forecast does not
+move by a bit.
+
+**The blend's members are chosen on the tuning slice.** Picking members by the
+correlation of their errors *on the folds they are then scored on* is selection
+on the test set with an extra step, and it would not show up as a column that
+moved — the reported number would simply be better than it should be. So
+`--correlations` runs on `tuning_slice`, the same 241,481 matches ending
+2021-09-02 that chose the hyperparameters, and the winning names are baked into
+`src/models/ensemble.py` as reviewed constants. The same rule chose `BEST`:
+XGBoost leads the tuning slice, CatBoost leads the reported folds by 0.0002,
+and the constant follows the slice.
+
 ---
 
 ## The four probes

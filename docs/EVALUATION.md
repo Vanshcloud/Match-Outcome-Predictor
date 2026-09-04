@@ -217,10 +217,13 @@ meaningless. Predicting home every time scores 43.7%; the closing line scores
 correctly, not failing — roughly a quarter of matches are drawn and almost none
 of them are the modal outcome beforehand.
 
-**Not measured yet:** calibration curves, and any per-class breakdown. Both
-belong with the model cards in Milestone 10, where there is something to
-calibrate. Everything here is a baseline, and the two that are fitted are
-fitted on likelihood already.
+**Reliability** — whether a stated probability happens as often as it says —
+arrived with Milestone 9, in `src/evaluation/reliability.py`, and is reported
+in [MODELS.md](MODELS.md) rather than here: everything on this page is a
+baseline, and the two that are fitted are fitted on likelihood already.
+
+**Not measured yet:** any per-class breakdown. It belongs with the model cards
+in Milestone 10.
 
 ---
 

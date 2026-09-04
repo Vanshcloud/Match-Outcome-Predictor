@@ -174,8 +174,10 @@ That is the most useful number in this document for what comes next. The
 rating has already extracted what team strength can explain; whatever the
 closing line knows on top of it is something else — form, availability,
 motivation, and the market's own information — and it is worth about the same
-amount everywhere. Milestone 8's features are aimed at that, and this is the
-gap they have to close.
+amount everywhere. The model zoo was aimed at that gap; [MODELS.md](MODELS.md)
+reports how much of it six families, a blend and a calibration layer closed —
+0.0121 of 0.0284, with the rest still looking like information rather than
+capacity.
 
 ### The one it loses
 
@@ -222,8 +224,11 @@ arrived with Milestone 9, in `src/evaluation/reliability.py`, and is reported
 in [MODELS.md](MODELS.md) rather than here: everything on this page is a
 baseline, and the two that are fitted are fitted on likelihood already.
 
-**Not measured yet:** any per-class breakdown. It belongs with the model cards
-in Milestone 10.
+**Per-class and per-competition breakdowns** are not here either. They belong
+with the model card rather than with the baselines, and they are in
+[MODEL_CARD.md](MODEL_CARD.md) — where the draw column turns out to be the most
+reliable and the least useful, and the Argentine cup the least reliable of the
+39.
 
 ---
 

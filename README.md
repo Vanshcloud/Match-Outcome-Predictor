@@ -1,6 +1,6 @@
 # Match Outcome Predictor
 
-Calibrated home / draw / away probabilities for roughly 38 professional
+Calibrated home / draw / away probabilities for 39 professional
 football competitions, from ingestion through to a served API and dashboard.
 
 [![CI](https://github.com/Vanshcloud/Match-Outcome-Predictor/actions/workflows/ci.yml/badge.svg)](https://github.com/Vanshcloud/Match-Outcome-Predictor/actions/workflows/ci.yml)
@@ -168,8 +168,8 @@ They carry real signal. Home win rate moves from **31.7% to 61.1%** across the
 form-gap range, and the draw rate peaks between evenly matched sides and falls
 at both extremes, which is what football says should happen and is not
 something the feature was built to produce. Rest days, honestly, carry none at
-all — two points of spread and not even monotone. It is kept for the
-interaction and will earn its place in Milestone 8's ablation or be dropped.
+all — two points of spread and not even monotone. The ablation settled it:
+worth 0.0003 of log loss, kept for the interaction and nothing else.
 
 **[docs/FEATURES.md](docs/FEATURES.md)** has every number, including that one.
 
@@ -229,8 +229,9 @@ Two findings came out of it. The rating's edge over the prior tracks the spread
 of team strength in a competition at **r = 0.90** — which is what a strength
 model should do and nobody told it to. And the gap to the closing line tracks
 that same spread at **−0.14**, meaning what the bookmaker knows on top of the
-rating is not strength, and is worth about the same amount everywhere. That is
-the target for Milestone 8.
+rating is not strength, and is worth about the same amount everywhere. That was
+the target the model zoo took aim at, and the two sections below say how much
+of it six families, a blend and a calibration layer actually closed.
 
 **[docs/EVALUATION.md](docs/EVALUATION.md)** has the fold table, the
 per-competition breakdown, and the one competition where Dixon-Coles loses to
@@ -367,7 +368,7 @@ a point-in-time read (`until="2015-06-30"`) is the interface's own operation
 rather than something every caller reimplements against a materialised frame.
 CI enforces the seam: nothing outside `src/storage` reads the table directly.
 
-**Twenty-three checks** run on every ingest, over the frame the pipeline just
+**Twenty-four checks** run on every ingest, over the frame the pipeline just
 wrote — schema, integrity, referential and distribution. Each threshold is a
 measurement rather than a guess, and the comment on it says what was measured.
 They report rather than gate: a table you can inspect beats one the pipeline
@@ -463,7 +464,7 @@ make features  # build the 20-feature table (~10 seconds)
 make audit     # probe every producer, trace every column (~3 min)
 make backtest  # score every baseline over walk-forward folds (~5 seconds)
 make train     # fit the six model families over the folds (~5 minutes)
-make ablation  # what each feature block is worth (~5 minutes)
+make ablation  # what each feature block is worth (~10 minutes)
 make ensemble  # the blend, the calibration scalar, the reliability tables (~20 min)
 make explain   # what each feature block is worth, by SHAP and permutation (~2 min)
 make card      # regenerate docs/MODEL_CARD.md (~5 minutes)
@@ -480,6 +481,49 @@ environment variables (see `.env.example`). Unknown keys are an error, not a
 shrug — a misspelt setting fails at load naming the key, rather than appearing
 to work forever.
 
+### Reproducing every number in this README
+
+```bash
+make reproduce   # the whole project, clean checkout to model card (~60 min)
+```
+
+One command, because eight commands listed in a paragraph is eight chances to
+get the order wrong. It runs the stages in the only order they work in, each
+reading the table the one before it wrote:
+
+| # | Stage | Command it runs | ~Runtime | What it writes |
+|---|---|---|---:|---|
+| 1 | Setup | `make setup` | 2 min | `.venv/`, git hooks |
+| 2 | Data | `make data` | 15 min | `data/raw/`, `data/processed/matches.parquet` |
+| 3 | Ratings | `make ratings` | 10 min | `data/processed/ratings.parquet` |
+| 4 | Features | `make features` | 10 sec | `data/features/features.parquet` |
+| 5 | Training | `make train` | 5 min | `data/reports/zoo/`, MLflow runs in `models/` |
+| 6 | Ensemble | `make ensemble` | 20 min | `data/reports/ensemble/` |
+| 7 | Explainability | `make explain` | 2 min | the attribution tables, as markdown on stdout |
+| 8 | Model card | `make card` | 5 min | `docs/MODEL_CARD.md` |
+
+`make validate`, `make audit`, `make backtest` and `make ablation` are
+deliberately not in the sequence: none of the eight stages reads what they
+write, and each roughly doubles the wall clock. Run `make ablation` before
+stage 7 and the attribution tables gain an ablation column; leave it out and
+they print without one.
+
+About an hour end to end on a laptop, most of it in stages 2, 3 and 6. The
+first is a download and is bounded by the provider rather than by the machine;
+the other two walk the folds more than once. Individual stages are re-runnable
+on their own — everything is idempotent, and a stage whose inputs have not
+changed rewrites the same bytes.
+
+**Dependencies are pinned twice over.** `requirements.txt` and
+`requirements-lint.txt` pin the direct dependencies exactly, and `make setup`
+installs from them; **`uv.lock` is committed** and pins the transitive closure
+with hashes, so `uv sync --frozen` reconstructs the runtime environment the
+benchmark numbers on this page were measured in rather than a today's-resolver
+approximation of it. Without a lockfile a transitive release moves a fourth
+decimal place and the table above quietly stops describing what you would get.
+Regenerate it with `uv lock` in the same commit as any change to a
+requirements file.
+
 ## Engineering standards
 
 | Gate | Tool | Enforced by |
@@ -487,7 +531,7 @@ to work forever.
 | Lint | ruff | `make lint`, CI |
 | Format | black | `make format-check`, CI |
 | Types | mypy, strict | `make typecheck`, CI |
-| Tests | pytest, ≥95% coverage | `make test-cov`, CI |
+| Tests | pytest, 100% coverage | `make test-cov`, CI |
 | Deprecations | `-W error::DeprecationWarning` | pytest config |
 | Authorship | `scripts/hooks/commit-msg` | git hook + CI |
 
@@ -503,7 +547,7 @@ imports is a supply-chain surface with no upside.
 |---|---|---|
 | 1 | Foundation — config, logging, paths, HTTP, gates | ✅ |
 | 2 | Ingestion — adapters, canonical schema, league registry | ✅ |
-| 3 | Storage and validation — DuckDB over Parquet, 23 checks, dataset card | ✅ |
+| 3 | Storage and validation — DuckDB over Parquet, 24 checks, dataset card | ✅ |
 | 4 | Ratings — Elo, Dixon-Coles, causality probes | ✅ |
 | 5 | Feature engineering — registry, causal windows, 20 features | ✅ |
 | 6 | Leakage suite — every producer found and probed, every column traced | ✅ |

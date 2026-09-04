@@ -17,9 +17,9 @@ env/
 
 # ---- Data ----
 # Raw and derived data are downloaded and rebuilt, never committed. The whole
-# corpus is ~38 competition files from football-data.co.uk, re-fetchable in
-# minutes by `make data`, and it changes every match week — committing it would
-# be both large and permanently stale.
+# corpus is the 39 configured competitions' files from football-data.co.uk,
+# re-fetchable in minutes by `make data`, and it changes every match week —
+# committing it would be both large and permanently stale.
 #
 # Nothing under data/ is committed, and no sample slice is either. The
 # provider publishes no licence granting redistribution, so this repository
@@ -63,8 +63,12 @@ htmlcov/
 .DS_Store
 *.swp
 
-# Stray lockfiles from other package managers. This project pins with
-# requirements*.txt; a second, unmaintained lockfile in the tree is a source of
-# confusion, not of truth.
-uv.lock
+# uv.lock is committed on purpose: requirements*.txt pins the direct
+# dependencies, and the lockfile pins the transitive closure with hashes, which
+# is what makes the benchmark numbers in the README reproducible rather than
+# approximately reproducible. Regenerate it with `uv lock` whenever a
+# requirements file changes, in the same commit.
+#
+# poetry.lock stays ignored: nothing here resolves with poetry, and a second,
+# unmaintained lockfile in the tree is a source of confusion, not of truth.
 poetry.lock

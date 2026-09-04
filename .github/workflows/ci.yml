@@ -67,7 +67,7 @@ jobs:
         #
         # --cov-fail-under is what keeps the README's coverage claim honest.
         # Without it the number in the README is prose, not a measurement.
-        run: pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=95
+        run: pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=100
 
       - name: Confirm the suite is green with no data present
         # `test ! -d` would prove nothing here: a Parquet file is a *file*, so

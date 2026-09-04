@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "match-outcome-predictor"
-description = "Calibrated home/draw/away probabilities for ~38 professional football competitions"
+description = "Calibrated, leakage-audited home/draw/away probabilities for 39 professional football competitions, benchmarked against the closing line"
 readme = "README.md"
 # 3.13 over 3.12/3.14: the full modelling stack (scikit-learn, xgboost,
 # lightgbm, catboost, shap) ships prebuilt wheels for 3.13 today, and 3.14 is
@@ -19,7 +19,7 @@ license = {text = "MIT"}
 dynamic = ["version", "dependencies"]
 authors = [{name = "Vansh Tomar", email = "vanshwar@gmail.com"}]
 maintainers = [{name = "Vansh Tomar", email = "vanshwar@gmail.com"}]
-keywords = ["football", "soccer", "machine-learning", "forecasting", "calibration", "mlops"]
+keywords = ["football", "soccer", "machine-learning", "forecasting", "calibration", "mlops", "time-series"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",

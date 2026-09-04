@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -50,7 +50,23 @@ revalidate: ## Re-check finished seasons too, to pick up provider corrections
 leagues: ## List the competition registry
 	$(BIN)/python scripts/fetch_data.py --list
 
-ratings: ## Build the ratings table (~20 min; Dixon-Coles refits per competition)
+# The whole project, from an empty checkout to the numbers in the README, in
+# one command. Recursive $(MAKE) rather than a prerequisite list: a list is a
+# set and `make -j` may run a set in any order, but this is a sequence —
+# features read the ratings table, the zoo reads the feature table — so the
+# ordering has to be the recipe rather than a hope.
+reproduce: ## Rebuild every reported number from a clean checkout (~60 min)
+	$(MAKE) setup
+	$(MAKE) data
+	$(MAKE) ratings
+	$(MAKE) features
+	$(MAKE) train
+	$(MAKE) ensemble
+	$(MAKE) explain
+	$(MAKE) card
+	@echo "Reproduced: data/, models/, data/reports/ and docs/MODEL_CARD.md rebuilt."
+
+ratings: ## Build the ratings table (~10 min; Dixon-Coles refits per competition)
 	$(BIN)/python scripts/build_ratings.py
 
 ratings-elo: ## Build Elo only (~2 seconds), for a quick check
@@ -99,7 +115,7 @@ test-int: ## Run integration tests (needs `make data` first; skips without it)
 	$(BIN)/pytest -m integration
 
 test-cov: ## Run tests with a coverage report and enforce the threshold
-	$(BIN)/pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=95
+	$(BIN)/pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=100
 
 lint: ## Run ruff
 	$(BIN)/ruff check $(CODE)

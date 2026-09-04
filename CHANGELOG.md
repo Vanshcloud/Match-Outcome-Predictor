@@ -10,6 +10,44 @@ extra steps.
 
 ## [Unreleased]
 
+Repository polish. No model, feature, evaluation or calibration behaviour
+changes; every reported number is byte-identical.
+
+### Added
+
+- `make reproduce` — the eight stages from an empty checkout to
+  `docs/MODEL_CARD.md`, in the only order they work in, with the runtime and
+  the outputs of each documented in the README. Recursive `$(MAKE)` rather than
+  prerequisites, because a prerequisite list is a set and `make -j` may run a
+  set in any order.
+- `uv.lock` is now committed. `requirements*.txt` pins the direct dependencies;
+  the lockfile pins the transitive closure with hashes, which is the difference
+  between reproducing the benchmark numbers and approximately reproducing them.
+
+### Changed
+
+- The coverage gate is `--cov-fail-under=100`, in both `make test-cov` and CI.
+  The suite measures 100% and the README badge says 100%; a threshold five
+  points below the claim let the claim rot without the gate noticing.
+- `make ratings` is documented as ~10 min rather than ~20, matching the
+  measurement in `docs/RATINGS.md` — sixty days between Dixon-Coles refits
+  halved the build and the help string was never updated. `make ablation` is
+  ~10 min in the README, matching the Makefile.
+
+### Fixed
+
+- The canonical table's check count is **24** everywhere. The README said
+  twenty-three in two places and twenty-four in two others; `match_checks()`
+  returns 24 and `docs/DATASET_CARD.md` reports 24.
+- The competition count is **39** everywhere. The README strapline and the
+  `pyproject.toml` description said ~38.
+- Milestone references that a later milestone answered are stated as answered:
+  the rest-days ablation (README, `docs/FEATURES.md`), the gap the model zoo
+  was aimed at (README, `docs/EVALUATION.md`), the per-class breakdown now in
+  `docs/MODEL_CARD.md` (`docs/EVALUATION.md`), and the two per-competition
+  rating questions that Milestone 7's splits made answerable and that remain
+  open (`docs/RATINGS.md`).
+
 ## [0.10.0] — unreleased
 
 Milestone 10: evaluation and explainability. Three ways of asking what a

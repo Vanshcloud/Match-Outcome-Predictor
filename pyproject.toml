@@ -90,6 +90,13 @@ strict_equality = true
 module = ["sklearn.*", "catboost.*"]
 ignore_missing_imports = true
 
+# Milestone 10. shap ships no `py.typed` marker and has no maintained stub
+# distribution. It is imported in exactly one function, inside the call rather
+# than at module scope, so the untyped surface is one name wide.
+[[tool.mypy.overrides]]
+module = ["shap.*"]
+ignore_missing_imports = true
+
 # ---- pytest ----
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -100,7 +107,15 @@ addopts = "-q --strict-markers"
 # only warn — so without this a v1 idiom lands silently and surfaces much
 # later. Third-party warnings get a targeted, commented ignore here when the
 # dependency that raises them is actually introduced; never a blanket one.
-filterwarnings = ["error::DeprecationWarning"]
+filterwarnings = [
+  "error::DeprecationWarning",
+  # shap imports matplotlib's colour machinery at module scope and calls three
+  # functions matplotlib has pending for removal. Nothing here draws a plot,
+  # the call is inside a dependency, and the alternative is three warnings on
+  # every run of the two tests that import it. Targeted at the module rather
+  # than the category, so a pending deprecation anywhere else still shows.
+  "ignore:The set_(bad|over|under) function will be deprecated:PendingDeprecationWarning:shap.plots.colors._colors",
+]
 markers = [
   "integration: needs downloaded data or a trained model (deselect with -m 'not integration')",
 ]

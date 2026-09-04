@@ -94,6 +94,24 @@ def test_fewer_than_one_bin_is_refused() -> None:
         reliability(_repeated(HONEST, HONEST_OUTCOMES), list(HONEST_OUTCOMES), bins=0)
 
 
+def test_one_class_can_be_binned_on_its_own() -> None:
+    """Pooling the three answers whether the model is honest; splitting them
+    says which class it is dishonest about. Milestone 10 asks the second."""
+    draws_only = reliability(
+        _repeated(HONEST, HONEST_OUTCOMES), list(HONEST_OUTCOMES), classes=("D",)
+    )
+    assert draws_only["n"].sum() == len(HONEST_OUTCOMES)
+    assert draws_only.loc[0, "predicted"] == pytest.approx(0.25)
+    assert draws_only.loc[0, "observed"] == pytest.approx(0.25)
+
+
+def test_a_class_that_is_not_one_of_the_three_is_refused() -> None:
+    """The typo that would otherwise report a table of nothing as a model with
+    no opinion."""
+    with pytest.raises(MetricError, match="not outcome classes"):
+        reliability(_repeated(HONEST, HONEST_OUTCOMES), list(HONEST_OUTCOMES), classes=("W",))
+
+
 def test_a_forecast_that_does_not_line_up_with_its_outcomes_is_refused() -> None:
     with pytest.raises(MetricError, match="against"):
         reliability(_repeated(HONEST, "HH"), ["H"])

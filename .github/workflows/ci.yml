@@ -269,6 +269,22 @@ jobs:
           fi
           echo "src/models depends only on schemas, metrics, the probes and utils"
 
+      - name: Explainability reads a model; it does not fetch, store or orchestrate
+        # src/explainability turns a fitted model and two frames into a table.
+        # It is allowed the zoo (it needs a fitted estimator and the design
+        # columns), the metrics (permutation importance is a log loss delta)
+        # and the canonical schema. A module here that reached for a store or a
+        # pipeline would be one that could not explain a model held in memory,
+        # which is how every caller holds one — and it would put the reporting
+        # layer underneath the layer that reports it.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/explainability \
+                      | grep -vE 'src\.(explainability|models|evaluation|utils)\.|src\.ingestion\.base' || true)
+          if [ -n "$offenders" ]; then
+            echo "src/explainability reaches past the model layer:"; echo "$offenders"; exit 1
+          fi
+          echo "src/explainability depends only on models, metrics, the schema and utils"
+
       - name: No network access from the unit suite
         # The suite must stay runnable offline. requests is only ever reached
         # through src/utils/http, and unit tests inject a stubbed session.

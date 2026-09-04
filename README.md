@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 9 of 14 — ensembling and calibration.**
+> **Status: Milestone 10 of 14 — evaluation and explainability.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -17,7 +17,10 @@ football competitions, from ingestion through to a served API and dashboard.
 > closing line. A blend of the three whose errors disagree reaches **1.0156 log
 > loss** on the 59,001 matches every forecaster could price, against **0.9993**
 > for the bookmaker — 0.0121 of the original 0.0284 gap closed, and the last
-> 0.0163 looking more like missing information than missing capacity.
+> 0.0163 looking more like missing information than missing capacity. Three
+> attribution methods now say which feature blocks that model uses, and a
+> **generated model card** says where its probabilities are honest and where
+> they are not.
 
 ---
 
@@ -319,6 +322,42 @@ leaving 0.0163 to the closing line. Two milestones of model work have bought
 strongest evidence yet that what remains is information this project does not
 have rather than modelling it has not done.
 
+## Explainability, and the model card
+
+Three ways of asking what a feature block is worth, and they disagree:
+
+| Block | breaking it | its share of the arithmetic | never having had it |
+|---|---:|---:|---:|
+| `elo` | **+0.0395** | **38.0%** | +0.0021 |
+| `form` | +0.0087 | 37.8% | **+0.0033** |
+| `dixon_coles` | +0.0073 | 19.9% | +0.0016 |
+| `schedule` | +0.0001 | 2.4% | +0.0003 |
+| `head_to_head` | +0.0001 | 2.0% | +0.0001 |
+
+Permutation importance shuffles a block at prediction time; SHAP decomposes the
+model's own arithmetic; the ablation retrains without the block. **The first
+two rank elo above form and the third ranks form above elo** — which is the
+substitution Milestone 8 measured, appearing as a number. The model reaches for
+elo hardest and can most easily do without it, because Dixon-Coles says most of
+the same thing; nothing substitutes for form. A block whose numbers diverge has
+a backup, and a block whose numbers agree is load-bearing.
+
+Where all three agree they agree completely: `schedule` and `head_to_head` sit
+at the noise floor by every method, on every family, which settles the question
+Milestone 5 left open.
+
+**[docs/EXPLAINABILITY.md](docs/EXPLAINABILITY.md)** has the per-family tables
+and the method notes.
+
+**[docs/MODEL_CARD.md](docs/MODEL_CARD.md)** is generated from the runs that
+measured the model, the way the dataset card is generated from the data: what
+it was trained on, what it scores, where its probabilities are honest, and what
+it must not be used for. Two breakdowns Milestone 9 deliberately left pooled
+are in it — per class, where the draw column is the *most* reliable and the
+least useful (the model states about a quarter every time, and about a quarter
+of matches are drawn), and per competition, where the Argentine cup is the
+least reliable of the 39 at 0.0270 against a pooled 0.0015.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -384,6 +423,9 @@ src/
     dixon_coles.py    bivariate Poisson, refitted per competition
   validation/temporal.py  four probes: prefix, outcome, split, reads   ✅
   validation/leakage.py   every producer, found rather than listed [Milestone 6] ✅
+  explainability/   what a block is worth, two ways        [Milestone 10] ✅
+    shapley.py        TreeExplainer, aggregated to feature blocks
+    permutation.py    break a block, re-score; covers every family
   models/           splits, baselines, the zoo, the blend [Milestone 7-9] ✅
     splits.py         walk-forward folds, cut on the date, probed
     baselines.py      home-always, class prior, Dixon-Coles, the closing line
@@ -393,12 +435,13 @@ src/
     tracking.py       MLflow to a local SQLite file, failure-tolerant
     ensemble.py       members chosen on error correlation, not on score
     calibration.py    one scalar, fitted on a holdout inside the training half
-  evaluation/       how good a forecast is, two ways       [Milestone 7-9] ✅
+  evaluation/       how good a forecast is, three ways     [Milestone 7-10] ✅
     metrics.py        two proper scoring rules and one improper one
     reliability.py    does a stated probability happen at the rate it states
-    (model cards)                                       [Milestone 10]
-  explainability/   SHAP, permutation importance         [Milestone 10]
+    model_card.py     the card, rendered from data it is handed
   pipelines/        the orchestration each stage exposes
+    tables.py         the three tables, joined once for every command
+    report.py         the breakdowns, and the card assembled from them
 api/                FastAPI service                      [Milestone 11]
 dashboard/          Streamlit + Plotly                   [Milestone 12]
 ```
@@ -422,6 +465,8 @@ make backtest  # score every baseline over walk-forward folds (~5 seconds)
 make train     # fit the six model families over the folds (~5 minutes)
 make ablation  # what each feature block is worth (~5 minutes)
 make ensemble  # the blend, the calibration scalar, the reliability tables (~20 min)
+make explain   # what each feature block is worth, by SHAP and permutation (~2 min)
+make card      # regenerate docs/MODEL_CARD.md (~5 minutes)
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
 make quality   # ruff + black + mypy
@@ -465,7 +510,7 @@ imports is a supply-chain surface with no upside.
 | 7 | Splits and baselines — walk-forward CV, RPS/log loss | ✅ |
 | 8 | Model zoo — LR, RF, XGBoost, LightGBM, CatBoost, MLP, Optuna, MLflow | ✅ |
 | 9 | Ensembling and calibration — error-correlation selection, temperature scaling, reliability | ✅ |
-| 10 | Evaluation and explainability — backtests, SHAP, model cards | |
+| 10 | Evaluation and explainability — SHAP, permutation importance, model card | ✅ |
 | 11 | API — FastAPI, PostgreSQL for served predictions | |
 | 12 | Dashboard — Streamlit + Plotly | |
 | 13 | MLOps — Docker, CI/CD, retraining, drift monitoring, deployment | |

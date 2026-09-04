@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -76,6 +76,12 @@ ensemble: ## Score the blend and the calibration layer, with reliability (~20 mi
 
 correlations: ## Print how alike the families' errors are, on the tuning slice (~3 min)
 	$(BIN)/python scripts/train.py --correlations
+
+explain: ## What each feature block is worth, by SHAP and by permutation (~2 min)
+	$(BIN)/python scripts/explain.py --markdown
+
+card: ## Regenerate docs/MODEL_CARD.md for the shipped model (~5 min)
+	$(BIN)/python scripts/model_card.py
 
 audit: ## Probe every producer and trace every derived column (~3 min; prints the table in docs/LEAKAGE.md)
 	$(BIN)/python scripts/audit_columns.py --competition ENG_1 --competition ESP_1 --markdown

@@ -10,6 +10,112 @@ extra steps.
 
 ## [Unreleased]
 
+## [0.10.0] — unreleased
+
+Milestone 10: evaluation and explainability. Three ways of asking what a
+feature block is worth, and a card generated from the runs that measured the
+model.
+
+### Added
+
+- `src/explainability/permutation.py` — break a block at prediction time and
+  see what log loss loses. Model-agnostic, so it covers all six families, and
+  reported in the same units as Milestone 8's ablation. A block is shuffled
+  **jointly**, not column by column: permuting fourteen correlated form columns
+  independently builds fixtures that never happened and measures the model on
+  nonsense. One fit, thirty-one predictions — the estimator depends on the
+  training half, which no permutation touches.
+- `src/explainability/shapley.py` — `TreeExplainer` over the three boosted
+  families, aggregated to the same five blocks the ablation used. Magnitude
+  summed over classes, because SHAP contributions are signed per class and a
+  signed average is approximately zero for the columns that matter most. The
+  three pipeline-wrapped families are refused **by name**, with the method that
+  does cover them in the message.
+- `src/evaluation/model_card.py` and `docs/MODEL_CARD.md` — the sibling of the
+  dataset card, and generated for the same reason. It renders from data it is
+  handed and does not know that DuckDB, Parquet or a backtest exist, which is
+  what keeps `src/evaluation` arithmetic over arrays and lets the card be
+  tested against four hand-written frames.
+- `src/pipelines/report.py` — the two breakdowns Milestone 9 left pooled: per
+  class, and per competition. Both off the same per-match pass.
+- `src/pipelines/tables.py` — the three tables joined once, for the three
+  commands that need them. Lifted out of `scripts/train.py`, where the next
+  copy was about to be made.
+- `reliability(..., classes=("D",))` — bin one class alone. Pooling the three
+  answers whether the model is honest; splitting them says which class it is
+  dishonest about.
+- `scripts/explain.py` (`make explain`), `scripts/model_card.py` (`make card`),
+  **[docs/EXPLAINABILITY.md](docs/EXPLAINABILITY.md)**, and a CI invariant
+  keeping `src/explainability` above the storage and pipeline layers.
+
+### Measured
+
+LightGBM on the most recent fold, 291,715 training matches and 11,802 scored:
+
+| Block | breaking it | share of the arithmetic | never having had it |
+|---|---:|---:|---:|
+| `elo` | **+0.0395** | **38.0%** | +0.0021 |
+| `form` | +0.0087 | 37.8% | **+0.0033** |
+| `dixon_coles` | +0.0073 | 19.9% | +0.0016 |
+| `schedule` | +0.0001 | 2.4% | +0.0003 |
+| `head_to_head` | +0.0001 | 2.0% | +0.0001 |
+
+- **The methods disagree about the top two, and the disagreement is the
+  finding.** Permutation and SHAP rank elo above form; the ablation ranks form
+  above elo. The model reaches for elo hardest and can most easily do without
+  it, because Dixon-Coles is a substitute — the same fact Milestone 8 measured
+  as "the two ratings are substitutes", now visible as a 19× gap between what a
+  block is used for and what it is worth. Nothing substitutes for form, so its
+  two numbers agree.
+- **Where all three agree, they agree completely.** `schedule` and
+  `head_to_head` sit at 0.0001–0.0003 by every method on every family. Three
+  independent measurements at the noise floor settles what Milestone 5 left
+  open.
+- **Every family ranks the blocks the same way**, with the MLP leaning on the
+  ratings twice as hard as anyone else — the same MLP whose errors correlate at
+  0.92 with the rest of the zoo, and which is in the blend for that reason.
+- **The shipped model is most honest about draws and least useful there.** Per
+  class, the calibrated blend's calibration error is 0.0012 for draws against
+  0.0035 for home wins — because it states about a quarter every time and about
+  a quarter of matches are drawn. Reliable is not the same as useful, which is
+  why the card carries the score table beside the reliability one.
+- **Per competition, the Argentine cup is the least reliable of the 39** at
+  0.0270 against a pooled 0.0015 — the same competition Dixon-Coles could not
+  price in Milestone 7.
+
+### Changed
+
+- `TrainedForecaster` gained `fit()` and `predict()`, and `forecast()` is now
+  the composition of the two. Behaviour is identical; SHAP needs the fitted
+  estimator and permutation needs to predict nineteen times off one fit, and
+  both would otherwise have reimplemented the class-scattering that makes a
+  forecast come back in H/D/A order.
+- `fold_forecasts` carries `competition_id`. The per-competition breakdown is a
+  grouping the per-match frame can answer and the scored table cannot — the
+  backtest keeps competition and fold, but only as means.
+- `scripts/train.py` reads its tables through `src/pipelines/tables.py`. Same
+  behaviour, one copy.
+- `shap>=0.46` added to `requirements.txt`, with a `mypy` override — it ships
+  no `py.typed`. **`matplotlib` was in the plan for this milestone and is not
+  installed**: every figure it would have drawn is a five-row table.
+
+### Notes
+
+- The model card carries **no generation timestamp**, unlike the dataset card.
+  The dataset card's subject is a download that changes underneath it; this
+  one's is a version-controlled model, and a header that moves on every run
+  turns "the numbers changed" into a diff nobody reads. There is a test that
+  two runs produce the same bytes.
+- SHAP covers three families of six, on purpose. `TreeExplainer` needs the
+  estimator to *be* the tree ensemble, and the general-purpose explainer costs
+  hours per family for a number permutation importance produces exactly, for
+  every family, in seconds.
+- The attribution runs on one fold rather than five. It is a ranking whose gaps
+  are an order of magnitude apart, and a second fold does not move it.
+- No per-match explanations. SHAP can decompose a single forecast; a plausible
+  story about one fixture is the most misusable output this layer has, and the
+  card says so in its own limitations.
+
 ## [0.9.0] — unreleased
 
 Milestone 9: ensembling and calibration. Two layers over the zoo, and the

@@ -113,8 +113,18 @@ def test_every_forecaster_is_recorded_on_every_fold() -> None:
 
 def test_the_pass_returns_the_matches_the_backtest_only_returns_means_of() -> None:
     forecasts = fold_forecasts(LEAGUE, [HOME], folds=2)
-    assert list(forecasts.columns) == ["fold", "match", *FORECAST_COLUMNS, "forecaster", "result"]
+    assert list(forecasts.columns) == [
+        "fold",
+        "match",
+        "competition_id",
+        *FORECAST_COLUMNS,
+        "forecaster",
+        "result",
+    ]
     assert forecasts["result"].isin(["H", "D", "A"]).all()
+    # Carried for Milestone 10's "where is it reliable", which is a grouping
+    # the scored table keeps only as means.
+    assert set(forecasts["competition_id"]) == set(LEAGUE["competition_id"])
 
 
 # ---- who is alike, and who that admits ---------------------------------------

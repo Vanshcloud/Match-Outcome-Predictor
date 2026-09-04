@@ -20,6 +20,12 @@ best, which measures a classifier's confidence and says nothing at all about
 the draw column — where a football model is most often wrong, and where the
 overconfidence a calibration layer exists to remove actually lives.
 
+**One class at a time, when that is the question.** ``classes=("D",)`` bins the
+draw column alone. Pooling all three answers "are this model's probabilities
+honest"; splitting them answers "which of the three is it dishonest about",
+and those are different questions with, as Milestone 10 measured, different
+answers.
+
 **Equal-width bins, and empty ones are dropped.** Ten bins of 0.1 rather than
 deciles of the forecast: for a before-and-after table to be readable the edges
 have to mean the same thing in both halves, and quantile edges move with the
@@ -33,9 +39,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from src.evaluation.metrics import MetricError, _as_probabilities, one_hot
+from src.evaluation.metrics import CLASSES, MetricError, _as_probabilities, one_hot
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from src.evaluation.metrics import Outcomes
 
 DEFAULT_BINS = 10
@@ -55,7 +63,11 @@ more than it delivered."""
 
 
 def reliability(
-    probabilities: np.ndarray, outcomes: Outcomes, *, bins: int = DEFAULT_BINS
+    probabilities: np.ndarray,
+    outcomes: Outcomes,
+    *,
+    bins: int = DEFAULT_BINS,
+    classes: Sequence[str] = CLASSES,
 ) -> pd.DataFrame:
     """One row per non-empty bin of stated probability.
 
@@ -64,25 +76,33 @@ def reliability(
             :data:`~src.evaluation.metrics.CLASSES` order.
         outcomes: What happened, as canonical ``result`` strings.
         bins: How many equal-width bins to cut ``[0, 1]`` into.
+        classes: Which of the three statements to bin. All of them by default.
 
     Raises:
-        MetricError: On an unusable forecast, or on fewer than one bin.
+        MetricError: On an unusable forecast, fewer than one bin, or a class
+            that is not one of the three.
     """
     if bins < 1:
         raise MetricError(f"reliability needs at least one bin, got {bins}")
+    unknown = sorted(set(classes) - set(CLASSES))
+    if unknown:
+        raise MetricError(f"not outcome classes: {unknown}; the three are {list(CLASSES)}")
     forecast = _as_probabilities(probabilities)
     actual = one_hot(outcomes)
     if len(forecast) != len(actual):
         raise MetricError(f"{len(forecast)} forecasts against {len(actual)} outcomes")
 
+    chosen = [CLASSES.index(label) for label in classes]
+    stated, happened = forecast[:, chosen].ravel(), actual[:, chosen].ravel()
+
     edges = np.linspace(0.0, 1.0, bins + 1)
     # `edges[1:-1]` rather than every edge: digitize over the interior
     # boundaries returns 0..bins-1 directly, and puts a stated 1.0 in the last
     # bin instead of one past the end.
-    index = np.digitize(forecast.ravel(), edges[1:-1])
+    index = np.digitize(stated, edges[1:-1])
 
     grouped = (
-        pd.DataFrame({"bin": index, "predicted": forecast.ravel(), "observed": actual.ravel()})
+        pd.DataFrame({"bin": index, "predicted": stated, "observed": happened})
         .groupby("bin")
         .agg(n=("observed", "size"), predicted=("predicted", "mean"), observed=("observed", "mean"))
         .reset_index()

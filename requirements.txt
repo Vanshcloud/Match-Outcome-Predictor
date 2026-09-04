@@ -75,10 +75,21 @@ optuna>=4.0
 # and a tracking server is infrastructure this project does not want.
 mlflow>=3.0
 
+# ---- Explainability ----
+# Milestone 10, and only the tree explainer. It reads a boosted forest's own
+# structure, which is exact and takes seconds; the general-purpose explainer
+# that would cover the three pipeline-wrapped families costs hours for a number
+# src/explainability/permutation.py produces exactly, for every family, from
+# arithmetic that is already here.
+#
+# matplotlib was listed here in the plan and is not installed. Every figure
+# this milestone would have drawn is a five-row table, and a PNG in a
+# repository is a number that goes stale without a diff to show for it.
+shap>=0.46
+
 # ---- Added in later milestones (recorded so the order is deliberate) --------
 # M11 serving storage .... psycopg[binary], SQLAlchemy  (PostgreSQL arrives with
 #                         the first prediction to serve, not before — see the
 #                         Milestone 3 note in plans/IMPLEMENTATION_PLAN.md)
-# M10 explainability ..... shap, matplotlib
 # M11 api ................ fastapi, uvicorn[standard]
 # M12 dashboard .......... streamlit, plotly

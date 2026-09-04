@@ -712,14 +712,98 @@ that the last 0.0163 is information this project does not have.
 
 ---
 
-## Milestone 10 — Evaluation and explainability (next)
+## Milestone 10 — Evaluation and explainability ✅
+
+**Delivered.** All three items, and the two methods disagreed — which the scope
+said would be the finding, and it was.
+
+| Module | Responsibility |
+|---|---|
+| `explainability/permutation.py` | Break a block at prediction time; covers every family. |
+| `explainability/shapley.py` | `TreeExplainer` over the boosted three, aggregated to blocks. |
+| `evaluation/model_card.py` | The card, rendered from data it is handed. |
+| `pipelines/report.py` | Reliability per class and per competition; the card assembled. |
+| `pipelines/tables.py` | The three tables, joined once for the three commands that need them. |
+| `scripts/explain.py`, `scripts/model_card.py` | `make explain` (~2 min), `make card` (~5 min). |
+
+**Verified:** 100% coverage of `src`, ruff/black/mypy clean, 1,021 unit tests
+and 83 integration tests. Every CI invariant holds, plus a new one keeping
+`src/explainability` above the storage and pipeline layers.
+
+Full measurements are in `docs/EXPLAINABILITY.md`; the card is
+`docs/MODEL_CARD.md`.
+
+### The headline
+
+LightGBM on the most recent fold — 291,715 training matches, 11,802 scored:
+
+| Block | breaking it | share of the arithmetic | never having had it |
+|---|---:|---:|---:|
+| `elo` | **+0.0395** | **38.0%** | +0.0021 |
+| `form` | +0.0087 | 37.8% | **+0.0033** |
+| `dixon_coles` | +0.0073 | 19.9% | +0.0016 |
+| `schedule` | +0.0001 | 2.4% | +0.0003 |
+| `head_to_head` | +0.0001 | 2.0% | +0.0001 |
+
+### Three findings
+
+**The methods disagree about the top two, and that is the result.** Permutation
+and SHAP rank elo first; the ablation ranks form first. The model reaches for
+elo hardest and can most easily do without it, because Dixon-Coles is a
+substitute — Milestone 8's "the two ratings are substitutes", now a 19× gap
+between what a block is *used for* and what it is *worth*. Form's two numbers
+agree because nothing substitutes for it. The practical reading: a block whose
+numbers diverge has a backup, and a block whose numbers agree is load-bearing.
+
+**Where all three agree, they agree completely.** `schedule` and
+`head_to_head` are at 0.0001–0.0003 by every method on every family. Three
+independent measurements at the noise floor is the strongest statement this
+project has made about a feature block, and it closes what Milestone 5 left
+open.
+
+**The shipped model is most honest about draws and least useful there.** Per
+class, the calibrated blend scores 0.0012 on draws against 0.0035 on home wins
+— because it states about a quarter every time, and about a quarter of matches
+are drawn. Reliable is not the same as useful; the class prior is perfectly
+reliable and worthless, which is why the card carries the score table beside
+the reliability one. Per competition, the Argentine cup is the least reliable
+of the 39 at 0.0270 against a pooled 0.0015 — the same competition Dixon-Coles
+could not price in Milestone 7.
+
+### Changed from the approved scope
+
+- **SHAP covers three families of six, not the blend's members.** The scope
+  asked for SHAP over the blend's members; two of those three are scikit-learn
+  pipelines that `TreeExplainer` refuses, and the general-purpose explainer
+  costs hours per family for a number permutation importance produces exactly
+  in seconds. So the pair is SHAP where it is exact and permutation everywhere,
+  and the comparison against the ablation — which was the point — is made on
+  the family the ablation was run on.
+- **`matplotlib` was dropped.** It was listed for this milestone in
+  `requirements.txt` and is not installed: every figure this work would have
+  drawn is a five-row table, and a PNG in a repository is a number that goes
+  stale without a diff to show for it.
+- **`TrainedForecaster` gained `fit()` and `predict()`.** Behaviour-preserving,
+  and required: SHAP needs the fitted estimator and permutation predicts
+  nineteen times off one fit. Both would otherwise have reimplemented the
+  class-scattering that keeps a forecast in H/D/A order — the bug Milestone 8's
+  test suite calls the most likely silent one in the project.
+- **The attribution runs on one fold, not five.** A ranking whose gaps are an
+  order of magnitude apart does not move on a second fold, and the ablation it
+  is compared against is pooled over five — stated here rather than implied.
+
+---
+
+## Milestone 11 — API (next)
 
 Scope, for approval:
 
-- SHAP over the blend's members, reported per feature block so it can be read
-  against the ablation Milestone 8 already measured — two methods disagreeing
-  about which block matters is a finding, and agreeing is a check.
-- A model card per shipped model: what it was trained on, what it scores, where
-  it is reliable and where it is not, and what it must not be used for.
-- Per-class and per-competition breakdowns of the reliability table, which the
-  calibration work deliberately left at one pooled scalar.
+- FastAPI over the shipped model: one fixture in, three calibrated
+  probabilities out, with the model card's limitations reachable from the
+  response rather than buried in a repository.
+- PostgreSQL for served predictions — the first thing in this project that is
+  application state rather than a derived table, which is the condition
+  Milestone 3 set for adding it.
+- A prediction is logged with the inputs it was made from, so the served
+  model's calibration can be measured against outcomes later rather than
+  assumed to match the backtest.

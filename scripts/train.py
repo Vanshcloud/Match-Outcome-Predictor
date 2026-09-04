@@ -62,9 +62,7 @@ from src.models.tuning import (  # noqa: E402
 )
 from src.models.zoo import FAMILIES, ModelError, default_zoo  # noqa: E402
 from src.pipelines.backtest import COMMON, PRICED, pooled_table  # noqa: E402
-from src.pipelines.features import FEATURES_FILENAME  # noqa: E402
-from src.pipelines.ingest import MATCHES_FILENAME  # noqa: E402
-from src.pipelines.ratings import RATINGS_FILENAME  # noqa: E402
+from src.pipelines.tables import load_modelling_frame, resolve_tables  # noqa: E402
 from src.pipelines.train import (  # noqa: E402
     ablation_table,
     ensemble_forecasters,
@@ -73,13 +71,10 @@ from src.pipelines.train import (  # noqa: E402
     run_ensemble,
     run_training,
 )
-from src.storage.duckdb_store import DuckDBStore  # noqa: E402
 from src.utils.config import Settings, load_settings  # noqa: E402
 from src.utils.logging import configure_logging, get_logger  # noqa: E402
 
 logger = get_logger("train")
-
-KEY_COLUMN = "match_id"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -183,36 +178,10 @@ def render(table: pd.DataFrame, *, markdown: bool, signed: bool = False) -> str:
 
 def load_frame(args: argparse.Namespace, settings: Settings) -> pd.DataFrame | None:
     """The canonical table joined to the ratings and the features, or None."""
-    paths = settings.paths
-    matches_path = args.matches or paths.processed_dir / MATCHES_FILENAME
-    ratings_path = args.ratings or paths.features_dir / RATINGS_FILENAME
-    features_path = args.features or paths.features_dir / FEATURES_FILENAME
-
-    for label, path in (
-        ("match table", matches_path),
-        ("ratings", ratings_path),
-        ("features", features_path),
-    ):
-        if not path.is_file():
-            logger.error("no %s at %s; a model needs all three tables", label, path)
-            return None
-
-    with DuckDBStore.open_matches(
-        matches_path, ratings=ratings_path, features=features_path
-    ) as store:
-        matches = store.read_matches(competitions=args.competition or None)
-        ratings = store.read_ratings()
-        features = store.read_features()
-
-    if matches.empty:
-        logger.error("no matches for %s", ", ".join(args.competition) or matches_path)
-        return None
-    # Left joins: a match the ratings or the features have nothing to say about
-    # keeps its row and loses those columns, which the models read as the null
-    # they are — "no history yet" — rather than losing the match.
-    return matches.merge(ratings, on=KEY_COLUMN, how="left").merge(
-        features, on=KEY_COLUMN, how="left"
+    tables = resolve_tables(
+        settings.paths, matches=args.matches, ratings=args.ratings, features=args.features
     )
+    return load_modelling_frame(tables, competitions=args.competition or None)
 
 
 def run_tuning(frame: pd.DataFrame, args: argparse.Namespace) -> int:

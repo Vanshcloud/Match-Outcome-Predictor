@@ -140,18 +140,24 @@ def fold_forecasts(
     states. Both need the matches back.
 
     Columns: ``fold``, ``match`` (the row's position within its evaluation
-    half, which is what makes two forecasters' rows line up), ``forecaster``,
-    the three probabilities, and the outcome.
+    half, which is what makes two forecasters' rows line up),
+    ``competition_id``, ``forecaster``, the three probabilities, and the
+    outcome. The competition is carried because Milestone 10 asks where a model
+    is reliable rather than whether it is, and that is a grouping this frame
+    can answer and the scored table cannot — the backtest keeps competition and
+    fold, but only as means.
     """
     collected: list[pd.DataFrame] = []
     for fold in walk_forward(matches, folds=folds, horizon_days=horizon_days):
         outcomes = fold.evaluate[TARGET_COLUMN].to_numpy()
+        competitions = fold.evaluate["competition_id"].to_numpy()
         for forecaster in forecasters:
             stated = pd.DataFrame(
                 forecaster.forecast(fold.train, fold.evaluate), columns=list(FORECAST_COLUMNS)
             )
             stated.insert(0, "fold", fold.index)
             stated.insert(1, "match", np.arange(len(fold.evaluate)))
+            stated.insert(2, "competition_id", competitions)
             stated["forecaster"] = forecaster.name
             stated[TARGET_COLUMN] = outcomes
             collected.append(stated)

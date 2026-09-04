@@ -84,9 +84,20 @@ class TrainedForecaster:
     """What ``build`` was configured with. Carried for the run log, so a score
     in a report can be traced to the settings that produced it."""
 
-    def forecast(self, train: pd.DataFrame, evaluate: pd.DataFrame) -> np.ndarray:
+    def fit(self, train: pd.DataFrame) -> Estimator:
+        """A fresh estimator, fitted on the matches it is handed.
+
+        Public because Milestone 10 needs the fitted thing itself: SHAP reads
+        the trees, and permutation importance predicts nineteen times off one
+        fit. Both would otherwise refit for every number they report, and both
+        would reimplement the two lines below to do it.
+        """
         estimator = self.build()
         estimator.fit(design_matrix(train, self.columns), targets(train))
+        return estimator
+
+    def predict(self, estimator: Estimator, evaluate: pd.DataFrame) -> np.ndarray:
+        """One probability row per match, in :data:`CLASSES` order."""
         predicted = estimator.predict_proba(design_matrix(evaluate, self.columns))
 
         # Scattered into a full three-column array rather than returned as-is.
@@ -97,6 +108,9 @@ class TrainedForecaster:
         for column, label in enumerate(estimator.classes_):
             forecast[:, int(label)] = predicted[:, column]
         return forecast
+
+    def forecast(self, train: pd.DataFrame, evaluate: pd.DataFrame) -> np.ndarray:
+        return self.predict(self.fit(train), evaluate)
 
 
 # -- The hyperparameters, and where they came from -----------------------------

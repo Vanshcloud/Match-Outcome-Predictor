@@ -33,6 +33,16 @@ and packaging side, and the walk-forward tables are the same tables.
   is now recorded as `"unknown"`, which the drift check reads as a mismatch —
   the warning that was wanted — instead of failing the one endpoint whose job
   is to say what is running.
+- **`uv.lock` could not reconstruct a runnable service.** It was generated
+  before the Milestone 11 commit that added the API dependencies to
+  `requirements.txt`, so the project's own dependency list omitted `fastapi`,
+  `joblib` and `uvicorn`, and `psycopg` was absent from the file entirely — no
+  package entry, no hashes. `uv sync --frozen` would therefore have produced an
+  environment with no driver for the prediction log, against a README that
+  offers the lockfile as the way to reconstruct the environment the benchmark
+  numbers were measured in. The rule to regenerate it in the same commit as any
+  requirements change was already written down; this is the commit it was
+  missed in, applied late.
 
 ### Changed
 

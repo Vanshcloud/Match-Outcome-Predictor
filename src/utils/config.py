@@ -45,6 +45,7 @@ ENV_OVERRIDES: dict[str, str] = {
     "MODEL_DIR": "paths.model_dir",
     "API_PORT": "api.port",
     "API_MAX_BATCH": "api.max_batch",
+    "DASHBOARD_API_URL": "dashboard.api_url",
     "PREDICTION_LOG_DSN": "api.prediction_log_dsn",
     "LOG_LEVEL": "logging.level",
 }
@@ -191,6 +192,28 @@ class LoggingConfig(_Strict):
         return upper
 
 
+class DashboardConfig(_Strict):
+    """Where the dashboard finds the service it asks for a probability.
+
+    The dashboard reads the report tables from disk and posts a fixture to the
+    API — reports are a measurement that already exists, a live probability is
+    the model's, and asking the service for it is what keeps the dashboard from
+    being a second place that loads the artefact.
+    """
+
+    api_url: str = "http://127.0.0.1:8000"
+    """Base URL of the prediction service.
+
+    Loopback by default, which is what ``make api`` and ``make dashboard``
+    produce side by side. Compose overrides it to ``http://api:8000``, which is
+    the whole reason it is a setting rather than a literal.
+    """
+
+    request_timeout_seconds: float = Field(default=10.0, gt=0)
+    """A dashboard waiting on a service is a person waiting at a screen, so
+    this is much shorter than the ingestion timeout, which waits on a file."""
+
+
 class Settings(_Strict):
     """The fully resolved configuration for one process.
 
@@ -209,6 +232,7 @@ class Settings(_Strict):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     http: HttpConfig = Field(default_factory=HttpConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

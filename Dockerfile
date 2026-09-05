@@ -93,3 +93,79 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # probe on 127.0.0.1 can be configured out of, which is the failure this change
 # exists to remove rather than reintroduce.
 CMD ["sh", "-c", "exec uvicorn api.main:app --host 0.0.0.0 --port \"${API_PORT:-8000}\""]
+
+# --- dashboard ---------------------------------------------------------------
+# Its own stage rather than its own Dockerfile: it shares the base, the
+# non-root user and the mount points with the runtime stage above, and two
+# files describing one build is how they drift.
+#
+# It builds from `requirements-dashboard.txt`, which leaves out the entire
+# modelling stack — this process reads report tables and asks the service for a
+# probability, and never unpickles an estimator. CI enforces the same rule in
+# the source: `dashboard` may not import `api`.
+FROM python:3.13-slim-bookworm AS dashboard-builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements-dashboard.txt ./
+RUN python -m pip install --upgrade pip \
+ && python -m pip install --prefix=/install -r requirements-dashboard.txt
+
+FROM python:3.13-slim-bookworm AS dashboard
+
+LABEL org.opencontainers.image.title="Match Outcome Predictor dashboard" \
+      org.opencontainers.image.description="Reliability, per-competition breakdowns and a live fixture price" \
+      org.opencontainers.image.source="https://github.com/Vanshcloud/Match-Outcome-Predictor" \
+      org.opencontainers.image.licenses="MIT"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    DATA_DIR=/app/data \
+    MODEL_DIR=/app/models \
+    DASHBOARD_PORT=8501 \
+    DASHBOARD_API_URL=http://api:8000
+
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --create-home --uid 10001 app
+
+COPY --from=dashboard-builder /install /usr/local
+
+WORKDIR /app
+# `api/` is deliberately not copied. The dashboard is a client of that service
+# over HTTP, and an image that contained the handlers would be one where the
+# rule CI enforces in source could be broken by an import at run time.
+COPY --chown=app:app dashboard/ ./dashboard/
+COPY --chown=app:app src/ ./src/
+COPY --chown=app:app configs/ ./configs/
+
+RUN mkdir -p /app/data /app/models && chown -R app:app /app/data /app/models
+
+USER app
+EXPOSE 8501
+
+# Streamlit's own readiness endpoint. It answers once the server is accepting
+# connections, which is the same question the compose file asks.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${DASHBOARD_PORT:-8501}/_stcore/health" || exit 1
+
+# `sh -c` with an explicit `exec`, for the reason the runtime stage above
+# records: exec form does not expand variables, and without the `exec` the
+# shell stays PID 1 and every stop takes the full grace period.
+#
+# `--server.address 0.0.0.0` is a literal for the same reason the API's bind
+# address is: the published port is how exposure is controlled. Usage
+# statistics are off — this is somebody's own machine reading their own data.
+CMD ["sh", "-c", "exec streamlit run dashboard/app.py \
+--server.port \"${DASHBOARD_PORT:-8501}\" \
+--server.address 0.0.0.0 \
+--server.headless true \
+--browser.gatherUsageStats false"]

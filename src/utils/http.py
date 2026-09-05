@@ -155,6 +155,31 @@ class HttpClient:
         response.raise_for_status()
         return response
 
+    def post(self, url: str, **kwargs: object) -> requests.Response:
+        """POST ``url``, honouring the configured timeout and rate limit.
+
+        **Not retried, and that is the point.** :data:`RETRY_METHODS` names
+        only GET and HEAD, so a POST that fails comes back as one error rather
+        than as four more attempts at a request the server may already have
+        acted on. The comment on that constant anticipated this method; it now
+        exists, and it inherits the restriction rather than quietly widening
+        it.
+
+        Added by Milestone 12, whose dashboard prices a fixture by asking the
+        service rather than by loading the model a second time.
+
+        Raises:
+            requests.HTTPError: On any 4xx or 5xx.
+        """
+        self._wait_for_rate_limit()
+        kwargs.setdefault("timeout", self.timeout_seconds)
+        try:
+            response = self.session.post(url, **kwargs)  # type: ignore[arg-type]
+        finally:
+            self._last_request_at = time.monotonic()
+        response.raise_for_status()
+        return response
+
     def download(
         self,
         url: str,

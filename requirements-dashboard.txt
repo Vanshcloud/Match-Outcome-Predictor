@@ -1,0 +1,48 @@
+# What the *dashboard* image installs. A subset of requirements.txt on the same
+# terms as requirements-api.txt: same specifiers, fewer of them, and a reason
+# beside every omission.
+#
+# The interesting omission is the whole modelling stack. The dashboard reads
+# report tables and asks the service for a probability, so it never unpickles
+# an estimator:
+#
+#   xgboost, scikit-learn  The blend's members. The dashboard does not load the
+#                          artefact — that is the point of Milestone 12's
+#                          hybrid, and CI enforces that it cannot import `api`
+#                          either. If this list ever needs them, something has
+#                          started computing a probability in the wrong process.
+#   joblib                 Only used to read the artefact. See above.
+#   catboost, lightgbm     Not in the blend at all.
+#   optuna, mlflow, shap   Search, tracking, explainability. None is a page.
+#   psycopg                The prediction log is written by the service.
+#   fastapi, uvicorn       This image is a client of that server, not a copy.
+#
+# What is left is the reporting path and one HTTP client.
+
+# The page.
+streamlit>=1.40
+plotly>=5.24
+
+# Reading the report tables. `read_scores` and `read_forecasts` go through the
+# DuckDB store like every other read in this project, and Parquet needs arrow.
+pandas>=2.2,<3
+pyarrow>=17.0
+numpy>=2.0,<3
+duckdb>=1.1
+
+# `src.evaluation.reliability` bins with numpy and the pipelines' report
+# helpers are pandas, but `expected_calibration_error` is the only arithmetic
+# on this path and it needs neither scipy nor sklearn. scipy is absent for that
+# reason and not by oversight.
+
+# Asking the service for a probability. Through `src.utils.http`, which is why
+# requests is here and why urllib3 is pinned beside it in requirements.txt.
+requests>=2.32
+urllib3>=2.0
+
+# Loading `configs/config.yaml` and the environment overrides, exactly as the
+# API does — the dashboard reads `paths.reports_dir` and `dashboard.api_url`
+# from the same loader.
+PyYAML>=6.0
+python-dotenv>=1.0
+pydantic>=2.9

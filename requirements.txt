@@ -111,5 +111,19 @@ joblib>=1.4
 # plans/IMPLEMENTATION_PLAN.md.
 psycopg[binary]>=3.2
 
+# ---- Dashboard (M12) ----
+# Streamlit renders the reporting tables the pipelines already produce and
+# posts a fixture to the API for a live probability. It computes nothing: a
+# second implementation of a metric is a second number to reconcile, which is
+# the one thing a dashboard over a forecasting project must not add.
+streamlit>=1.40
+# Plotly rather than matplotlib, and this is the milestone that reverses the
+# note above: a reliability diagram is the one figure in this project that a
+# table genuinely cannot replace — the diagonal is the claim being tested, and
+# a reader checks a forecast against it by eye in a way no column of gaps
+# supports. Interactive, so it is drawn in the browser rather than committed
+# as a PNG that goes stale without a diff.
+plotly>=5.24
+
 # ---- Added in later milestones (recorded so the order is deliberate) --------
-# M12 dashboard .......... streamlit, plotly
+# M13 mlops .............. (drift monitoring, retraining)

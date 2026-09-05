@@ -21,3 +21,12 @@ pandas-stubs==2.3.3.260113
 # scipy-stubs tracks scipy versions, and stubs for a different minor describe
 # an API the installed library does not have.
 scipy-stubs==1.18.1.0
+# Milestone 12. plotly ships no py.typed marker; these are the community stubs
+# and they earned their place immediately — they caught a `dict[str, object]`
+# splatted into `update_layout`, which type-checks as nothing in particular and
+# is how a misspelt layout key survives to be ignored at run time. Pinned
+# exactly like the rest: at 0.1.x the API these describe is still moving.
+#
+# streamlit is deliberately absent from this file and from the mypy overrides:
+# it ships its own py.typed, so it needs neither.
+plotly-stubs==0.1.4

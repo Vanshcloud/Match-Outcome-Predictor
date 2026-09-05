@@ -16,7 +16,7 @@ IMAGE  := match-outcome-predictor:local
 # Directories that hold first-party Python. Kept in one variable so a new
 # package is wired into lint, format and type-check by editing one line instead
 # of six. `api/` joined it in Milestone 11; `dashboard/` will in Milestone 12.
-CODE := src api tests scripts
+CODE := src api dashboard tests scripts
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -107,6 +107,9 @@ model: ## Fit the shipped model on the whole history and persist it (~1 min)
 api: ## Serve the API on http://127.0.0.1:8000/docs, reloading on edit
 	$(BIN)/uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
 
+dashboard: ## Serve the dashboard at http://127.0.0.1:8501 (run `make api` too for the predict tab)
+	$(BIN)/streamlit run dashboard/app.py
+
 docker-build: ## Build the serving image
 	docker build -t $(IMAGE) .
 
@@ -132,7 +135,7 @@ test-int: ## Run integration tests (needs `make data` first; skips without it)
 	$(BIN)/pytest -m integration
 
 test-cov: ## Run tests with a coverage report and enforce the threshold
-	$(BIN)/pytest -m "not integration" --cov=src --cov=api --cov-report=term-missing --cov-fail-under=100
+	$(BIN)/pytest -m "not integration" --cov=src --cov=api --cov=dashboard --cov-report=term-missing --cov-fail-under=100
 
 lint: ## Run ruff
 	$(BIN)/ruff check $(CODE)
@@ -145,7 +148,7 @@ format-check: ## Check formatting without writing
 	$(BIN)/black --check $(CODE)
 
 typecheck: ## Run mypy
-	$(BIN)/mypy src api
+	$(BIN)/mypy src api dashboard
 
 quality: lint format-check typecheck ## Run every quality gate
 

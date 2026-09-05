@@ -136,10 +136,12 @@ markers = [
 ]
 
 [tool.coverage.run]
-# `api` joined `src` in Milestone 11. The service is first-party code on the
-# request path; measuring the library and not the thing that serves it would
-# put the 100% badge on the half nobody calls in production.
-source = ["src", "api"]
+# `api` joined `src` in Milestone 11 and `dashboard` in Milestone 12, on the
+# same reasoning both times. The service is first-party code on the request
+# path and the dashboard is first-party code a reader looks at; measuring the
+# library and not the two things people actually reach would put the 100%
+# badge on the part nobody calls.
+source = ["src", "api", "dashboard"]
 omit = ["*/__init__.py"]
 
 [tool.coverage.report]

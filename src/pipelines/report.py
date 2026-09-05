@@ -41,6 +41,8 @@ from src.models.dataset import DESIGN_COLUMNS
 from src.models.ensemble import FORECAST_COLUMNS, MEMBERS, SHIPPED, ensemble
 from src.models.splits import DEFAULT_FOLDS
 from src.pipelines.backtest import COMMON, pooled_table
+from src.pipelines.derived import persist
+from src.pipelines.tables import FORECASTS_FILENAME
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -164,6 +166,41 @@ def build_model_card(
         trained_from=f"{pd.Timestamp(matches['date'].min()):%Y-%m-%d}",
         trained_to=f"{pd.Timestamp(matches['date'].max()):%Y-%m-%d}",
         columns=tuple(columns),
+    )
+
+
+def write_forecasts(forecasts: pd.DataFrame, destination_dir: Path) -> Path:
+    """Persist the per-match diagnostic pass, with a manifest beside it.
+
+    The rows the card computes and then throws away. They cost about five
+    minutes to produce and answer the one question the scored table cannot —
+    whether a stated probability happens at the rate it states — so Milestone
+    12's dashboard reads them instead of recomputing them on every page load,
+    and a second `make card` is the only thing that has to.
+
+    Written through the same :func:`~src.pipelines.derived.persist` every
+    derived table uses, so the provenance of a reliability diagram is checkable
+    the same way the provenance of a rating is.
+
+    Takes the destination directory rather than the reports root and the
+    subdirectory name. Reaching into :mod:`src.pipelines.train` for that one
+    string would import the model zoo to learn a filename, which is the import
+    Milestone 11 found by watching a container fail to start.
+
+    Args:
+        forecasts: The per-match pass, as :func:`~src.models.ensemble.fold_forecasts`
+            returns it.
+        destination_dir: Where to write it. The caller already knows, because
+            it read the scores from the same place.
+    """
+    return persist(
+        forecasts,
+        destination_dir / FORECASTS_FILENAME,
+        extra={
+            "kind": "forecasts",
+            "forecasters": sorted(forecasts["forecaster"].unique()),
+            "rows": len(forecasts),
+        },
     )
 
 

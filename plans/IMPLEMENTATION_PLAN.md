@@ -920,12 +920,42 @@ repository has for probing a derivation rather than reading it.
 
 ---
 
-## Milestone 12 — Dashboard (next)
+## Milestone 12 — Dashboard ✅
 
-Scope, for approval:
+Delivered. Streamlit over the reporting layer, four tabs, and one panel that
+asks the service for a live probability.
 
-- Streamlit over the same service: reliability tables a reader can filter, the
-  per-competition breakdown the card reports pooled, and the fixture search the
-  API already exposes.
-- No second copy of the arithmetic. The dashboard is a client of `api/` or of
-  `src/pipelines`, never a place where a probability is computed again.
+- **The open question in the scope was the data path** — "a client of `api/`
+  *or* of `src/pipelines`" — and the answer turned out to be both, because
+  neither alone works. The API exposes no reliability or backtest data, so a
+  pure HTTP client needed three new endpoints this milestone did not ask for;
+  a pure `src` client would have had to load the artefact, which is exactly
+  the second copy of the model the "no second copy of the arithmetic" rule
+  exists to prevent. So: reports from disk, predictions over HTTP.
+- **The page works with the service down.** That falls out of the split rather
+  than being designed for: three tabs never touch the network, and the fourth
+  says the service is not answering and names the command that starts it.
+- **CI enforces the boundary in four places.** `dashboard` may not import
+  `api`; nothing may import `dashboard`; the dashboard may not reach past the
+  reporting layer into ratings, features or ingestion; and the image job
+  asserts the built dashboard contains no `api` package.
+
+### The enabling change
+
+`make card` computed 62,036 per-match forecasts, rendered the card from them
+and threw them away. The dashboard needs those rows on every page load and
+would otherwise have spent five minutes on each, so the command now writes
+`data/reports/ensemble/forecasts.parquet` with a manifest beside it. It is the
+only pipeline change this milestone made, and it makes a second `make card`
+the only thing that has to recompute them.
+
+### One figure, and the Milestone 10 note it reverses
+
+`requirements.txt` recorded at Milestone 10 that matplotlib was left out
+because every figure that milestone would have drawn was a five-row table.
+Four of the five things on this page still are. The reliability diagram is the
+exception and the reason is narrow: its claim is a diagonal, `y = x` *is* the
+hypothesis being tested, and a reader checks a forecast against it by eye in a
+way a column of signed gaps does not support. Plotly rather than matplotlib
+because it is drawn in the browser, so nothing is committed as a PNG that goes
+stale without a diff.

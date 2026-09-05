@@ -4,7 +4,7 @@
      run overwrites it, and a hand-edited figure is a figure that no
      longer describes the model. -->
 
-match-outcome-predictor 0.10.0.
+match-outcome-predictor 0.12.0.
 
 ## What it does
 

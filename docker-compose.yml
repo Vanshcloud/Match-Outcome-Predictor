@@ -2,7 +2,8 @@
 # served predictions to.
 #
 #   make model            # fit the artefact into ./models (needs the tables)
-#   docker compose up     # http://localhost:8000/docs
+#   docker compose up     # API http://localhost:8000/docs
+#                         # dashboard http://localhost:8501
 #
 # `data/` and `models/` are mounted read-only rather than copied into the
 # image. Retraining is then `make model` and a restart, instead of a rebuild,
@@ -42,6 +43,34 @@ services:
         # startup, so a database that is merely *running* — Postgres runs an
         # init pass before it accepts connections — would fail the first boot
         # and rely on the restart policy to paper over it.
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      target: dashboard
+    image: match-outcome-predictor-dashboard:local
+    ports:
+      - "8501:8501"
+    environment:
+      # By service name, not by localhost. The dashboard asks the API for a
+      # probability over the compose network, which is the whole reason the URL
+      # is a setting rather than a literal in the page.
+      DASHBOARD_API_URL: http://api:8000
+      LOG_LEVEL: INFO
+    volumes:
+      # Read-only, and only `data/`. The dashboard reads report tables and
+      # never the artefact — it asks the service for a probability instead — so
+      # `models/` is not mounted here at all.
+      - ./data:/app/data:ro
+    depends_on:
+      api:
+        # `service_healthy`, so the predict tab has something to talk to on the
+        # first page load rather than showing its "not answering" state for the
+        # twenty seconds the API takes to index three hundred thousand
+        # fixtures. The page degrades correctly either way; this is about not
+        # showing a new reader a warning that is about to stop being true.
         condition: service_healthy
     restart: unless-stopped
 

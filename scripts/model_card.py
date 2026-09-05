@@ -47,6 +47,7 @@ from src.pipelines.report import (  # noqa: E402
     reliability_by_class,
     reliability_by_competition,
     shipped_forecaster,
+    write_forecasts,
     write_model_card,
 )
 from src.pipelines.tables import (  # noqa: E402
@@ -161,8 +162,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print("\n(dry run: nothing written)")
         return 0
+
+    # The forecasts as well as the card. They cost most of this command's
+    # runtime, they are the only rows that can answer whether a stated
+    # probability happens at the rate it states, and until now they were
+    # computed and thrown away — so the dashboard would have had to spend the
+    # same five minutes on every page load.
+    scores_path = args.scores or settings.paths.reports_dir / ENSEMBLE_SUBDIR / BACKTEST_FILENAME
+    recorded = write_forecasts(forecasts, scores_path.parent)
+    print(f"\n{len(forecasts):,} forecasts written to {recorded}")
+
     written = write_model_card(card, args.docs or PROJECT_ROOT / DOCS_DIRNAME)
-    print(f"\nwritten to {written}")
+    print(f"written to {written}")
     return 0
 
 

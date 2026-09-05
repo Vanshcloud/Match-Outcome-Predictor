@@ -45,13 +45,13 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Lint
-        run: ruff check src api tests scripts
+        run: ruff check src api dashboard tests scripts
 
       - name: Format check
-        run: black --check src api tests scripts
+        run: black --check src api dashboard tests scripts
 
       - name: Types
-        run: mypy src api
+        run: mypy src api dashboard
 
       - name: Leakage suite
         # Every producer in the codebase, found by walking the packages rather
@@ -67,7 +67,7 @@ jobs:
         #
         # --cov-fail-under is what keeps the README's coverage claim honest.
         # Without it the number in the README is prose, not a measurement.
-        run: pytest -m "not integration" --cov=src --cov=api --cov-report=term-missing --cov-fail-under=100
+        run: pytest -m "not integration" --cov=src --cov=api --cov=dashboard --cov-report=term-missing --cov-fail-under=100
 
       - name: Confirm the suite is green with no data present
         # `test ! -d` would prove nothing here: a Parquet file is a *file*, so
@@ -316,13 +316,70 @@ jobs:
           fi
           echo "api depends only on pipelines, models, storage, evaluation and utils"
 
-      - name: No network access from the unit suite
-        # The suite must stay runnable offline. requests is only ever reached
-        # through src/utils/http, and unit tests inject a stubbed session.
+      - name: The dashboard is a client of the service, not a second copy of it
+        # Milestone 12. `dashboard` talks to `api` over HTTP and must never
+        # import it: the moment it can call a handler directly, "what does the
+        # model say" has two implementations in one process and the day they
+        # disagree the disagreement is invisible, because nothing compares
+        # them. The same rule that keeps a design row off the request path
+        # keeps the artefact out of the dashboard.
         run: |
-          if grep -rEn '^[[:space:]]*(import|from) (requests|urllib|http\.client|socket)\b' src api \
-             | grep -v '^src/utils/http.py'; then
-            echo "HTTP is being made outside src/utils/http"; exit 1
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) api\b' dashboard || true)
+          if [ -n "$offenders" ]; then
+            echo "the dashboard imports the api package instead of calling it:"; echo "$offenders"; exit 1
+          fi
+          echo "dashboard calls the service over HTTP; it does not import it"
+
+      - name: Nothing depends on the dashboard
+        # It is the top of the graph. `src` is the library `make reproduce`
+        # runs and `api` is the process that serves it; either importing a
+        # Streamlit page would make the pipelines need Streamlit to start.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\b' src api scripts || true)
+          if [ -n "$offenders" ]; then
+            echo "src, api or scripts imports the dashboard:"; echo "$offenders"; exit 1
+          fi
+          echo "dashboard depends on src; nothing depends on dashboard"
+
+      - name: The dashboard reads reports; it does not build them
+        # It may have the pipelines (the tables), the evaluation layer (the
+        # reliability functions the card uses), the model layer (for the
+        # shipped model's name) and utils. It may not reach `src.ratings`,
+        # `src.feature_engineering` or `src.ingestion` — a dashboard that
+        # recomputed a feature would be an unprobed copy of the layer
+        # Milestone 6 exists to guard, and one that recomputed a metric would
+        # be a second number to reconcile with the model card.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' dashboard \
+                      | grep -vE 'src\.(pipelines|models|evaluation|utils)\.' || true)
+          if [ -n "$offenders" ]; then
+            echo "the dashboard reaches past the reporting layer:"; echo "$offenders"; exit 1
+          fi
+          echo "dashboard depends only on pipelines, models, evaluation and utils"
+
+      - name: No network access from the unit suite
+        # The suite must stay runnable offline, and every outbound request in
+        # this project goes through src/utils/http, which owns the timeout, the
+        # retry policy and the rate limit.
+        #
+        # Two greps, because the rule is about *calls* and not about the name.
+        # `dashboard/client.py` imports `requests` for its exception tree — it
+        # catches `RequestException` and types a `Response` — while making
+        # every request through `HttpClient`, and a rule that banned the import
+        # would be asking it to catch exceptions it cannot name. So the call
+        # sites are what is forbidden. The transports that have no
+        # exception-only use are still banned outright by import.
+        run: |
+          set -e
+          calls=$(grep -rEn '\b(requests\.(get|post|put|patch|delete|head|request|Session)|urlopen)[[:space:]]*\(' \
+                  src api dashboard | grep -v '^src/utils/http.py' || true)
+          if [ -n "$calls" ]; then
+            echo "an HTTP call is made outside src/utils/http:"; echo "$calls"; exit 1
+          fi
+          transports=$(grep -rEn '^[[:space:]]*(import|from) (urllib|http\.client|socket)\b' \
+                       src api dashboard | grep -v '^src/utils/http.py' || true)
+          if [ -n "$transports" ]; then
+            echo "a raw transport is imported outside src/utils/http:"; echo "$transports"; exit 1
           fi
           echo "outbound HTTP confined to src/utils/http"
 
@@ -361,6 +418,36 @@ jobs:
           curl -fsS http://127.0.0.1:8000/model-card/limitations | grep -q 'Betting'
           test "$(docker inspect -f '{{.Config.User}}' match-outcome-predictor:ci)" = "app"
           docker rm -f api
+
+      - name: Build the dashboard
+        # Milestone 12. Its own stage in the same Dockerfile, and worth
+        # building here for the reason the serving image is: deployment code
+        # that is only ever built by hand is broken on the morning it is
+        # needed.
+        run: docker build --target dashboard -t match-outcome-dashboard:ci .
+
+      - name: It starts with no data and answers its health endpoint
+        # The clean-checkout state again. The dashboard reads report tables
+        # that are not in the image, so this is the empty-state page — which is
+        # exactly what a new reader sees first, and it must render rather than
+        # stack-trace.
+        run: |
+          set -e
+          docker run -d --name dash -p 8501:8501 match-outcome-dashboard:ci
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          test "$(curl -fsS http://127.0.0.1:8501/_stcore/health)" = "ok"
+          curl -fsS http://127.0.0.1:8501/ >/dev/null
+          test "$(docker inspect -f '{{.Config.User}}' match-outcome-dashboard:ci)" = "app"
+          # The layering rule, asserted against the image rather than the
+          # source: a dashboard that shipped the handlers could import them.
+          if docker run --rm --entrypoint sh match-outcome-dashboard:ci -c 'test -d /app/api'; then
+            echo "the dashboard image contains the api package"; exit 1
+          fi
+          docker rm -f dash
+          echo "dashboard starts, is healthy, runs as app, and has no api package"
 
       - name: The compose file is valid
         run: docker compose config --quiet

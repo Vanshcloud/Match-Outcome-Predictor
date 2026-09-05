@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 11 of 14 — the inference service.**
+> **Status: Milestone 12 of 14 — the dashboard.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -23,6 +23,9 @@ football competitions, from ingestion through to a served API and dashboard.
 > they are not, and that model is now **served over HTTP** from a container —
 > with the card's limitations reachable from the response, and every prediction
 > saying whether the fixture was inside the served model's own training window.
+> A **dashboard** reads the same measurements back: the pooled calibration
+> error the card reports as one number, filterable to the competitions and
+> years it is an average over.
 
 ---
 
@@ -406,6 +409,46 @@ a request.
 **[docs/API.md](docs/API.md)** has the request shapes, the status codes, the
 configuration and what the service deliberately is not.
 
+## The dashboard
+
+Streamlit over the reporting layer, and it computes nothing. Every table is
+produced by `src/pipelines`, every probability by the service, and
+`docs/MODEL_CARD.md` is generated from the same functions — so a number on the
+page and the same number in the card are the same number from the same code.
+
+**Two data paths, and the split is the design.** Reports are read from disk,
+because a measurement that already exists should be read rather than
+recomputed. Predictions come over HTTP, because two processes that both
+unpickle the artefact are two implementations of "what does the model say".
+The page therefore works with the service down: the predict tab says so and
+names the command that starts it, and the other three are unaffected. CI
+enforces the boundary — `dashboard` may not import `api`, and the dashboard
+image does not contain it.
+
+| Tab | |
+|---|---|
+| Scoreboard | Every forecaster over the 59,001 matches all of them could price |
+| Reliability | The card's pooled 0.0015, filtered by competition, fold and bin count |
+| By competition | Least honest first, beside log loss per competition |
+| Price a fixture | The live service, with `in_sample` shown on every answer |
+
+**The reliability diagram is the one figure this project draws.** Milestone 10
+recorded that matplotlib was left out because every figure it would have drawn
+was a five-row table. This is the exception and the reason is specific: the
+diagram's claim is a diagonal, `y = x` *is* the hypothesis being tested, and a
+reader checks a forecast against it by eye in a way a column of signed gaps
+does not support. Marker area is the matches in a bin — the same weighting the
+calibration error applies, made visible rather than restated.
+
+One enabling change sits behind it. `make card` computed 62,036 per-match
+forecasts, used them, and threw them away; it now writes them to
+`data/reports/ensemble/forecasts.parquet` with a manifest. The dashboard reads
+that instead of spending five minutes on every page load, and a second
+`make card` is the only thing that has to recompute it.
+
+**[docs/DASHBOARD.md](docs/DASHBOARD.md)** has the tabs, the configuration and
+what the page deliberately is not.
+
 ## Storage and validation
 
 The canonical table is read through a `MatchStore`, never by opening a path.
@@ -498,7 +541,11 @@ api/                the inference service                 [Milestone 11] ✅
   routes.py           six endpoints, each a call and a return
   service.py          the model, the fixture index and the log, held once
   schemas.py          the request and response models, and the OpenAPI document
-dashboard/          Streamlit + Plotly                   [Milestone 12]
+dashboard/          Streamlit + Plotly                   [Milestone 12] ✅
+  app.py              four tabs, each a function taking what it needs
+  data.py             the report tables, and the empty state when there are none
+  charts.py           the reliability diagram, and two honest conveniences
+  client.py           the service, over HTTP — never imported
 ```
 
 `api` imports `src`; nothing in `src` imports `api`. CI enforces that, and the
@@ -531,6 +578,7 @@ make explain   # what each feature block is worth, by SHAP and permutation (~2 m
 make card      # regenerate docs/MODEL_CARD.md (~5 minutes)
 make model     # fit the shipped model on the whole history and persist it (~1 min)
 make api       # serve it at http://127.0.0.1:8000/docs
+make dashboard # the reports and a live price at http://127.0.0.1:8501
 make docker-run # the API and its prediction log, via compose
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
@@ -596,10 +644,11 @@ requirements file.
 | Lint | ruff | `make lint`, CI |
 | Format | black | `make format-check`, CI |
 | Types | mypy, strict | `make typecheck`, CI |
-| Tests | pytest, 100% coverage of `src` and `api` | `make test-cov`, CI |
+| Tests | pytest, 100% coverage of `src`, `api` and `dashboard` | `make test-cov`, CI |
 | Deprecations | `-W error::DeprecationWarning` | pytest config |
 | Authorship | `scripts/hooks/commit-msg` | git hook + CI |
 | Serving image | `docker build`, then a live `/health` against it | CI |
+| Dashboard image | `docker build`, then a live `/_stcore/health` against it | CI |
 
 Lint tooling is pinned **exactly**. Unpinned, a formatter release turns CI red
 with no code change and disagrees with every local run.
@@ -622,7 +671,7 @@ imports is a supply-chain surface with no upside.
 | 9 | Ensembling and calibration — error-correlation selection, temperature scaling, reliability | ✅ |
 | 10 | Evaluation and explainability — SHAP, permutation importance, model card | ✅ |
 | 11 | API — FastAPI, Docker, PostgreSQL for served predictions | ✅ |
-| 12 | Dashboard — Streamlit + Plotly | |
+| 12 | Dashboard — Streamlit + Plotly, filterable reliability, live pricing | ✅ |
 | 13 | MLOps — Docker, CI/CD, retraining, drift monitoring, deployment | |
 | 14 | Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best GBDT with a written verdict | |
 

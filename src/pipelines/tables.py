@@ -37,6 +37,16 @@ KEY_COLUMN = "match_id"
 
 SCORES_VIEW = "scores"
 
+FORECASTS_FILENAME = "forecasts.parquet"
+"""The per-match diagnostic pass, beside the scores it summarises.
+
+:mod:`src.pipelines.backtest` persists *means* — one row per fold,
+competition, forecaster and subset — which is right for a report and cannot
+answer whether a stated probability happens at the rate it states. The card
+recomputes the rows to ask that, at about five minutes a run, and Milestone 12
+needs the same rows on every page load. So the card writes them down.
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class TablePaths:
@@ -111,6 +121,16 @@ def load_modelling_frame(
     return matches.merge(ratings, on=KEY_COLUMN, how="left").merge(
         features, on=KEY_COLUMN, how="left"
     )
+
+
+def read_forecasts(path: Path) -> pd.DataFrame | None:
+    """The persisted per-match forecasts, or ``None`` when they are absent.
+
+    Absent is the clean-checkout state and the state before `make card` has
+    run, so the dashboard reports what is missing and which command produces
+    it rather than failing at the expected condition.
+    """
+    return read_scores(path)
 
 
 def read_scores(path: Path) -> pd.DataFrame | None:

@@ -83,6 +83,85 @@ and packaging side, and the walk-forward tables are the same tables.
   that a marginal p over ten competitions against twenty-nine, confounded with
   league maturity, points the way the argument does without settling it.
 
+## [0.12.0] — unreleased
+
+Milestone 12: the dashboard. Streamlit over the measurements this project
+already made, with one panel that asks the service for a live probability.
+
+### Added
+
+- `dashboard/` — a new top-level package and the top of the dependency graph.
+  Four tabs: the scoreboard, a **filterable** reliability panel, the
+  per-competition breakdown, and a live fixture price. `app.py` is a list of
+  panels, each a function taking what it needs, so a panel can be tested by
+  handing it a frame.
+- **It computes nothing, and that is the design.** Every table comes from
+  `src/pipelines/report.py` or `src/pipelines/backtest.py` and every
+  probability from the service. `docs/MODEL_CARD.md` is generated from the same
+  functions, so a number on the page and the same number in the card are the
+  same number from the same code — a dashboard with its own copy would be a
+  second measurement of the model with nothing holding it to the first.
+- **Two data paths, deliberately.** Reports are read from disk; predictions
+  come over HTTP. Two processes that both unpickle the artefact are two
+  implementations of "what does the model say", and the day they disagreed
+  nothing would be comparing them. The consequence is that the page works with
+  the API down — the predict tab says so and names the command that starts it,
+  and the other three tabs are unaffected. It is the last tab for that reason.
+- `src/pipelines/report.py::write_forecasts` and
+  `src/pipelines/tables.py::read_forecasts` — the per-match diagnostic pass,
+  persisted. `make card` computed 62,036 forecasts, used them and threw them
+  away; the dashboard needs the same rows on every page load and would
+  otherwise have spent five minutes on each. Written through the same
+  `persist` every derived table uses, so the provenance of a reliability
+  diagram is checkable the way the provenance of a rating is.
+- `HttpClient.post`. The comment on `RETRY_METHODS` anticipated it: POST
+  inherits the restriction rather than widening it, so a failed prediction
+  comes back as one error rather than four more attempts at a request the
+  server may already have acted on.
+- `DashboardConfig` — `api_url` and `request_timeout_seconds`. The URL is a
+  setting rather than a literal because compose overrides it to
+  `http://api:8000`, which is the whole reason it exists.
+- A dashboard stage in the `Dockerfile` and a service in `docker-compose.yml`.
+  `docker compose up` now brings up the API, PostgreSQL and the dashboard.
+- `docs/DASHBOARD.md`, `make dashboard`, and `requirements-dashboard.txt`.
+- Four CI invariants. `dashboard` may not import `api`; nothing may import
+  `dashboard`; the dashboard may not reach past the reporting layer into the
+  ratings, features or ingestion; and the image job builds the dashboard,
+  starts it with no data, and asserts it is healthy, runs as `app` and contains
+  no `api` package.
+
+### Changed
+
+- Coverage, lint, format and type-checking cover `dashboard` as well as `src`
+  and `api`. The threshold is still 100%.
+- The HTTP-confinement invariant now forbids **call sites** rather than the
+  `requests` import. `dashboard/client.py` imports `requests` for its exception
+  tree — it catches `RequestException` and types a `Response` — while making
+  every request through `HttpClient`, and a rule banning the import would have
+  been asking it to catch exceptions it cannot name. The transports with no
+  exception-only use are still banned outright. Verified against a planted
+  `requests.get`.
+- `plotly-stubs` pinned in `requirements-lint.txt`. It earned its place
+  immediately by catching a `dict[str, object]` splatted into `update_layout`,
+  which type-checks as nothing in particular and is how a misspelt layout key
+  survives to be ignored at run time. streamlit ships its own `py.typed` and
+  needs neither a stub nor an override.
+
+### Deviations from the plan, with reasons
+
+- **The plan left the data path open — "a client of `api/` or of
+  `src/pipelines`" — and the answer is both.** Neither alone works. The API
+  exposes no reliability or backtest data, so a pure HTTP client would have
+  needed three new endpoints this milestone did not ask for; and a pure `src`
+  client would have had to load the artefact, which is the second copy of the
+  model the whole arrangement exists to avoid.
+- **One figure, not a chart library.** `requirements.txt` recorded at Milestone
+  10 that matplotlib was left out because every figure it would have drawn was
+  a five-row table. That still holds for four of the five things on this page.
+  The reliability diagram is the exception, and the reason is specific: its
+  claim is a diagonal, `y = x` *is* the hypothesis, and a reader checks a
+  forecast against it by eye in a way a column of signed gaps does not support.
+
 ## [0.11.0] — unreleased
 
 Milestone 11: the inference service. The shipped blend, fitted once and served

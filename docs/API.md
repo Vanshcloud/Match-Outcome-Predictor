@@ -72,7 +72,7 @@ which command produces it.
 ```json
 {
   "status": "degraded",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "components": [
     {"name": "model", "ready": false,
      "detail": "no model at /app/models/servable.joblib; run `make model` to fit one"},
@@ -107,7 +107,7 @@ until the database returned.
 
 ```json
 {
-  "version": "0.11.0",
+  "version": "0.12.0",
   "model": "ensemble-calibrated",
   "members": ["xgboost", "logistic_regression", "mlp"],
   "design_columns": 30,
@@ -159,7 +159,7 @@ curl -sX POST localhost:8000/predict -H 'content-type: application/json' \
   },
   "probabilities": {"home": 0.4821, "draw": 0.2604, "away": 0.2575},
   "model": "ensemble-calibrated",
-  "model_version": "0.11.0",
+  "model_version": "0.12.0",
   "in_sample": true,
   "predicted_at": "2026-09-05T09:14:02.113Z",
   "limitations_url": "/model-card/limitations"

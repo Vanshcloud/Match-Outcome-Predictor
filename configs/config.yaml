@@ -38,6 +38,9 @@ http:
 api:
   port: 8000
 
+dashboard:
+  api_url: http://127.0.0.1:8000
+
 logging:
   level: INFO
   format: "%(asctime)s %(levelname)-8s %(name)s: %(message)s"

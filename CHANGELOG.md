@@ -10,6 +10,24 @@ extra steps.
 
 ## [Unreleased]
 
+Findings from a full independent audit of the repository. No modelling code,
+feature, split, metric or reported number changed; every fix is on the serving
+and packaging side, and the walk-forward tables are the same tables.
+
+### Fixed
+
+- **An unreachable prediction log no longer takes the service down.**
+  `open_prediction_log` creates its table on the way up, so a configured
+  PostgreSQL that was down raised out of the lifespan and the process
+  crash-looped — while every docstring in the serving layer said the log was
+  optional and that a log which refuses never fails a request. The model and
+  the fixture index were each already guarded; the log was not. It is now
+  caught like the other two, `/health` reports the component as not ready with
+  the driver's own reason, and `/version` says `unavailable` rather than
+  `disabled`, because a log nobody configured and a log that could not be
+  reached are different facts. The regression test asserts the process serves
+  predictions with the database refused.
+
 ## [0.11.0] — unreleased
 
 Milestone 11: the inference service. The shipped blend, fitted once and served

@@ -88,6 +88,14 @@ class PredictionService:
 
     model_error: str | None = None
     index_error: str | None = None
+    log_error: str | None = None
+    """Why a configured prediction log is not there.
+
+    Distinct from "no log configured", which is the default and not a fault.
+    A database that was named and could not be reached is worth saying out
+    loud, because the alternative is a service that quietly stops recording
+    what it served and reports ``disabled`` as though that were the intent.
+    """
 
     # ---- readiness ---------------------------------------------------------
 
@@ -121,14 +129,23 @@ class PredictionService:
             ),
             Component(
                 name=LOG_COMPONENT,
-                ready=True,
-                detail=self.log_kind,
+                ready=self.log_error is None,
+                detail=self.log_error if self.log_error is not None else self.log_kind,
             ),
         ]
 
     @property
     def log_kind(self) -> str:
-        """``"postgres"`` or ``"disabled"``, for ``/health`` and ``/version``."""
+        """``"postgres"``, ``"disabled"`` or ``"unavailable"``, for ``/health``
+        and ``/version``.
+
+        Three states rather than two: a log nobody configured and a log that
+        was configured and could not be reached are different facts, and
+        reporting both as ``disabled`` is what would let the second one go
+        unnoticed for a week.
+        """
+        if self.log_error is not None:
+            return "unavailable"
         return "postgres" if self.log.enabled else "disabled"
 
     # ---- answering ---------------------------------------------------------

@@ -83,10 +83,25 @@ which command produces it.
 }
 ```
 
-The prediction log is never part of readiness. It is optional by design, and a
+The prediction log is never part of `status`. It is optional by design, and a
 readiness probe that went red because an audit trail was switched off would
 take a working service out of rotation for a reason unrelated to whether it can
 answer.
+
+Its own `ready` flag distinguishes three states, because "nobody configured a
+log" and "a log was configured and could not be reached" are different facts
+and reporting both as `disabled` is how the second goes unnoticed for a week:
+
+| `detail` | `ready` | |
+|---|---|---|
+| `disabled` | `true` | No `PREDICTION_LOG_DSN`. The default, and what CI runs |
+| `postgres` | `true` | Connected, schema present |
+| the driver's error | `false` | Configured and unreachable. `/version` says `unavailable` |
+
+The service **starts and serves** in the third state. It has to: a node reboot
+that brings the API up before PostgreSQL is exactly when a forecaster that
+still answers is worth having, and a process that refused would crash-loop
+until the database returned.
 
 ### `GET /version`
 
@@ -273,10 +288,13 @@ population of requests, and outcomes that arrive later. Writing predictions down
 is what will let the served calibration be measured against what happened rather
 than assumed to match the backtest.
 
-**A log failure never fails a request.** A prediction answered and not logged is
-a gap in an audit trail; a prediction not answered because the audit trail was
-down is an outage. The first is the lesser harm, so a rejected write is logged
-at error level and the response goes out with `recorded: 0`.
+**A log failure never fails a request, and never fails a startup.** A
+prediction answered and not logged is a gap in an audit trail; a prediction not
+answered because the audit trail was down is an outage. The first is the lesser
+harm, so a rejected write is logged at error level and the response goes out
+with `recorded: 0` — and a database that cannot be reached when the process
+starts is caught the same way the missing model and the missing tables are,
+rather than raised out of the lifespan.
 
 PostgreSQL rather than the DuckDB the rest of the project uses, because DuckDB
 takes a single writer and the deployment shape is several uvicorn workers behind

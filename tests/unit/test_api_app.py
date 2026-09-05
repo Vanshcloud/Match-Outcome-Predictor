@@ -246,3 +246,31 @@ def test_the_prediction_log_is_off_unless_a_dsn_is_configured(tmp_path: Path) ->
     service = build_service(settings_for(tmp_path))
     assert service.log_kind == "disabled"
     assert service.log.enabled is False
+
+
+def test_an_unreachable_prediction_log_degrades_instead_of_killing_the_process(
+    tmp_path: Path,
+) -> None:
+    """The regression this catches is a crash loop, not a missing row.
+
+    ``open_prediction_log`` creates the table, so a configured database that is
+    down raised out of the lifespan and took the whole service with it — while
+    every docstring in the serving layer said the log was optional and that a
+    log which refuses never fails a request. A node reboot that restarts the API
+    and PostgreSQL together is exactly when a forecaster that still answers is
+    worth having.
+    """
+    settings = settings_for(
+        tmp_path, prediction_log_dsn="postgresql://u:p@127.0.0.1:1/none?connect_timeout=1"
+    )
+    service = build_service(settings)
+
+    assert service.log_error is not None
+    assert service.log_kind == "unavailable"
+    assert service.log.enabled is False
+
+    log = next(part for part in service.components() if part.name == "prediction_log")
+    assert log.ready is False
+    assert log.detail == service.log_error
+    # Recording is a no-op rather than an error: the request still gets served.
+    assert service.record([]) == 0

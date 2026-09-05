@@ -94,7 +94,18 @@ def build_service(settings: Settings) -> PredictionService:
     if service.index_error is not None:
         logger.warning("no fixture index: %s", service.index_error)
 
-    service.log = open_prediction_log(settings.api.prediction_log_dsn)
+    # Caught for the same reason the other two are, and it is the one that
+    # matters most: the log is optional by design, but `open_prediction_log`
+    # creates the schema, so an unreachable database raised out of the lifespan
+    # and the process that was meant to degrade crash-looped instead. A
+    # deployment where the API and PostgreSQL restart together — a node reboot,
+    # a failover — is exactly when a working forecaster is worth having.
+    try:
+        service.log = open_prediction_log(settings.api.prediction_log_dsn)
+    except StorageError as error:
+        service.log_error = str(error)
+        logger.error("prediction log unavailable, serving without it: %s", error)
+
     logger.info("service ready=%s, log=%s", service.ready, service.log_kind)
     return service
 

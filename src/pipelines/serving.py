@@ -81,16 +81,48 @@ class ServingError(RuntimeError):
     """A servable model could not be built, written or read."""
 
 
+LIBRARY_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
+    "scikit-learn": ("scikit-learn",),
+    "xgboost": ("xgboost", "xgboost-cpu"),
+    "numpy": ("numpy",),
+}
+"""The distributions each recorded library may be installed under.
+
+``xgboost`` has two. ``xgboost-cpu`` is the same code and the same version
+number without the CUDA runtime — 291 MB of it — and the serving image uses it
+because nothing here has ever asked for a GPU. It publishes the importable
+``xgboost`` module under a distribution named ``xgboost-cpu``, so a lookup by
+the import name finds no metadata at all.
+"""
+
+
 def _library_versions() -> dict[str, str]:
     """The versions that matter to a pickle, read from the installed packages.
 
     Only the three that actually appear inside a fitted blend. A full
     ``pip freeze`` in the manifest would go stale on every unrelated upgrade
     and teach a reader to ignore the mismatch warning that matters.
-    """
-    from importlib.metadata import version
 
-    return {name: version(name) for name in ("scikit-learn", "xgboost", "numpy")}
+    A library that cannot be found at all is recorded as ``"unknown"`` rather
+    than raised. This is provenance: ``/version`` exists to say what is running
+    and is the last endpoint that should answer 500, and the drift check reads
+    the result — an unequal string is exactly the warning wanted when a
+    version cannot be established.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    found: dict[str, str] = {}
+    for name, distributions in LIBRARY_DISTRIBUTIONS.items():
+        for distribution in distributions:
+            try:
+                found[name] = version(distribution)
+                break
+            except PackageNotFoundError:
+                continue
+        else:
+            logger.warning("no installed distribution provides %s", name)
+            found[name] = "unknown"
+    return found
 
 
 # ---- writing ----------------------------------------------------------------

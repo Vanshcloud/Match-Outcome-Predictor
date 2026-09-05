@@ -233,7 +233,13 @@ The image runs as a non-root user, declares a `HEALTHCHECK` against `/health`,
 and installs [`requirements-api.txt`](../requirements-api.txt) — a subset of the
 runtime dependencies, with a note beside each omission saying why it is safe.
 LightGBM and CatBoost are not in it: they are scored in the backtest and are
-not members of the served blend.
+not members of the served blend. XGBoost is installed as **`xgboost-cpu`** —
+the same code and the same version number without the CUDA runtime, which the
+default wheel pulls in as `nvidia-*` packages measuring 291 MB inside the
+image. The image is **1.09 GB**; with the default wheel it is 1.77 GB, for a
+GPU nothing here has ever asked for. `xgboost-cpu` publishes the importable
+`xgboost` module under a different *distribution* name, which is why
+`src/pipelines/serving.py` looks for either when it records provenance.
 
 `docker-compose.yml` is a **local reproduction of the deployment, not a
 deployment**. It ships a literal password, no TLS, and a published database

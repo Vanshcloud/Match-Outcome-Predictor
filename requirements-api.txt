@@ -50,7 +50,12 @@ psycopg[binary]>=3.2
 # scikit-learn covers logistic regression and the MLP, plus the imputer and
 # scaler inside their pipelines. Both must be present to unpickle the artefact.
 scikit-learn>=1.5
-xgboost>=2.1
+# The CPU-only build. Same code, same version number, without the CUDA runtime
+# that the default wheel depends on — measured at 291 MB of the image, for a
+# service that scores three classes on a laptop and has never asked for a GPU.
+# It installs the importable `xgboost` module under the distribution name
+# `xgboost-cpu`, which src/pipelines/serving.py knows to look for.
+xgboost-cpu>=2.1
 joblib>=1.4
 
 # ---- The service ----

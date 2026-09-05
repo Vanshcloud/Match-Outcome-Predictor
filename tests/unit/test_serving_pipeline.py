@@ -17,11 +17,13 @@ from src.ingestion.manifest import checksum
 from src.models.artifact import fit_servable
 from src.models.dataset import DESIGN_COLUMNS
 from src.pipelines.serving import (
+    LIBRARY_DISTRIBUTIONS,
     MANIFEST_FILENAME,
     MODEL_FILENAME,
     FixtureIndex,
     LoadedModel,
     ServingError,
+    _library_versions,
     build_index,
     build_servable,
     describe_fixture,
@@ -363,3 +365,29 @@ def test_an_index_can_be_loaded_from_the_three_tables(tmp_path: Path) -> None:
     index = load_index(_table_paths(tmp_path / "tables"))
     assert isinstance(index, FixtureIndex)
     assert len(index) == len(LEAGUE)
+
+
+# ---- which distribution provides a library -----------------------------------
+
+
+def test_a_library_is_found_under_either_of_its_distribution_names() -> None:
+    """`xgboost-cpu` is the same module under a different distribution name.
+
+    The serving image installs it to leave the CUDA runtime out, and a lookup
+    by import name finds no metadata for it at all — which raised out of
+    `/version`, the one endpoint whose job is to say what is running.
+    """
+    assert LIBRARY_DISTRIBUTIONS["xgboost"] == ("xgboost", "xgboost-cpu")
+    assert set(_library_versions()) == set(LIBRARY_DISTRIBUTIONS)
+
+
+def test_a_library_nothing_provides_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provenance degrades to "unknown"; it does not become a 500.
+
+    The drift check compares strings, so an unestablished version still reads
+    as a mismatch against the manifest — which is the warning wanted.
+    """
+    monkeypatch.setitem(LIBRARY_DISTRIBUTIONS, "numpy", ("no-such-distribution",))
+    assert _library_versions()["numpy"] == "unknown"

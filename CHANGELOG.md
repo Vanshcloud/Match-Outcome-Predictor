@@ -27,6 +27,23 @@ and packaging side, and the walk-forward tables are the same tables.
   `disabled`, because a log nobody configured and a log that could not be
   reached are different facts. The regression test asserts the process serves
   predictions with the database refused.
+- **`/version` no longer answers 500 when a library is installed under another
+  distribution name.** The provenance lookup asked `importlib.metadata` for
+  `xgboost` and let `PackageNotFoundError` escape. A library nothing provides
+  is now recorded as `"unknown"`, which the drift check reads as a mismatch —
+  the warning that was wanted — instead of failing the one endpoint whose job
+  is to say what is running.
+
+### Changed
+
+- **The serving image drops the CUDA runtime: 1.77 GB to 1.09 GB.**
+  `requirements-api.txt` installs `xgboost-cpu` rather than `xgboost`. The
+  default wheel depends on `nvidia-*` packages that measure 291 MB inside the
+  image, for a service that scores three classes on a CPU and has never asked
+  for a GPU. Verified by serving the same artefact from both images and
+  comparing: bit-identical probabilities over 25 fixtures, and
+  `library_mismatches` still empty, because the CPU build reports the same
+  version.
 
 ## [0.11.0] — unreleased
 

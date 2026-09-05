@@ -54,6 +54,34 @@ and packaging side, and the walk-forward tables are the same tables.
   comparing: bit-identical probabilities over 25 fixtures, and
   `library_mismatches` still empty, because the CPU build reports the same
   version.
+- **The fixture index holds the columns the service reads, and no others.**
+  The join is shared with the training pipeline, which needs the whole
+  canonical table; serving needs the eight columns a fixture is described by
+  and the thirty the model prices. The twenty-seven dropped include the
+  scoreline and the three odds columns, so the process answering requests does
+  not hold the benchmark the model is measured against. Not a memory
+  optimisation, and the docstring says so: the frame falls from 329 MB to
+  185 MB and process RSS does not move.
+- **`API_HOST` is gone.** It was mapped in `ENV_OVERRIDES`, listed in
+  `.env.example`, set in `configs/config.yaml` and read by nothing — the
+  Makefile binds `127.0.0.1` and the image binds `0.0.0.0`, both as literals.
+  A setting that appears to be configured and is not is the exact failure
+  `extra="forbid"` exists to prevent. `API_PORT` is unaffected.
+- **`urllib3` is declared.** `src/utils/http.py` imports `urllib3.util.Retry`
+  directly and the dependency arrived only via `requests` — an import
+  satisfied by somebody else's dependency is one that breaks on the release
+  where they drop it.
+- **The OpenAPI document describes its error bodies.** `ErrorResponse` was
+  defined in `api/schemas.py` and referenced nowhere, so every non-2xx
+  response was documented with a description and no schema. It is now attached
+  to all seven declared error statuses.
+- `docs/EVALUATION.md` records a measurement the repository had not made: the
+  gap to the closing line is 0.0134 in the ten competitions carrying shot data
+  and 0.0177 in the twenty-nine carrying none — 32% wider where the provider
+  publishes less, at r = -0.36 and p = 0.045. That is the first direct evidence
+  for the claim this project makes three times, and the section is explicit
+  that a marginal p over ten competitions against twenty-nine, confounded with
+  league maturity, points the way the argument does without settling it.
 
 ## [0.11.0] — unreleased
 

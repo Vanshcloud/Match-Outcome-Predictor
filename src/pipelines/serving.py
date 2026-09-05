@@ -382,13 +382,44 @@ def build_index(frame: pd.DataFrame) -> FixtureIndex:
     return FixtureIndex(frame=frame, by_id=by_id, by_key=by_key)
 
 
+SERVED_COLUMNS: tuple[str, ...] = tuple(dict.fromkeys((*FIXTURE_COLUMNS, *DESIGN_COLUMNS)))
+"""Every column the service reads, and nothing else.
+
+The join upstream is shared with the training pipeline, which legitimately
+needs the whole canonical table — the scoreline to build targets, the odds to
+score the bookmaker baseline. Serving needs the eight columns a fixture is
+described by and the thirty the model prices, and states that here rather than
+carrying the other twenty-seven because nothing got round to dropping them.
+
+**This is not a memory optimisation, and the measurement is why.** The frame
+held falls from 329 MB to 185 MB, and process RSS does not move — the
+allocator keeps the pages it has already taken, so the projection is paid for
+and not refunded. Reading only these columns from Parquet in the first place
+*does* move it, 1068 MB to 871 MB, but that means a ``columns`` argument
+threaded through the store and is a different change from this one.
+
+What this is for is narrower and does not need a benchmark: the columns
+dropped include the scoreline and the three odds columns, so the process that
+answers requests does not hold the benchmark the model is measured against.
+The leakage probes already guarantee no feature reads them. This makes the
+same statement about the served process, where it costs one line.
+"""
+
+
 def load_index(paths: TablePaths) -> FixtureIndex | None:
-    """The joined modelling frame, indexed. ``None`` when a table is absent."""
+    """The joined modelling frame, projected and indexed.
+
+    Returns:
+        The index, or ``None`` when a table is absent.
+    """
     frame = load_modelling_frame(paths)
     if frame is None:
         return None
-    index = build_index(frame)
-    logger.info("indexed %d fixture(s)", len(index))
+    missing = [column for column in SERVED_COLUMNS if column not in frame.columns]
+    if missing:
+        raise ServingError(f"the tables are missing {len(missing)} served column(s): {missing[:5]}")
+    index = build_index(frame[list(SERVED_COLUMNS)].copy())
+    logger.info("indexed %d fixture(s) over %d column(s)", len(index), len(SERVED_COLUMNS))
     return index
 
 

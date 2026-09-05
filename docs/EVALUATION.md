@@ -179,6 +179,36 @@ reports how much of it six families, a blend and a calibration layer closed —
 0.0121 of 0.0284, with the rest still looking like information rather than
 capacity.
 
+### Where the gap is widest, it is where the data is thinnest
+
+The claim that what remains is missing information rather than missing
+capacity is made three times in this repository. It is checkable, and this is
+the check: split the 39 competitions by whether they carry shot statistics at
+all, and compare the shipped model's gap to the closing line on each side.
+
+| | competitions | matches | gap to the closing line |
+|---|---:|---:|---:|
+| Carries shot data | 10 | 19,903 | **0.0134** |
+| Carries none | 29 | 39,098 | **0.0177** |
+
+The gap is **32% wider** where the provider publishes results and odds and
+nothing else. Across the 39 per-competition gaps the correlation with shot
+coverage is **−0.36**, and a Welch t-test on the two groups gives
+**t = −2.08, p = 0.045**.
+
+That is the predicted direction and a real effect, and it is worth being
+precise about how strong it is not. Ten competitions against twenty-nine is a
+small side, p = 0.045 clears the conventional bar and no more, and the split
+is confounded: the shot-capable competitions are also the long-running
+European leagues with the deepest history and the most bookmaker attention, so
+"has shot data" is partly a proxy for "is a league the market prices
+carefully". The honest reading is that the evidence points the way the
+argument does, not that it settles it.
+
+What would settle it is a competition that gains shot coverage mid-history,
+scored either side of the change. Two of the extra-schema files are close to
+that shape and none quite is.
+
 ### The one it loses
 
 | | n | bookmaker | dixon_coles | class prior |

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from api.schemas import (
     BatchRequest,
     BatchResponse,
+    ErrorResponse,
     FixtureListResponse,
     FixtureRequest,
     FixtureSummary,
@@ -128,7 +129,7 @@ def limitations(service: Service) -> LimitationsResponse:
     response_model=FixtureListResponse,
     tags=["fixtures"],
     summary="Find matches that can be priced",
-    responses={503: {"description": "No feature table is loaded."}},
+    responses={503: {"description": "No feature table is loaded.", "model": ErrorResponse}},
 )
 def fixtures(
     service: Service,
@@ -170,8 +171,11 @@ def fixtures(
     tags=["prediction"],
     summary="Price one fixture",
     responses={
-        404: {"description": "No fixture in the table matches the request."},
-        503: {"description": "No model or no feature table is loaded."},
+        404: {
+            "description": "No fixture in the table matches the request.",
+            "model": ErrorResponse,
+        },
+        503: {"description": "No model or no feature table is loaded.", "model": ErrorResponse},
     },
 )
 def predict(request: FixtureRequest, service: Service) -> PredictionResponse:
@@ -192,9 +196,9 @@ def predict(request: FixtureRequest, service: Service) -> PredictionResponse:
     tags=["prediction"],
     summary="Price several fixtures in one pass",
     responses={
-        404: {"description": "None of the fixtures could be resolved."},
-        422: {"description": "More fixtures than `API_MAX_BATCH` allows."},
-        503: {"description": "No model or no feature table is loaded."},
+        404: {"description": "None of the fixtures could be resolved.", "model": ErrorResponse},
+        422: {"description": "More fixtures than `API_MAX_BATCH` allows.", "model": ErrorResponse},
+        503: {"description": "No model or no feature table is loaded.", "model": ErrorResponse},
     },
 )
 def predict_batch(request: BatchRequest, service: Service) -> BatchResponse:

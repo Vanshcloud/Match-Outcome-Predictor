@@ -43,7 +43,6 @@ DEFAULT_CONFIG_PATH: Path = PROJECT_ROOT / "configs" / "config.yaml"
 ENV_OVERRIDES: dict[str, str] = {
     "DATA_DIR": "paths.data_dir",
     "MODEL_DIR": "paths.model_dir",
-    "API_HOST": "api.host",
     "API_PORT": "api.port",
     "API_MAX_BATCH": "api.max_batch",
     "PREDICTION_LOG_DSN": "api.prediction_log_dsn",
@@ -137,8 +136,17 @@ class HttpConfig(_Strict):
 class ApiConfig(_Strict):
     """How the FastAPI service binds, batches and logs what it served."""
 
-    host: str = "0.0.0.0"
     port: int = Field(default=8000, gt=0, lt=65536)
+    """The port the service is served on.
+
+    There is deliberately no ``host``. It existed, was mapped to ``API_HOST``,
+    was listed in ``.env.example`` and was read by nothing: the Makefile binds
+    ``127.0.0.1`` and the image binds ``0.0.0.0``, both as literals, because a
+    container's exposure is controlled by its published port and a bind address
+    a health probe can be configured out of is a bind address that will be.
+    A setting that appears to be configured and is not is precisely the failure
+    ``extra="forbid"`` exists to prevent, so it is gone rather than documented.
+    """
 
     max_batch: int = Field(default=50, gt=0, le=1000)
     """How many fixtures one request may ask for.

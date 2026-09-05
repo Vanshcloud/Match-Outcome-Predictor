@@ -367,6 +367,22 @@ def test_an_index_can_be_loaded_from_the_three_tables(tmp_path: Path) -> None:
     assert len(index) == len(LEAGUE)
 
 
+def test_an_index_refuses_tables_that_are_missing_a_served_column(tmp_path: Path) -> None:
+    """The feature build and the service disagreeing is a deployment fault.
+
+    Serving reads a stated set of columns rather than whatever the join
+    produced, so a features table built by an older revision is caught at
+    startup with the columns named. The alternative is a `KeyError` on the
+    first request that happens to need one.
+    """
+    paths = _table_paths(tmp_path / "tables")
+    trimmed = pd.read_parquet(paths.features).drop(columns=[FEATURE_COLUMNS[0]])
+    trimmed.to_parquet(paths.features, index=False)
+
+    with pytest.raises(ServingError, match="served column"):
+        load_index(paths)
+
+
 # ---- which distribution provides a library -----------------------------------
 
 

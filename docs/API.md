@@ -251,7 +251,6 @@ port; see [SECURITY.md](../SECURITY.md).
 
 | Variable | Default | |
 |---|---|---|
-| `API_HOST` | `0.0.0.0` | Not read inside the container — see below |
 | `API_PORT` | `8000` | The container binds and health-checks this |
 | `API_MAX_BATCH` | `50` | Fixtures per batch request |
 | `MODEL_DIR` | `models` | Where `servable.joblib` is read from |
@@ -259,9 +258,10 @@ port; see [SECURITY.md](../SECURITY.md).
 | `LOG_LEVEL` | `INFO` | |
 | `PREDICTION_LOG_DSN` | unset | PostgreSQL for served predictions. Unset disables it |
 
-The image fixes the bind address at `0.0.0.0` and ignores `API_HOST`, because a
-container narrower than that is a mistake — the published port is how exposure
-is controlled, and a configurable bind is one a health probe on loopback can be
+There is no `API_HOST`. The bind address is a literal in both places that set
+one — `0.0.0.0` in the image, `127.0.0.1` in `make api` — because a container
+narrower than `0.0.0.0` is a mistake (the published port is how exposure is
+controlled) and a configurable bind is one a health probe on loopback can be
 configured out of. `API_PORT` *is* honoured, by both the server and the health
 check, so `-e API_PORT=9000` moves them together.
 

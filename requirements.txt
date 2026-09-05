@@ -52,6 +52,13 @@ duckdb>=1.1
 # not used at all — the chosen provider serves static files.
 requests>=2.32
 
+# Declared because `src/utils/http.py` imports `urllib3.util.Retry` directly.
+# It arrives anyway as a dependency of `requests`, which is exactly the problem:
+# an import satisfied by somebody else's dependency is an import that breaks on
+# the release where they drop it, with a traceback that names neither project.
+# A direct import is a direct dependency.
+urllib3>=2.0
+
 # ---- Modelling ----
 # Milestone 8. Six families were asked for and six are installed; what each is
 # worth is measured in docs/MODELS.md rather than assumed here.

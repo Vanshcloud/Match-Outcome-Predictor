@@ -62,7 +62,6 @@ def config_file(tmp_path: Path) -> Path:
         "http:\n"
         "  timeout_seconds: 30\n"
         "api:\n"
-        "  host: 127.0.0.1\n"
         "  port: 8000\n"
         "logging:\n"
         "  level: INFO\n",

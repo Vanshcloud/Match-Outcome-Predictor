@@ -814,6 +814,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "shap" },
+    { name = "urllib3" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "xgboost" },
 ]
@@ -838,6 +839,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "scipy", specifier = ">=1.14" },
     { name = "shap", specifier = ">=0.46" },
+    { name = "urllib3", specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
     { name = "xgboost", specifier = ">=2.1" },
 ]

@@ -922,40 +922,106 @@ repository has for probing a derivation rather than reading it.
 
 ## Milestone 12 — Dashboard ✅
 
-Delivered. Streamlit over the reporting layer, four tabs, and one panel that
-asks the service for a live probability.
+Delivered, in two passes. The first was four tabs over the reporting layer. The
+second turned it into the presentation layer of a football application: six
+pages over four layers, with the seams the next eight milestones plug into.
 
-- **The open question in the scope was the data path** — "a client of `api/`
-  *or* of `src/pipelines`" — and the answer turned out to be both, because
-  neither alone works. The API exposes no reliability or backtest data, so a
-  pure HTTP client needed three new endpoints this milestone did not ask for;
-  a pure `src` client would have had to load the artefact, which is exactly
-  the second copy of the model the "no second copy of the arithmetic" rule
-  exists to prevent. So: reports from disk, predictions over HTTP.
-- **The page works with the service down.** That falls out of the split rather
-  than being designed for: three tabs never touch the network, and the fourth
-  says the service is not answering and names the command that starts it.
-- **CI enforces the boundary in four places.** `dashboard` may not import
-  `api`; nothing may import `dashboard`; the dashboard may not reach past the
-  reporting layer into ratings, features or ingestion; and the image job
-  asserts the built dashboard contains no `api` package.
+### The architecture, and what each future milestone costs because of it
 
-### The enabling change
+```
+views  ──▶  services  ──▶  providers  ──▶  domain
+```
 
-`make card` computed 62,036 per-match forecasts, rendered the card from them
-and threw them away. The dashboard needs those rows on every page load and
-would otherwise have spent five minutes on each, so the command now writes
-`data/reports/ensemble/forecasts.parquet` with a manifest beside it. It is the
-only pipeline change this milestone made, and it makes a second `make card`
-the only thing that has to recompute them.
+- **`domain/`** — `Fixture`, `Prediction`, `MatchStatus`, the competition
+  catalogue, favourites. Value types with no I/O.
+- **`providers/`** — one protocol per kind of source, one implementation per
+  source. `HistoricalResults` (the canonical table), `ApiPredictions` (the
+  service, over HTTP), `NullFixtures` (no feed yet, and the reason).
+- **`services/`** — orchestration and caching. `matchday.home_page` assembles
+  four sections from three providers and a favourites list; `history` holds the
+  Streamlit caches and the three small tables a fixture page shows.
+- **`views/`** — Streamlit. Thin, and the only layer a different front end
+  would replace.
+
+| Milestone | What it costs, given this shape |
+|---|---|
+| 13 — live fixtures | One class satisfying `FixtureProvider`, one registry entry, one environment variable. No view moves. |
+| 14 — accounts | Four accessors in `domain/favourites.py`. No view touches `st.session_state`. |
+| 15 — real-time | A second method on the fixture feed; the card already carries a minute and a score. |
+| 17 — odds, xG | A fourth protocol beside the three, and a section on the match page that already has its placeholder. |
+| React client | `views/` is replaced; `domain`, `providers` and `services` are reused. This is why the caching is in the services and the providers hold no state. |
+
+CI asserts the arrows, including the one that matters: **no view names a
+provider.**
+
+### The open question in the original scope, answered
+
+- **"A client of `api/` *or* of `src/pipelines`"** — the answer turned out to be
+  *three* paths, because each answers a different question. Results come from
+  the match table (the API deliberately serves no scoreline). Measurements of
+  the model come from the report tables (they already exist; recomputing them
+  would be a second number to reconcile with the card). Forecasts come over
+  HTTP (two processes that unpickle the artefact are two implementations of
+  "what does the model say").
+- **The page works with the service down, and with no data at all.** That falls
+  out of the split rather than being designed for. Each section names which of
+  the three is missing and the command that produces it.
+
+### The honest gap
+
+Today's matches, upcoming fixtures and live scores are **not** on this page,
+and the reason is data rather than design: this project ingests results, so a
+match that has not been played is in no table here. Those sections render from
+a real implementation of the interface that returns nothing and states why.
+
+Nothing invents a fixture. A plausible generated match is a game on the screen
+that is not being played, and a reader who catches that once stops believing
+the real rows too.
+
+### The enabling changes
+
+- `make card` computed 62,036 per-match forecasts, rendered the card from them
+  and threw them away. It now writes
+  `data/reports/ensemble/forecasts.parquet` with a manifest beside it, so the
+  dashboard reads them instead of spending five minutes on every page load.
+- `src/pipelines/tables.py::read_matches` — finished matches, projected to the
+  twelve columns a reader is shown. The only other change to `src` this
+  milestone made, and it reads: no model, feature, split, metric or reported
+  number changed.
 
 ### One figure, and the Milestone 10 note it reverses
 
 `requirements.txt` recorded at Milestone 10 that matplotlib was left out
-because every figure that milestone would have drawn was a five-row table.
-Four of the five things on this page still are. The reliability diagram is the
-exception and the reason is narrow: its claim is a diagonal, `y = x` *is* the
-hypothesis being tested, and a reader checks a forecast against it by eye in a
-way a column of signed gaps does not support. Plotly rather than matplotlib
-because it is drawn in the browser, so nothing is committed as a PNG that goes
-stale without a diff.
+because every figure that milestone would have drawn was a five-row table. The
+reliability diagram is the exception and the reason is narrow: its claim is a
+diagonal, `y = x` *is* the hypothesis being tested, and a reader checks a
+forecast against it by eye in a way a column of signed gaps does not support.
+Plotly rather than matplotlib because it is drawn in the browser, so nothing is
+committed as a PNG that goes stale without a diff.
+
+Everything else on the page is CSS: probability bars, crests, form strings and
+cards are markup, not figures, because forty Plotly figures behind one scroll
+is forty renders of a charting library.
+
+---
+
+## Milestones 13–20 — the platform
+
+The dashboard is the first milestone whose *shape* is a commitment about the
+ones after it. These are the ones it was shaped for.
+
+| | | Where it plugs in |
+|---|---|---|
+| 13 | Live fixture ingestion | `dashboard/providers/` — football-data.org, API-Football or SportMonks behind `FixtureProvider` |
+| 14 | Accounts and saved favourites | `dashboard/domain/favourites.py` |
+| 15 | Real-time tracking and notifications | The fixture feed, plus a push transport |
+| 16 | Cloud deployment, monitoring, caching | The image and compose file that already exist |
+| 17 | Bookmaker odds, expected goals, value detection | A fourth provider protocol; the match page has the placeholder |
+| 18 | Player availability, injuries, transfers | A fifth; likewise |
+| 19 | Historical prediction archive | `src/storage/predictions.py` already logs every served forecast |
+| 20 | The platform | — |
+
+Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best
+GBDT with a written verdict — is unscheduled rather than dropped. It changes
+every reported number in this repository and belongs to a milestone with its
+own ablation, not to a platform release.

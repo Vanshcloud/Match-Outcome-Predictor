@@ -151,3 +151,63 @@ def read_scores(path: Path) -> pd.DataFrame | None:
     with DuckDBStore() as store:
         store.attach_parquet(SCORES_VIEW, path)
         return store.query(f"SELECT * FROM {SCORES_VIEW}")
+
+
+RESULT_COLUMNS: tuple[str, ...] = (
+    KEY_COLUMN,
+    "competition_id",
+    "competition",
+    "country",
+    "season",
+    "date",
+    "kickoff",
+    "home_team",
+    "away_team",
+    "home_goals",
+    "away_goals",
+    "result",
+)
+"""What a finished match is *displayed* by, and nothing else.
+
+A reader's columns: who played, when, and how it ended. Not the thirty design
+columns — a page that held those would be one keystroke from pricing a fixture
+itself — and not the three odds columns, which are the benchmark this project
+measures itself against and do not belong beside a forecast.
+"""
+
+
+def read_matches(
+    path: Path,
+    *,
+    competitions: Sequence[str] | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    columns: Sequence[str] | None = RESULT_COLUMNS,
+) -> pd.DataFrame | None:
+    """Finished matches, projected and filtered, or ``None`` when there are none.
+
+    The read behind every result, head-to-head and form table a reader sees.
+    It exists because those are *results* — the thing the provider actually
+    publishes — and the service deliberately does not serve them: a prediction
+    endpoint that returned the scoreline beside its forecast would be answering
+    a different question.
+
+    Filters are the store's own and are pushed into the query rather than
+    applied afterwards, so "the last fortnight in the Premier League" does not
+    first pull three hundred thousand rows into memory.
+
+    Returns:
+        The matching rows, or ``None`` when the table is not on disk — the
+        clean-checkout state, which is a caller's to report rather than an
+        exception to raise.
+    """
+    if not path.is_file():
+        logger.info("no match table at %s", path)
+        return None
+    with DuckDBStore.open_matches(path) as store:
+        return store.read_matches(
+            competitions=list(competitions) if competitions is not None else None,
+            since=since,
+            until=until,
+            columns=list(columns) if columns is not None else None,
+        )

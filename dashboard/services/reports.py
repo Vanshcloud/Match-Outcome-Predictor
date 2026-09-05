@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+import streamlit as st
 
 from src.evaluation.metrics import CLASSES
 from src.evaluation.reliability import expected_calibration_error, reliability
@@ -89,6 +90,31 @@ def load_reports(reports_dir: Path) -> Reports:
         f"{len(forecasts):,} rows" if forecasts is not None else "no",
     )
     return Reports(scores=scores, forecasts=forecasts, reports_dir=directory)
+
+
+@st.cache_data(show_spinner="reading the reports…")
+def _cached_reports(reports_dir: str) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    """Both report tables, cached on the directory they came from.
+
+    Keyed by a plain string because Streamlit hashes a function's arguments to
+    decide whether the cache is still valid, and a ``Path`` or a pydantic model
+    is not something it can hash cheaply. Returns the two frames rather than
+    the :class:`Reports` that holds them, for the same reason: what goes into
+    the cache should be what pandas already knows how to store.
+    """
+    loaded = load_reports(Path(reports_dir))
+    return loaded.scores, loaded.forecasts
+
+
+def reports(reports_dir: Path) -> Reports:
+    """The reports, through the cache. What every view calls.
+
+    Streamlit reruns the whole script on every interaction and four views read
+    these tables, so a reader dragging a filter must not re-read a
+    two-megabyte Parquet each time.
+    """
+    scores, forecasts = _cached_reports(str(reports_dir))
+    return Reports(scores=scores, forecasts=forecasts, reports_dir=reports_dir / ENSEMBLE_SUBDIR)
 
 
 # ---- the tables a panel renders ----------------------------------------------

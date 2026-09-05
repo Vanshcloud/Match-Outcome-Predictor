@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from dashboard import data
+from dashboard.services import reports as data
 from src.models.ensemble import SHIPPED
 
 FORECASTERS = (SHIPPED, "bookmaker")

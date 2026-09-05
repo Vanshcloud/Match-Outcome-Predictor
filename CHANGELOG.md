@@ -85,16 +85,52 @@ and packaging side, and the walk-forward tables are the same tables.
 
 ## [0.12.0] — unreleased
 
-Milestone 12: the dashboard. Streamlit over the measurements this project
-already made, with one panel that asks the service for a live probability.
+Milestone 12: the dashboard. A football dashboard over a prediction engine it
+is only ever a client of — six pages, four layers, and every empty section
+naming the provider that would fill it.
 
 ### Added
 
-- `dashboard/` — a new top-level package and the top of the dependency graph.
-  Four tabs: the scoreboard, a **filterable** reliability panel, the
-  per-competition breakdown, and a live fixture price. `app.py` is a list of
-  panels, each a function taking what it needs, so a panel can be tested by
-  handing it a frame.
+- `dashboard/` — a new top-level package and the top of the dependency graph,
+  arranged in **four layers that point one way**:
+  `views → services → providers → domain`.
+  - `domain/` — what a match, a forecast and a competition *are*. Value types
+    with no I/O, so a provider, a test and one day a different front end all
+    mean the same thing by a `Fixture`.
+  - `providers/` — where football comes from. One protocol per kind of source
+    (`ResultProvider`, `FixtureProvider`, `PredictionProvider`) and one
+    implementation per source: the canonical table for results, the service
+    over HTTP for forecasts, and a null feed for fixtures.
+  - `services/` — orchestration and caching. What a page *needs*, assembled
+    from three providers and a favourites list.
+  - `views/` — Streamlit, thin, and the only layer that would be rewritten if
+    this became a React client reading the same API.
+- **Six pages**, declared through `st.navigation` rather than discovered from a
+  `pages/` directory: Home, Live centre, Competitions, Match, Search and Model.
+  Declared, because a page then gets a stable `url_path` a card can deep-link
+  to with a query parameter, and every view stays an ordinary function a test
+  can run instead of a script only Streamlit knows how to execute.
+- **The match page reports what a probability is worth.** Beside three
+  calibrated probabilities it shows how often forecasts stated in the same band
+  actually happened, in that competition, from the same reliability tables
+  `docs/MODEL_CARD.md` is generated from. A stated probability with no measured
+  reliability beside it is the number this project exists to stop people
+  quoting. Where no band was measured — a competition the backtest never
+  covered, or a probability outside the measured range — the page says so
+  rather than reaching for the nearest bin.
+- **A competition page per registered league, and nobody wrote them.** The page
+  is a function of `configs/leagues.yaml`, which is the same property
+  `tests/unit/test_registry.py` asserts about ingestion, extended to the
+  presentation layer.
+- **Favourites**, in `st.session_state`. Every page reads them; none of them
+  touches `st.session_state`, which is the whole of the Milestone 14 seam.
+  Following no league means *all* the football, not none of it, and that
+  distinction is made in exactly one function.
+- `src/pipelines/tables.py::read_matches` and `RESULT_COLUMNS` — finished
+  matches, projected to what a reader is shown. The only addition to `src` this
+  milestone makes, and it reads: no model, feature, split, metric or reported
+  number changed. The projection deliberately excludes the three odds columns
+  and the thirty design columns.
 - **It computes nothing, and that is the design.** Every table comes from
   `src/pipelines/report.py` or `src/pipelines/backtest.py` and every
   probability from the service. `docs/MODEL_CARD.md` is generated from the same
@@ -123,12 +159,25 @@ already made, with one panel that asks the service for a live probability.
   `http://api:8000`, which is the whole reason it exists.
 - A dashboard stage in the `Dockerfile` and a service in `docker-compose.yml`.
   `docker compose up` now brings up the API, PostgreSQL and the dashboard.
-- `docs/DASHBOARD.md`, `make dashboard`, and `requirements-dashboard.txt`.
-- Four CI invariants. `dashboard` may not import `api`; nothing may import
-  `dashboard`; the dashboard may not reach past the reporting layer into the
-  ratings, features or ingestion; and the image job builds the dashboard,
-  starts it with no data, and asserts it is healthy, runs as `app` and contains
-  no `api` package.
+- `docs/DASHBOARD.md`, `make dashboard`, `requirements-dashboard.txt`, and
+  `.streamlit/config.toml` — Streamlit's own dark theme for the chrome, with
+  `dashboard/theme.py` adding only what it has no setting for: the cards.
+- **A component layer**, `dashboard/ui.py`: match cards, probability bars,
+  generated crests, form strings. Cards are anchors rather than buttons,
+  because a grid of forty `st.button` widgets is forty round trips to the
+  server. Every name that came out of a provider's CSV is escaped once, here.
+  Crests are the club's initials on a colour derived from its name — stable
+  between sessions, because a reader scanning forty cards navigates by colour
+  before they read a word.
+- **Six CI invariants.** The four from the first pass — `dashboard` may not
+  import `api`; nothing may import `dashboard`; the dashboard may not reach
+  past the reporting layer; the image job builds it, starts it with no data and
+  asserts it is healthy, runs as `app` and contains no `api` package — plus two
+  for the new shape: the layers point one way, and **no view names a
+  provider**. That last one is the property the provider layer exists for; the
+  day a view imports a concrete provider, connecting a real feed stops being
+  one class and becomes a search.
+- `DASHBOARD_FIXTURE_PROVIDER`, in `.env.example` and `docker-compose.yml`.
 
 ### Changed
 
@@ -147,6 +196,47 @@ already made, with one panel that asks the service for a live probability.
   survives to be ignored at run time. streamlit ships its own `py.typed` and
   needs neither a stub nor an override.
 
+### Fixed
+
+- **`streamlit run dashboard/app.py` died on the first browser session.**
+  Streamlit puts the *script's own directory* on `sys.path`, not the project
+  root, so `import dashboard` had nothing to resolve against and every local
+  run failed with `ModuleNotFoundError: No module named 'dashboard'` the moment
+  a browser connected. `src` is installed as a package and `dashboard` is not,
+  which is why one resolved and the other did not.
+
+  It was invisible to everything that was watching. The container sets
+  `PYTHONPATH=/app`, so the image was green; pytest puts the rootdir on the
+  path before any test runs, so `AppTest` was green; and the CI image check
+  asks `/_stcore/health`, which answers before the script executes. Three
+  green signals and a command that had never worked.
+
+  The root is now prepended by `dashboard/app.py` itself rather than by the
+  `make` target, because `streamlit run dashboard/app.py` is the documented
+  command and people type it directly — a target that exported `PYTHONPATH`
+  would have fixed the invocation that already had a wrapper and left the bare
+  one broken. The regression test runs the entry point under an isolated
+  interpreter with only `dashboard/` on the path, which is the environment the
+  server actually gives it, and fails without the fix.
+
+### The three things it cannot show, and why they are still on the page
+
+Today's matches, upcoming fixtures and live scores need a fixture feed, and
+this project ingests **results** — a match that has not been played is in no
+table here. Those sections are rendered from `NullFixtures`, a real
+implementation of `FixtureProvider` that returns nothing and carries its own
+reason, which the page prints.
+
+Nothing invents a fixture. Plausible-looking generated matches would put a game
+on the screen that is not being played, and that is the one failure this
+application cannot recover from: a reader who catches it once stops believing
+the real rows too.
+
+Connecting a feed is a class satisfying the protocol, an entry in
+`FIXTURE_PROVIDERS`, and one environment variable. No view moves.
+`tests/unit/test_dashboard_app.py` rehearses it with a stub feed, so the claim
+is a measurement rather than an aspiration.
+
 ### Deviations from the plan, with reasons
 
 - **The plan left the data path open — "a client of `api/` or of
@@ -161,6 +251,20 @@ already made, with one panel that asks the service for a live probability.
   The reliability diagram is the exception, and the reason is specific: its
   claim is a diagonal, `y = x` *is* the hypothesis, and a reader checks a
   forecast against it by eye in a way a column of signed gaps does not support.
+- **Streamlit rather than a React client**, and the layering is what makes that
+  reversible rather than a bet. A React front end reading the same API would
+  replace `views/` and keep `domain/`, `providers/` and `services/` — which is
+  why the caching lives in the services and the providers hold no state.
+- **Standings are absent deliberately.** A league table is a season's results
+  added up and this project has the results, but a table that is *right* needs
+  each competition's own rules for points, tie-breaks, deductions and
+  play-offs, and thirty-nine competitions do not share them. A table that
+  silently ranked Argentina by goal difference when Argentina does not would be
+  worse than no table.
+- **Odds stay off every page.** They are in the match table and they are the
+  benchmark this project measures itself against; showing them beside a
+  forecast invites the comparison to be made without the walk-forward folds
+  that make it meaningful. `docs/EVALUATION.md` is where that comparison lives.
 
 ## [0.11.0] — unreleased
 

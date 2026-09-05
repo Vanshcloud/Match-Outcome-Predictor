@@ -15,7 +15,7 @@ IMAGE  := match-outcome-predictor:local
 
 # Directories that hold first-party Python. Kept in one variable so a new
 # package is wired into lint, format and type-check by editing one line instead
-# of six. `api/` joined it in Milestone 11; `dashboard/` will in Milestone 12.
+# of six. `api/` joined it in Milestone 11 and `dashboard/` in Milestone 12.
 CODE := src api dashboard tests scripts
 
 help: ## Show this help message
@@ -107,7 +107,7 @@ model: ## Fit the shipped model on the whole history and persist it (~1 min)
 api: ## Serve the API on http://127.0.0.1:8000/docs, reloading on edit
 	$(BIN)/uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
 
-dashboard: ## Serve the dashboard at http://127.0.0.1:8501 (run `make api` too for the predict tab)
+dashboard: ## Serve the dashboard at http://127.0.0.1:8501 (run `make api` too, for forecasts)
 	$(BIN)/streamlit run dashboard/app.py
 
 docker-build: ## Build the serving image

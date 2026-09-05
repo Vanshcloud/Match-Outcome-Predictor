@@ -1,0 +1,28 @@
+# The dashboard's own theme, dark first.
+#
+# Streamlit's native theming rather than a stylesheet that fights it: setting
+# `base` here changes the chrome — the sidebar, the widgets, the dataframe
+# grid — which CSS injected into the page cannot reach without selectors that
+# break on the next Streamlit release. `dashboard/theme.py` adds only what this
+# file has no setting for: the cards.
+#
+# The colours are the tokens `dashboard/theme.py` repeats, and the two must
+# agree. They are in two places because Streamlit reads TOML for its chrome and
+# the browser reads CSS for ours, and there is no third place that feeds both.
+
+[theme]
+base = "dark"
+primaryColor = "#22c55e"
+backgroundColor = "#0b1120"
+secondaryBackgroundColor = "#111a2e"
+textColor = "#e2e8f0"
+font = "sans serif"
+
+[server]
+# Nothing here is uploaded, and the default 200 MB limit is 200 MB of attack
+# surface for a feature this application does not have.
+maxUploadSize = 1
+headless = true
+
+[browser]
+gatherUsageStats = false

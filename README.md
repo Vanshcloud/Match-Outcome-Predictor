@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 12 of 14 — the dashboard.**
+> **Status: Milestone 12 of 20 — the dashboard.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -23,9 +23,10 @@ football competitions, from ingestion through to a served API and dashboard.
 > they are not, and that model is now **served over HTTP** from a container —
 > with the card's limitations reachable from the response, and every prediction
 > saying whether the fixture was inside the served model's own training window.
-> A **dashboard** reads the same measurements back: the pooled calibration
-> error the card reports as one number, filterable to the competitions and
-> years it is an average over.
+> A **dashboard** is the presentation layer over all of it: results, forecasts,
+> competitions and search, with the pooled calibration error the card reports
+> as one number filterable to the competitions and years it is an average
+> over — and every empty section naming the provider that would fill it.
 
 ---
 
@@ -411,26 +412,63 @@ configuration and what the service deliberately is not.
 
 ## The dashboard
 
-Streamlit over the reporting layer, and it computes nothing. Every table is
-produced by `src/pipelines`, every probability by the service, and
-`docs/MODEL_CARD.md` is generated from the same functions — so a number on the
-page and the same number in the card are the same number from the same code.
+A football dashboard over a prediction engine it is only ever a client of.
+Every measurement of the model is produced by `src/pipelines`, every
+probability by the service, every result read from the canonical match table —
+and `docs/MODEL_CARD.md` is generated from the same functions, so a number on
+the page and the same number in the card are the same number from the same
+code.
 
-**Two data paths, and the split is the design.** Reports are read from disk,
-because a measurement that already exists should be read rather than
-recomputed. Predictions come over HTTP, because two processes that both
-unpickle the artefact are two implementations of "what does the model say".
-The page therefore works with the service down: the predict tab says so and
-names the command that starts it, and the other three are unaffected. CI
-enforces the boundary — `dashboard` may not import `api`, and the dashboard
-image does not contain it.
+**Four layers, pointing one way.**
 
-| Tab | |
+```
+views  ──▶  services  ──▶  providers  ──▶  domain
+```
+
+`domain` is what a match and a forecast *are*, with no I/O. `providers` is
+where football comes from — one protocol per kind of source. `services` is
+orchestration and caching. `views` is Streamlit, and is the only layer that
+would be rewritten if this became a React client reading the same API. CI
+asserts the arrows, including the one that matters most: **no view names a
+provider.**
+
+**Three data paths, and the split is the design.** Results come from the match
+table, because results are what the provider publishes and the API deliberately
+serves no scoreline. Reports are read from disk, because a measurement that
+already exists should be read rather than recomputed. Forecasts come over HTTP,
+because two processes that both unpickle the artefact are two implementations
+of "what does the model say". The page therefore works with the service down
+and with no data at all: each section names which of the three is missing and
+the command that produces it. CI enforces the boundary — `dashboard` may not
+import `api`, and the dashboard image does not contain it.
+
+| Page | |
 |---|---|
-| Scoreboard | Every forecaster over the 59,001 matches all of them could price |
-| Reliability | The card's pooled 0.0015, filtered by competition, fold and bin count |
-| By competition | Least honest first, beside log loss per competition |
-| Price a fixture | The live service, with `in_sample` shown on every answer |
+| Home | Live, upcoming, just finished, and what the model can price — each a section that carries either fixtures or the reason there are none |
+| Live centre | The same feed given the whole screen, for a weekend with forty matches at once |
+| Competitions | Every league in `configs/leagues.yaml`, each with a page nobody wrote |
+| Match | The forecast, **what that probability is worth**, form, head-to-head |
+| Search | Clubs, competitions and fixtures from one box |
+| Model | The scoreboard, the filterable reliability diagram, the per-competition breakdown |
+
+**The three things it cannot show are a data problem, not a design one.**
+Today's matches, upcoming fixtures and live scores need a fixture feed, and
+this project ingests *results* — a match that has not been played is in no
+table here. Those sections render from a real implementation of the interface
+that returns nothing and states why, because inventing a plausible fixture
+would put a game on the screen that is not being played, and a reader who
+catches that once stops believing the real rows too.
+
+Connecting one is a class satisfying `FixtureProvider`, an entry in
+`FIXTURE_PROVIDERS`, and `DASHBOARD_FIXTURE_PROVIDER`. No view moves. The
+test suite rehearses it with a stub feed, so the claim stays a measurement
+rather than an aspiration.
+
+**The match page is the one worth opening.** Beside three calibrated
+probabilities it reports how often forecasts stated in the same band actually
+happened, in that competition, from the same reliability tables the model card
+is generated from. A stated probability with no measured reliability beside it
+is the number this project exists to stop people quoting.
 
 **The reliability diagram is the one figure this project draws.** Milestone 10
 recorded that matplotlib was left out because every figure it would have drawn
@@ -443,11 +481,10 @@ calibration error applies, made visible rather than restated.
 One enabling change sits behind it. `make card` computed 62,036 per-match
 forecasts, used them, and threw them away; it now writes them to
 `data/reports/ensemble/forecasts.parquet` with a manifest. The dashboard reads
-that instead of spending five minutes on every page load, and a second
-`make card` is the only thing that has to recompute it.
+that instead of spending five minutes on every page load.
 
-**[docs/DASHBOARD.md](docs/DASHBOARD.md)** has the tabs, the configuration and
-what the page deliberately is not.
+**[docs/DASHBOARD.md](docs/DASHBOARD.md)** has the layers, the pages, the
+configuration and what the dashboard deliberately is not.
 
 ## Storage and validation
 
@@ -541,11 +578,18 @@ api/                the inference service                 [Milestone 11] ✅
   routes.py           six endpoints, each a call and a return
   service.py          the model, the fixture index and the log, held once
   schemas.py          the request and response models, and the OpenAPI document
-dashboard/          Streamlit + Plotly                   [Milestone 12] ✅
-  app.py              four tabs, each a function taking what it needs
-  data.py             the report tables, and the empty state when there are none
+dashboard/          the presentation layer               [Milestone 12] ✅
+  app.py              the shell: theme, sidebar, six declared pages
+  domain/             what a match, a forecast and a competition are
+  providers/          where football comes from — one protocol per source
+    historical.py       results, from the canonical table
+    api.py              forecasts, from the service over HTTP
+    null.py             fixtures: nothing yet, and the reason
+  services/           orchestration and caching over the providers
+  views/              Streamlit, thin and swappable
+  ui.py               cards, probability bars, crests, form strings
   charts.py           the reliability diagram, and two honest conveniences
-  client.py           the service, over HTTP — never imported
+  client.py           the service, over HTTP — `api` is never imported
 ```
 
 `api` imports `src`; nothing in `src` imports `api`. CI enforces that, and the
@@ -671,9 +715,20 @@ imports is a supply-chain surface with no upside.
 | 9 | Ensembling and calibration — error-correlation selection, temperature scaling, reliability | ✅ |
 | 10 | Evaluation and explainability — SHAP, permutation importance, model card | ✅ |
 | 11 | API — FastAPI, Docker, PostgreSQL for served predictions | ✅ |
-| 12 | Dashboard — Streamlit + Plotly, filterable reliability, live pricing | ✅ |
-| 13 | MLOps — Docker, CI/CD, retraining, drift monitoring, deployment | |
-| 14 | Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best GBDT with a written verdict | |
+| 12 | Dashboard — the presentation layer, four layers deep, six pages | ✅ |
+| 13 | Live fixture ingestion — a `FixtureProvider` against football-data.org or equivalent | |
+| 14 | Accounts — authentication, saved favourites and preferences | |
+| 15 | Real-time — in-play updates, notifications, favourite-team alerts | |
+| 16 | Cloud deployment — MLOps, monitoring, caching, retraining, drift | |
+| 17 | Odds and expected goals — bookmaker comparison, value detection | |
+| 18 | Availability — injuries, suspensions, transfer impact | |
+| 19 | Prediction archive — served forecasts scored against what happened | |
+| 20 | The platform | |
+
+Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best
+GBDT with a written verdict — is unscheduled rather than dropped: it changes
+every reported number in this repository and belongs to a milestone with its
+own ablation, not to a platform release.
 
 ## Security
 

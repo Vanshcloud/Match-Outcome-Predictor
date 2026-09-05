@@ -146,6 +146,11 @@ WORKDIR /app
 COPY --chown=app:app dashboard/ ./dashboard/
 COPY --chown=app:app src/ ./src/
 COPY --chown=app:app configs/ ./configs/
+# The theme. Streamlit reads `.streamlit/config.toml` relative to the working
+# directory, so an image without it renders the default light chrome around a
+# dark-first page — which is the one visual defect that only appears in the
+# container and never locally.
+COPY --chown=app:app .streamlit/ ./.streamlit/
 
 RUN mkdir -p /app/data /app/models && chown -R app:app /app/data /app/models
 

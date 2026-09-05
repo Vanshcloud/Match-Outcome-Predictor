@@ -1,7 +1,7 @@
 """The figures. Three properties, and none of them is about appearance.
 
 A chart in this project computes nothing — the frames arrive built by
-:mod:`dashboard.data`, which itself computes nothing. So what is worth pinning
+:mod:`dashboard.services.reports`, which itself computes nothing. So what is worth pinning
 is that each figure *plots the column it claims to*, survives the empty frame a
 filter can produce, and marks the benchmark rather than hiding it in a legend.
 """

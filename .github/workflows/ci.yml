@@ -344,18 +344,71 @@ jobs:
       - name: The dashboard reads reports; it does not build them
         # It may have the pipelines (the tables), the evaluation layer (the
         # reliability functions the card uses), the model layer (for the
-        # shipped model's name) and utils. It may not reach `src.ratings`,
-        # `src.feature_engineering` or `src.ingestion` — a dashboard that
-        # recomputed a feature would be an unprobed copy of the layer
-        # Milestone 6 exists to guard, and one that recomputed a metric would
-        # be a second number to reconcile with the model card.
+        # shipped model's name) and utils. It may not reach `src.ratings` or
+        # `src.feature_engineering` — a dashboard that recomputed a feature
+        # would be an unprobed copy of the layer Milestone 6 exists to guard,
+        # and one that recomputed a metric would be a second number to
+        # reconcile with the model card.
+        #
+        # Two names from `src.ingestion` are excluded by name, not by a loose
+        # pattern: `base` (the canonical schema, already permitted to the
+        # models and the metrics for the same reason) and `registry` (the
+        # competition catalogue). The registry is a YAML file and the pydantic
+        # models that validate it — no provider, no network, no fetch — and it
+        # is where a league is *added* to this project. A dashboard with its
+        # own copy of the league names would be a second list, and the first
+        # league added in a later milestone would be added to one of them.
         run: |
           offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' dashboard \
-                      | grep -vE 'src\.(pipelines|models|evaluation|utils)\.' || true)
+                      | grep -vE 'src\.(pipelines|models|evaluation|utils)\.|src\.ingestion\.(base|registry)' || true)
           if [ -n "$offenders" ]; then
             echo "the dashboard reaches past the reporting layer:"; echo "$offenders"; exit 1
           fi
-          echo "dashboard depends only on pipelines, models, evaluation and utils"
+          echo "dashboard depends only on pipelines, models, evaluation, the schema and utils"
+
+      - name: The dashboard's layers point one way
+        # Milestone 12's own shape, and the reason Milestone 13 is one class.
+        #
+        #   views -> services -> providers -> domain
+        #
+        # `domain` is the vocabulary — what a match and a forecast are — and it
+        # imports none of the three above it, which is what lets a provider, a
+        # test and one day a different front end all mean the same thing by a
+        # Fixture. `providers` may not reach up into services or views.
+        run: |
+          set -e
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.(providers|services|views)\b' \
+                      dashboard/domain || true)
+          if [ -n "$offenders" ]; then
+            echo "dashboard/domain imports a layer above it:"; echo "$offenders"; exit 1
+          fi
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.(services|views)\b' \
+                      dashboard/providers || true)
+          if [ -n "$offenders" ]; then
+            echo "dashboard/providers imports a layer above it:"; echo "$offenders"; exit 1
+          fi
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.views\b' dashboard/services || true)
+          if [ -n "$offenders" ]; then
+            echo "dashboard/services imports the views:"; echo "$offenders"; exit 1
+          fi
+          echo "dashboard layers point one way: views -> services -> providers -> domain"
+
+      - name: No view names a provider
+        # The property the whole provider layer exists for. A view asks the
+        # context for a source and renders whatever answers; it must not import
+        # a concrete one, because the day a view does, connecting
+        # football-data.org stops being one class and becomes a search.
+        #
+        # `dashboard/context.py` names them because something must, and a
+        # service may compose one — that is what a service is. A *view* may
+        # not, and that is the line this checks.
+        run: |
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.providers\.(historical|api|null)\b' \
+                      dashboard/views || true)
+          if [ -n "$offenders" ]; then
+            echo "a view imports a concrete provider:"; echo "$offenders"; exit 1
+          fi
+          echo "views name no provider; the context and the services do"
 
       - name: No network access from the unit suite
         # The suite must stay runnable offline, and every outbound request in
@@ -446,8 +499,14 @@ jobs:
           if docker run --rm --entrypoint sh match-outcome-dashboard:ci -c 'test -d /app/api'; then
             echo "the dashboard image contains the api package"; exit 1
           fi
+          # The theme is a file Streamlit reads from the working directory. An
+          # image without it renders light chrome around a dark-first page —
+          # a defect that never appears locally, which is exactly the kind
+          # worth a line in CI.
+          docker run --rm --entrypoint sh match-outcome-dashboard:ci \
+            -c 'grep -q "base = \"dark\"" /app/.streamlit/config.toml'
           docker rm -f dash
-          echo "dashboard starts, is healthy, runs as app, and has no api package"
+          echo "dashboard starts, is healthy, themed, runs as app, and has no api package"
 
       - name: The compose file is valid
         run: docker compose config --quiet

@@ -887,6 +887,39 @@ is built.
 
 ---
 
+## Found by audit, awaiting a milestone — fourteen candidate features
+
+Not scheduled, and not lost. A full audit measured fourteen columns built from
+canonical fields the design matrix does not read — half-time scores, shots on
+target, a 20-match form window, `tier`, and days into the season — against the
+shipped thirty on the same folds with the same tuned XGBoost:
+
+| | log loss | |
+|---|---:|---|
+| base 30 columns | 1.01690 | |
+| plus 14 candidates | **1.01651** | +0.000394, p = 0.0021, n = 62,036 |
+
+Reproduced across three seeds at five to eight times the seed-noise floor
+(0.00005), so it is an effect rather than a refit. `tier` and `season_days`
+carry 0.000219 of it between them at p = 0.018 — the model currently has **no
+competition-level context at all**. Both leakage probes pass.
+
+It is not in this plan's numbered sequence because adopting it regenerates
+every reported number in the repository, which is a milestone with its own
+ablation rather than a patch. The working, the harness and the honest caveats
+are on the **`experiment/candidate-features`** branch:
+
+```bash
+git checkout experiment/candidate-features
+python -m experiments.run_experiment    # ~8 min, reproduces every number above
+```
+
+That branch also records the one candidate that leaked and was caught by
+`prefix_invariance` on the first run, which is the best argument this
+repository has for probing a derivation rather than reading it.
+
+---
+
 ## Milestone 12 — Dashboard (next)
 
 Scope, for approval:

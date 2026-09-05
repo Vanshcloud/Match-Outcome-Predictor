@@ -1,7 +1,7 @@
 # The dashboard
 
-Milestone 12. A football dashboard over a prediction engine it is only ever a
-client of.
+Milestone 12, with the fixture feed of Milestone 13 behind it. A football
+dashboard over a prediction engine it is only ever a client of.
 
 ```bash
 make dashboard      # http://127.0.0.1:8501
@@ -67,51 +67,97 @@ The consequence is deliberate: **the page works with the API down, and with no
 data at all.** Each section says which of the three is missing and names the
 command that produces it.
 
-## The fixture feed that does not exist yet
+## The fixture feed
 
-The three things this dashboard cannot show are **today's matches, upcoming
-fixtures, and live scores** — and the reason is data, not design.
+Three things need a source this project does not ingest: **today's matches,
+upcoming fixtures and live scores**. The provider behind this repository
+publishes *results* — a match that has not been played is in no table here — so
+they come from a second feed or from nowhere, and both are real
+implementations of the same interface.
 
-The provider behind this project publishes *results*. A match that has not been
-played is in no table here, so there is nothing to render and nothing to
-predict. Rather than leave those sections blank, they are rendered from a real
-implementation of the interface that returns nothing and states why:
+| `DASHBOARD_FIXTURE_PROVIDER` | Class | What it answers |
+|---|---|---|
+| `none` (default) | `providers/null.py` | Nothing, and the reason. Every empty state on the page is *its* answer, not a special case in a view. |
+| `football-data.org` | `providers/football_data_org.py` | `GET /v4/matches`: scheduled fixtures, matches in play with their score, and club crests. Nine competitions, needs `FOOTBALL_DATA_API_KEY`. |
 
-```python
-# dashboard/providers/null.py
-@dataclass(frozen=True, slots=True)
-class NullFixtures:
-    name: str = "none"
-    available: bool = False
-    reason: str = "The data behind this project is a results feed — …"
-```
-
-**Nothing here invents a fixture.** Plausible-looking generated matches would
-put a game on the screen that is not being played, and that is the one failure
-this application cannot recover from: a reader who catches it once stops
-believing the real rows too.
-
-### What Milestone 13 changes
-
-Write a class satisfying `dashboard.providers.base.FixtureProvider`:
-
-```python
-def scheduled(self, *, since, until, competitions=None) -> list[Fixture]: ...
-def live(self, *, competitions=None) -> list[Fixture]: ...
-```
-
-Register it, and select it:
-
-```python
-FIXTURE_PROVIDERS = {"none": NullFixtures, "football-data": FootballDataFixtures}
-```
 ```bash
-DASHBOARD_FIXTURE_PROVIDER=football-data
+# free key: https://www.football-data.org/client/register
+export FOOTBALL_DATA_API_KEY=...
+export DASHBOARD_FIXTURE_PROVIDER=football-data.org
+make dashboard
 ```
 
-That is the whole change. No view moves, no card changes, and the empty states
-fill up. `tests/unit/test_dashboard_app.py` already rehearses it with a stub
-feed, which is how the claim stays true rather than aspirational.
+**Nothing invents a fixture.** With no key, the two forward sections stay empty
+and name the variable to set. Plausible-looking generated matches would put a
+game on the screen that is not being played, and that is the one failure this
+application cannot recover from: a reader who catches it once stops believing
+the real rows too.
+
+### What Milestone 13 actually cost
+
+One class, one registry entry, one variable — the claim Milestone 12's shape
+was making, now spent:
+
+```python
+FIXTURE_PROVIDERS = {"none": NullFixtures, "football-data.org": FootballDataOrgFixtures}
+```
+
+No view moved and no card changed. The one line of `views/` that did change was
+the sidebar caption, which used to read `✕ No fixture feed — Milestone 13` and
+now names the connected feed or the provider's own reason — a status bar citing
+an unshipped milestone after it ships is a small lie a reader stops checking
+the rest of the page against.
+
+### What it is not
+
+- **Not a second ingestion source.** Nothing this feed returns is written to a
+  table, joined to one, or read by a model. Its rows live for one page render;
+  when a match is played, its canonical row arrives from `make data` like every
+  other result.
+- **Not joinable to the match table, and it says so.** Ids are prefixed
+  `fdorg-` rather than built with `make_match_id`, because a match id here
+  hashes the team names *as the source spells them* and this feed says
+  "Manchester United FC" where the ingested table says "Man United". An id that
+  looked canonical and matched nothing would be worse than one that plainly
+  names where it came from. The consequence is deliberate and visible: a card
+  from this feed opens a match page with no table row and no forecast, and that
+  page already says so — the shipped model is fitted on finished matches and
+  has no history for a fixture that has not been played.
+- **Not every competition.** Nine of the thirty-nine in `configs/leagues.yaml`,
+  which is what the free tier serves. A followed competition outside them is
+  dropped from the filter — there is no code here to send for it — and a reader
+  following only such competitions is told so in a sentence.
+- **Not on the feed's clock.** The feed indexes by UTC; the dashboard asks
+  about the host's today. On a machine at UTC+05:30 those are different days
+  for five and a half hours out of every twenty-four, so a live centre asking
+  the feed for the *local* date goes blank exactly during Saturday evening in
+  Europe. Fixtures therefore carry host-local date and kick-off (`20:30 IST`,
+  labelled because a server-rendered page shows the server's clock), the live
+  window is anchored to UTC and filtered by status rather than by date, and a
+  requested window is widened a day at each end and narrowed back in the
+  answer.
+- **Not one request for any window.** The feed refuses a range wider than ten
+  days (`400 Specified period must not exceed 10 days`), so a longer ask is
+  split into consecutive requests rather than truncated. The shipped dashboard
+  asks for seven days, which is one request. Its `dateTo` is an *instant*, not
+  a day — `09-05..09-05` answers nothing — so every date in the module is an
+  inclusive day with one conversion at the wire, and chunks that meet at
+  midnight are merged by `match_id` rather than showing a match twice.
+- **Not a corrected feed.** Statuses are rendered as given, including when they
+  lag (a 16:45 kick-off was still `IN_PLAY` at 22:40 on the live API).
+  Inferring "that must have finished" from the clock would be the dashboard
+  inventing a result.
+- **Not a minute on this plan.** No row the free tier returned carried
+  `minute`, so a live card reads `live` rather than `63'` — `ui.match_card`'s
+  existing fallback, which needed no change.
+- **Not a rate-limit problem.** Ten calls a minute against a Streamlit script
+  that reruns on every click, so answers are memoised for a minute at module
+  level — the context builds a fresh provider on every rerun, so an instance
+  cache would be one that is empty every time it is read.
+- **Not in-play modelling.** The card carries a minute and a score; the
+  probabilities beside it are pre-match. A model fitted on in-play state is a
+  modelling milestone with its own ablation, and `docs/MODEL_CARD.md` is
+  explicit that nothing here is.
 
 ## The pages
 
@@ -122,8 +168,9 @@ carrying either fixtures or the reason there are none — because "no matches
 tonight" and "no fixture feed" are the same empty list and completely different
 sentences.
 
-Two of the four have real data today: results from the match table, and
-priceable fixtures from the service.
+Results come from the match table and priceable fixtures from the service;
+the two forward sections come from the fixture feed, and are empty with a
+reason until one is configured.
 
 ### Live centre
 The same feed given the whole screen, for the weekend with forty matches
@@ -202,7 +249,8 @@ set of contrast ratios to check.
 | Variable | Default | |
 |---|---|---|
 | `DASHBOARD_API_URL` | `http://127.0.0.1:8000` | Where forecasts are asked for. Compose sets `http://api:8000` |
-| `DASHBOARD_FIXTURE_PROVIDER` | `none` | Which fixture feed supplies today, upcoming and live |
+| `DASHBOARD_FIXTURE_PROVIDER` | `none` | Which fixture feed supplies today, upcoming and live: `none` or `football-data.org` |
+| `FOOTBALL_DATA_API_KEY` | unset | The key for that feed. Environment only — `configs/config.yaml` is committed |
 | `DATA_DIR` | `data` | Where the match table and the report tables are read from |
 | `DASHBOARD_PORT` | `8501` | Container only; the bind address is a literal `0.0.0.0` |
 

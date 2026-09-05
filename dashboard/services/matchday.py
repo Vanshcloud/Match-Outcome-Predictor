@@ -86,7 +86,7 @@ def live_section(provider: FixtureProvider, competitions: Sequence[str] | None) 
         return Section(
             "Live now",
             "in play, across the competitions you follow",
-            unavailable=_reason(provider),
+            unavailable=reason(provider),
         )
     return Section(
         "Live now",
@@ -110,7 +110,7 @@ def upcoming_section(
     """
     note = f"the next {days} days"
     if not provider.available:
-        return Section("Today and next", note, unavailable=_reason(provider))
+        return Section("Today and next", note, unavailable=reason(provider))
     start = today or dt.date.today()
     return Section(
         "Today and next",
@@ -166,7 +166,7 @@ def priceable_section(
     """
     note = "answered by the prediction service"
     if not provider.available:
-        return Section("The model can price these", note, unavailable=_reason(provider))
+        return Section("The model can price these", note, unavailable=reason(provider))
     return Section(
         "The model can price these",
         note,
@@ -175,7 +175,7 @@ def priceable_section(
     )
 
 
-def _reason(provider: object) -> str:
+def reason(provider: object) -> str:
     """Why a provider cannot answer, in its own words where it has any."""
     stated = getattr(provider, "reason", None) or getattr(provider, "error", None)
     return str(stated) if stated else "No provider is configured for this."

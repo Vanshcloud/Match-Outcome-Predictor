@@ -42,7 +42,7 @@ import streamlit as st  # noqa: E402
 from dashboard import context, theme  # noqa: E402
 from dashboard.domain import competition as catalogue  # noqa: E402
 from dashboard.domain import favourites  # noqa: E402
-from dashboard.services import history  # noqa: E402
+from dashboard.services import history, matchday  # noqa: E402
 from dashboard.views import competitions, home, match, performance, search  # noqa: E402
 
 TITLE = "Match Outcome Predictor"
@@ -109,8 +109,9 @@ def _status(ctx: context.Context) -> None:
     """The two things that can be missing, each naming the command that fixes it.
 
     A dashboard whose sections are quietly empty is a dashboard a reader
-    debugs. There are exactly two reasons for an empty section here — no match
-    table, or no service — and both are one line.
+    debugs. There are three reasons for an empty section here — no match table,
+    no service, no fixture feed — and each is one line carrying the provider's
+    own words rather than this module's guess at them.
     """
     if ctx.has_matches:
         latest = history.latest_date(ctx.matches_path)
@@ -123,8 +124,10 @@ def _status(ctx: context.Context) -> None:
     else:
         st.caption(f"✕ Prediction service — {ctx.predictions.error or 'not answering'}")
 
-    if not ctx.fixtures.available:
-        st.caption("✕ No fixture feed — Milestone 13")
+    if ctx.fixtures.available:
+        st.caption(f"✓ Fixture feed · {ctx.fixtures.name}")
+    else:
+        st.caption(f"✕ No fixture feed — {matchday.reason(ctx.fixtures)}")
 
 
 def main() -> None:

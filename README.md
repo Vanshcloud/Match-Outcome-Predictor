@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 12 of 20 — the dashboard.**
+> **Status: Milestone 13 of 20 — the dashboard, with a live fixture feed.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -451,18 +451,25 @@ import `api`, and the dashboard image does not contain it.
 | Search | Clubs, competitions and fixtures from one box |
 | Model | The scoreboard, the filterable reliability diagram, the per-competition breakdown |
 
-**The three things it cannot show are a data problem, not a design one.**
-Today's matches, upcoming fixtures and live scores need a fixture feed, and
-this project ingests *results* — a match that has not been played is in no
-table here. Those sections render from a real implementation of the interface
-that returns nothing and states why, because inventing a plausible fixture
-would put a game on the screen that is not being played, and a reader who
-catches that once stops believing the real rows too.
+**Today's matches, upcoming fixtures and live scores come from a second
+feed** — this project ingests *results*, and a match that has not been played
+is in no table here. Milestone 13 connected football-data.org behind
+`FixtureProvider`, which cost exactly what Milestone 12 said it would: one
+class, one entry in `FIXTURE_PROVIDERS`, one environment variable, and no view
+moved.
 
-Connecting one is a class satisfying `FixtureProvider`, an entry in
-`FIXTURE_PROVIDERS`, and `DASHBOARD_FIXTURE_PROVIDER`. No view moves. The
-test suite rehearses it with a stub feed, so the claim stays a measurement
-rather than an aspiration.
+```bash
+export FOOTBALL_DATA_API_KEY=...            # free: football-data.org/client/register
+export DASHBOARD_FIXTURE_PROVIDER=football-data.org
+```
+
+Without a key the same sections render from a real implementation that returns
+nothing and states why. **Nothing invents a fixture**: a plausible generated
+match would put a game on the screen that is not being played, and a reader who
+catches that once stops believing the real rows too. Nor is that feed a second
+ingestion source — nothing it returns is written to a table, joined to one or
+read by a model, and its ids are prefixed `fdorg-` rather than shaped like
+canonical ones they would never match.
 
 **The match page is the one worth opening.** Beside three calibrated
 probabilities it reports how often forecasts stated in the same band actually
@@ -584,7 +591,8 @@ dashboard/          the presentation layer               [Milestone 12] ✅
   providers/          where football comes from — one protocol per source
     historical.py       results, from the canonical table
     api.py              forecasts, from the service over HTTP
-    null.py             fixtures: nothing yet, and the reason
+    football_data_org.py  fixtures and live scores      [Milestone 13] ✅
+    null.py             fixtures, with no feed configured: nothing, and why
   services/           orchestration and caching over the providers
   views/              Streamlit, thin and swappable
   ui.py               cards, probability bars, crests, form strings

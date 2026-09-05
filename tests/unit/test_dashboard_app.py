@@ -248,10 +248,13 @@ def run_shell(
     monkeypatch: pytest.MonkeyPatch,
     *,
     predictions: object | None = None,
+    feed: object | None = None,
     matches: bool = True,
 ) -> AppTest:
     """The whole application, chrome and all, with stub providers behind it."""
-    _stub_context(tmp_path, monkeypatch, predictions=predictions, matches=matches, reports=True)
+    _stub_context(
+        tmp_path, monkeypatch, predictions=predictions, feed=feed, matches=matches, reports=True
+    )
     return AppTest.from_file(APP, default_timeout=TIMEOUT).run()
 
 
@@ -308,6 +311,17 @@ def test_the_shell_says_which_of_the_two_data_paths_are_answering(
     assert "✓ Match table" in said
     assert "✓ Prediction service" in said
     assert "No fixture feed" in said
+
+
+def test_the_shell_names_the_fixture_feed_that_is_connected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Milestone 13. The line used to name the milestone; it now names the
+    feed, because a status bar that cites an unshipped milestone after it ships
+    is the kind of small lie a reader stops checking the rest of against."""
+    app = run_shell(tmp_path, monkeypatch, feed=ConnectedFeed())
+    said = " ".join(str(one.value) for one in app.sidebar.caption)
+    assert "✓ Fixture feed · stub-feed" in said
 
 
 def test_the_shell_names_what_is_missing_on_a_clean_checkout(

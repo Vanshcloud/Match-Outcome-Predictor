@@ -57,13 +57,14 @@ def render_live() -> None:
         matchday.live_section(ctx.fixtures, favourites.league_filter()), columns=LIVE_COLUMNS
     )
 
-    ui.section("What connecting a provider changes", "the shape this page is built to")
+    ui.section("What this page is, and what it is not", "with a feed connected")
     st.markdown(
-        "- **Scores and minutes** arrive on the same `Fixture` these cards "
-        "already render, so no card changes.\n"
-        "- **The pre-match prediction** is the one this service already "
-        "answers; a live match's card gains it by asking `/predict` for the "
-        "same `match_id`.\n"
+        "- **Scores and minutes** are the feed's, on the same `Fixture` these "
+        "cards already rendered when there was no feed at all.\n"
+        "- **These matches are not in the match table**, which holds results "
+        "this project ingested. A card here opens a page with no history and "
+        "no forecast until the match has been played and `make data` has run "
+        "— the shipped model is fitted on finished matches.\n"
         "- **In-play probabilities** are a different model from the one this "
         "repository measures, and are not a rendering change. The model card "
         "is explicit that nothing here is fitted on in-play state."

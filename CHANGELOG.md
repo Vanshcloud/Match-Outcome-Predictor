@@ -10,9 +10,84 @@ extra steps.
 
 ## [Unreleased]
 
-Findings from a full independent audit of the repository. No modelling code,
-feature, split, metric or reported number changed; every fix is on the serving
-and packaging side, and the walk-forward tables are the same tables.
+### Added
+
+- **Milestone 13 — live fixtures.** `dashboard/providers/football_data_org.py`
+  reads `GET /v4/matches` from football-data.org and answers the three
+  questions this project's results feed cannot: what is on today, what is on
+  this week, and what is being played right now. Selecting it is
+  `DASHBOARD_FIXTURE_PROVIDER=football-data.org` and `FOOTBALL_DATA_API_KEY`;
+  with neither, the null feed still answers and the sections still say why they
+  are empty.
+
+  The milestone cost what Milestone 12 said it would — one class, one registry
+  entry, one environment variable — and no view moved. The single view line
+  that changed is the sidebar caption, which used to read `✕ No fixture feed —
+  Milestone 13` and now names the feed that answered or the provider's own
+  reason for having nothing; a status bar citing an unshipped milestone after
+  it ships is a small lie a reader stops checking the rest of the page against.
+
+  What it deliberately is **not**:
+
+  - **Not a second ingestion source.** Nothing it returns is written to a
+    table, joined to one, or read by a model. No model, feature, split, metric
+    or reported number changed, and `matches.parquet` holds exactly the rows it
+    held before.
+  - **Not joinable, and its ids say so.** `fdorg-497821` rather than a
+    `make_match_id` hash, because that id includes the team names as its source
+    spells them and this feed says "Manchester United FC" where the ingested
+    table says "Man United". An id that looked canonical and matched nothing
+    would be worse than one that names its origin. `src/ingestion/teams.py`'s
+    alias table stays empty for the same reason: it has no reader until a
+    milestone actually *ingests* a second vocabulary.
+  - **Not all thirty-nine competitions.** Nine, which is the free tier. A
+    followed competition outside them is dropped from the filter, because this
+    project's ids are its own and there is no code to send for it, and a reader
+    following only such competitions is told so.
+  - **Not a source of fixtures it does not have.** Postponed, suspended and
+    cancelled matches are dropped rather than rendered as scheduled, a row with
+    no parseable kick-off or no named teams is dropped, and a crest URL that is
+    not `https` is not put in an `img` tag.
+
+  Three defects the live API found that review had not, all fixed before the
+  milestone was called done:
+
+  - **The feed's calendar is UTC and the dashboard's is the host's.** At
+    UTC+05:30 those are different days for five and a half hours out of every
+    twenty-four, so `live()` asked for the wrong date and would have shown
+    nothing through Saturday evening in Europe. Fixtures now carry host-local
+    date and kick-off, the live window is anchored to UTC and filtered by
+    status rather than by date, and a requested window is widened a day at each
+    end and narrowed back in the answer. The regression test pins `TZ`, because
+    in UTC — which is what CI runs in — the bug does not reproduce.
+  - **A window wider than ten days is a `400`.** A fourteen-day ask came back
+    empty. Longer windows are split into consecutive requests rather than
+    truncated.
+  - **`dateTo` is an instant, not a day.** The feed's window is
+    `[dateFrom T00:00Z, dateTo T00:00Z]`, so a same-day window answers nothing
+    and "yesterday to today" excludes today. `live()` returned nothing while
+    two matches were in play, and would have done so permanently. Dates in the
+    module are inclusive days now, converted in one place at the wire — and
+    because consecutive chunks then share an instant, a midnight kick-off (every
+    Brazilian evening match) is merged by `match_id` instead of appearing
+    twice.
+  - **This feed's errors are in the body, not the status line.** It sends an
+    empty reason phrase, so an invalid token and an over-wide window both read
+    `answered 400: `. The JSON `message` is now what a reader is shown.
+
+  Two smaller decisions worth recording. `available` makes the same
+  today-window request `live()` does, so a refused key renders as a key problem
+  instead of as "no fixtures scheduled in the next week" — which is a statement
+  about football. And answers are memoised for sixty seconds by an `lru_cache`
+  keyed on a time bucket at module level: the free tier allows ten calls a
+  minute, Streamlit reruns the script on every click, and the context builds a
+  fresh provider on every rerun, so an instance cache would be empty every time
+  it was read.
+
+The rest of this entry is the full independent audit of the repository that
+preceded the milestone above. No modelling code, feature, split, metric or
+reported number changed in either; every fix is on the serving and packaging
+side, and the walk-forward tables are the same tables.
 
 ### Fixed
 

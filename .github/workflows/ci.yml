@@ -396,14 +396,16 @@ jobs:
       - name: No view names a provider
         # The property the whole provider layer exists for. A view asks the
         # context for a source and renders whatever answers; it must not import
-        # a concrete one, because the day a view does, connecting
-        # football-data.org stops being one class and becomes a search.
+        # a concrete one, because the day a view does, connecting the next
+        # feed stops being one class and becomes a search. Milestone 13
+        # connected football-data.org under exactly this rule and moved no
+        # view; the module is named here so the rule keeps covering it.
         #
         # `dashboard/context.py` names them because something must, and a
         # service may compose one — that is what a service is. A *view* may
         # not, and that is the line this checks.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.providers\.(historical|api|null)\b' \
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.providers\.(historical|api|null|football_data_org)\b' \
                       dashboard/views || true)
           if [ -n "$offenders" ]; then
             echo "a view imports a concrete provider:"; echo "$offenders"; exit 1

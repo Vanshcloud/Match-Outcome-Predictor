@@ -58,11 +58,17 @@ services:
       # probability over the compose network, which is the whole reason the URL
       # is a setting rather than a literal in the page.
       DASHBOARD_API_URL: http://api:8000
-      # Which fixture feed supplies today, upcoming and live. `none` is the
-      # only one registered: this project ingests results, so a match that has
-      # not been played is in no table here. Milestone 13 adds a provider class
-      # and this line names it — nothing else in the dashboard changes.
-      DASHBOARD_FIXTURE_PROVIDER: none
+      # Which fixture feed supplies today, upcoming and live. `none` answers
+      # nothing on purpose: this project ingests results, so a match that has
+      # not been played is in no table here.
+      #
+      # Milestone 13 registered `football-data.org` beside it. Selecting it is
+      # this line plus a key in the environment — from a secret store, never
+      # from this file, which is committed. The variable is passed through
+      # empty by default so the container behaves like a fresh checkout: the
+      # provider says which variable to set instead of failing to start.
+      DASHBOARD_FIXTURE_PROVIDER: ${DASHBOARD_FIXTURE_PROVIDER:-none}
+      FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY:-}
       LOG_LEVEL: INFO
     volumes:
       # Read-only, and only `data/`. The dashboard reads report tables and

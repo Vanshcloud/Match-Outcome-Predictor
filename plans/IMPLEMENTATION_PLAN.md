@@ -1005,14 +1005,138 @@ is forty renders of a charting library.
 
 ---
 
-## Milestones 13–20 — the platform
+## Milestone 13 — Live fixtures ✅
+
+The milestone Milestone 12's shape was a bet about, and the bet paid: **one
+class, one registry entry, one environment variable.**
+
+```python
+# dashboard/providers/__init__.py
+FIXTURE_PROVIDERS = {"none": NullFixtures, "football-data.org": FootballDataOrgFixtures}
+```
+```bash
+export FOOTBALL_DATA_API_KEY=...            # free: football-data.org/client/register
+export DASHBOARD_FIXTURE_PROVIDER=football-data.org
+```
+
+`dashboard/providers/football_data_org.py` reads `GET /v4/matches` over a date
+window and turns the rows into the `Fixture` the cards have rendered since
+Milestone 12. Today's matches, the coming week and live scores — the three
+things the plan recorded as absent for a data reason rather than a design one —
+now have a source. Crests fill the two fields `ui.crest_html` has been drawing
+initials for.
+
+**No view moved**, which was the claim. One caption did: the sidebar read
+`✕ No fixture feed — Milestone 13`, and a status bar citing an unshipped
+milestone after it ships is a small lie a reader stops checking the rest of the
+page against. It now names the connected feed, or the provider's own reason for
+having nothing.
+
+### Where the honesty had to be spent
+
+- **It is not a second ingestion source.** Nothing this feed returns is written
+  to a table, joined to one, or read by a model. No model, feature, split,
+  metric or reported number changed this milestone, and no row of
+  `matches.parquet` came from anywhere new.
+- **Its ids do not pretend to be canonical.** `fdorg-497821`, not
+  `make_match_id(...)`. A match id in this project hashes the natural key
+  *including the team names as its source spells them*, and this feed says
+  "Manchester United FC" where the ingested table says "Man United". An id that
+  looked canonical and joined to nothing would be worse than one that names
+  where it came from. `src/ingestion/teams.py::ALIASES` is therefore still
+  empty: an alias table with no reader would be a guess, and the milestone that
+  earns it is one that *ingests* a second source.
+- **The visible consequence, stated rather than hidden.** A card from this feed
+  opens a match page with no table row and no forecast, and that page already
+  said so before this milestone existed. The shipped model is fitted on
+  finished matches; a fixture that has not been played has no history to price.
+- **Nine competitions of thirty-nine**, which is the free tier. A followed
+  competition outside them is dropped from the filter, because there is no code
+  here to send for it, and a reader who follows *only* such competitions is
+  told that in a sentence.
+- **A rejected key does not read as "no matches".** `available` makes the
+  same window request `live()` makes, so a refused key renders as a key problem
+  — in the feed's own words, *"Your API token is invalid."* — rather than as a
+  claim that no football is scheduled this week. The memo means the two are one
+  call.
+
+### What the live API said that review did not
+
+The provider was written against the published v4 contract and reviewed
+against it. A smoke test with a real key found three things a reading could
+not, which is the entire argument for spending the ten minutes:
+
+- **Two clocks.** The feed indexes by UTC; `matchday` asks about
+  `date.today()`, which is the host's. This machine runs at UTC+05:30, where
+  those are *different days* for five and a half hours out of every
+  twenty-four — so `live()` asked the feed for tomorrow and would have gone
+  blank through Saturday evening in Europe, and tonight's late kick-offs were
+  outside the "today and next seven days" window. Fixtures now carry host-local
+  date and kick-off, the live window is anchored to UTC and filtered by
+  *status* rather than by date, and a requested window is widened a day at each
+  end and narrowed back in the answer. The regression test pins `TZ` to
+  `Asia/Kolkata`, because in UTC — which is what CI runs in — the bug does not
+  reproduce.
+- **A ten-day cap.** `dateFrom`/`dateTo` more than ten days apart is answered
+  `400 Specified period must not exceed 10 days`. A fourteen-day ask therefore
+  returned nothing. Longer windows are now split into consecutive requests
+  rather than truncated: a page missing fixtures with nothing on it saying so
+  is the failure this provider layer is arranged against.
+- **`dateTo` is an instant, not a day.** The window is
+  `[dateFrom T00:00Z, dateTo T00:00Z]` and includes both ends, so `09-05..09-05`
+  answers *nothing at all* and `09-05..09-06` answers the whole of the 5th plus
+  anything kicking off at exactly midnight on the 6th. The live window was
+  built as "yesterday to today", which under that rule excludes today
+  entirely — `live()` returned nothing while two matches were in play, and it
+  would have done so permanently. Every date in the module is now an inclusive
+  day with one conversion at the wire.
+- **Consecutive chunks share an instant**, which the first fix turned into a
+  duplicate: a match at exactly midnight UTC — every Brazilian evening
+  kick-off — is returned by both the chunk that ends there and the one that
+  begins there. Chunks are merged by `match_id` rather than concatenated.
+- **The 400s explain themselves in the body, not the status line.** This feed
+  sends an empty HTTP reason phrase, so an invalid token and an over-wide
+  window both read `answered 400: ` — the whole useful half is the JSON
+  `message`. It is now what a reader is shown: *"Your API token is invalid."*
+
+One documented claim was also wrong and is corrected: a paid competition left
+in the filter is *ignored* (`competitions=PL,BL2` answers 200 with the PL rows),
+not refused with a 403. Unsupported ids are still dropped, for the simpler
+reason that this project's ids are its own and there is no code to send.
+
+One more thing the feed does that this provider deliberately does not correct:
+its status can lag. A 16:45 kick-off was still `IN_PLAY` at 22:40 with a
+current `lastUpdated`. Inferring "that must have finished" from the clock would
+be the dashboard inventing a result, so the feed's status is rendered as given.
+
+Measured on the live feed with every fix in: **126 fixtures** over the coming
+week across all nine competitions, **2 matches in play** with their scores,
+**22** Premier League fixtures over fourteen days (two chunks, no seam
+duplicate), **113 of 113** finished rows in a past window parsed with scores,
+crests on every row, an empty far-future window answered as empty with no
+error, a repeat call served from the memo in 0.2 ms, and an invalid key
+reported as *"Your API token is invalid."* The home page renders **125 cards**
+with no exception and the shell reads `✓ Fixture feed · football-data.org`.
+
+### The one thing that is not in the class
+
+Ten requests a minute, against a Streamlit script that reruns on every click.
+Answers are memoised for sixty seconds by an `lru_cache` keyed on a time
+bucket — module level, because the context builds a fresh provider on every
+rerun and an instance cache would be empty every time it was read. That is the
+whole of the caching: the stdlib already holds, bounds and evicts the entries.
+
+---
+
+## Milestones 14–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
-ones after it. These are the ones it was shaped for.
+ones after it. These are the ones it was shaped for; Milestone 13 above is the
+first of them spent, and it cost what the table said it would.
 
 | | | Where it plugs in |
 |---|---|---|
-| 13 | Live fixture ingestion | `dashboard/providers/` — football-data.org, API-Football or SportMonks behind `FixtureProvider` |
+| 13 ✅ | Live fixture ingestion | Done — `dashboard/providers/football_data_org.py` behind `FixtureProvider` |
 | 14 | Accounts and saved favourites | `dashboard/domain/favourites.py` |
 | 15 | Real-time tracking and notifications | The fixture feed, plus a push transport |
 | 16 | Cloud deployment, monitoring, caching | The image and compose file that already exist |

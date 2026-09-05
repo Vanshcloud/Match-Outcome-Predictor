@@ -14,9 +14,11 @@ answer came from a Parquet file, an HTTP feed or a websocket.
 
 :class:`FixtureProvider`
     What is *going* to be played, and what is being played right now. Answered
-    today by :class:`~dashboard.providers.null.NullFixtures`, which returns
-    nothing and says so — the football-data.org, API-Football or SportMonks
-    adapter that replaces it is Milestone 13, and it is one class.
+    by :class:`~dashboard.providers.football_data_org.FootballDataOrgFixtures`
+    where a key is configured, and by
+    :class:`~dashboard.providers.null.NullFixtures` — which returns nothing and
+    says so — where one is not. Milestone 13 was the first of these, and it was
+    one class satisfying this protocol.
 
 :class:`PredictionProvider`
     What the model says. Answered by

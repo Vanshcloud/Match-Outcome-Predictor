@@ -12,6 +12,60 @@ extra steps.
 
 ### Added
 
+- **Milestone 15 — live tracking and alerts.** The live strip repaints itself
+  every sixty seconds (`@st.fragment(run_every=…)`) and says what changed since
+  it last looked: a kick-off, a goal, a final whistle. Each is a toast in the
+  page and, where a transport is configured, a POST to it.
+
+  Milestone 12 estimated this as "a second method on the fixture feed". The
+  card estimate held — no card changed — but the method did not: the feed
+  already had `live()`, and what was missing was *memory*.
+  `dashboard/services/watch.py` keeps one snapshot per browser tab and diffs
+  two looks. Per tab, because "since *I* last looked" is a per-tab question and
+  a snapshot in the profile store would mean the first tab to refresh silently
+  consumed the second one's news.
+
+  Two rules in that diff are wrong in the obvious implementation. **The first
+  look announces nothing** — with no previous snapshot there is no "since", and
+  a toast reading "kick-off" for a match already an hour old tells a reader
+  something untrue. **An empty answer is not full time** — the feed returns
+  nothing both when nothing is in play and when it could not be reached, so
+  absence read as "the match ended" would announce eight final whistles because
+  of one rate limit; a look the feed did not answer produces no events at all.
+  A changing *minute* is deliberately not an event, which is also why the free
+  tier's missing `minute` field costs this milestone nothing.
+
+  Full time turned out to be a match that has *gone* from the answer rather
+  than one whose status changed, because `live()` returns what is in play — so
+  a snapshot holds fixtures rather than a status string: by the time a match is
+  over, the snapshot is the only record of the score it finished on.
+
+  The transport is `providers/webhook.py` behind a new `Notifier` protocol,
+  with `NullNotifier` as the default — the same registry-and-environment-variable
+  shape as the fixture feed. One body serves the common receivers (`text` for
+  Slack, `content` for Discord, the event's own fields for anything
+  programmatic), so there is no "which flavour of webhook" setting. A transport
+  that refuses is a `False` and a caption, never an exception, and nothing is
+  retried: a POST that failed may already have been acted on, so a duplicate
+  goal alert cannot be this dashboard's doing.
+
+  **Alerts exist while something is watching** — the page has to be open. A
+  process that polls with every browser closed is a different thing with its
+  own lifecycle, and it was left out rather than half-built.
+
+  Verified against two matches genuinely in play, with a local webhook
+  receiver: the first look announced nothing, a rewound snapshot produced
+  exactly one `goal` event, and a match removed from the answer produced one
+  `full-time` carrying the score it finished on. Two dead branches were deleted
+  rather than tested — a branch no test can honestly reach is a branch that
+  should not exist.
+
+  CI's session-state rule was restated in the process. Milestone 14 wrote it as
+  "exactly one module", which was stricter than the property it protects; it now
+  checks that property directly — `dashboard/views/` never touches session
+  state, and outside the views only the two modules whose whole job is
+  per-reader state may.
+
 - **Milestone 14 — accounts and saved favourites.** Favourites used to live in
   `st.session_state`: per browser tab, gone when it closed. They now live in a
   JSON file keyed by whoever the reader is, and Milestone 12's estimate held —

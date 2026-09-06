@@ -18,10 +18,19 @@ import streamlit as st
 
 from dashboard import context, ui
 from dashboard.domain import competition, favourites
-from dashboard.services import history, matchday
+from dashboard.domain.match import EventKind
+from dashboard.services import history, matchday, watch
 from dashboard.services.matchday import Section
 
 LIVE_COLUMNS = 4
+
+EVENT_ICONS = {
+    EventKind.KICK_OFF: "🟢",
+    EventKind.GOAL: "⚽",
+    EventKind.FULL_TIME: "🔔",
+}
+"""One glyph per kind, so a reader who catches a toast out of the corner of an
+eye knows whether to look."""
 
 
 def render() -> None:
@@ -29,6 +38,8 @@ def render() -> None:
     ctx = context.resolve()
     st.title("Match centre")
     _headline(ctx)
+
+    live_now(ctx)
 
     page = matchday.home_page(
         fixtures=ctx.fixtures,
@@ -38,7 +49,12 @@ def render() -> None:
         teams=favourites.teams(),
     )
     for section in page.sections:
-        render_section(section)
+        # Live is drawn above, by a fragment that repaints on its own clock.
+        # The section is still assembled — `home_page` is what a test and one
+        # day a second front end call — and rendering it twice is the only
+        # thing that would be wrong.
+        if section is not page.live:
+            render_section(section)
 
 
 def render_live() -> None:
@@ -50,12 +66,10 @@ def render_live() -> None:
     ctx = context.resolve()
     st.title("Live centre")
     st.caption(
-        "Every match in play, across the competitions you follow. Refreshes "
-        "when the page does; a feed that pushes updates is Milestone 15."
+        f"Every match in play, across the competitions you follow. Refreshes "
+        f"itself every {watch.REFRESH_SECONDS} seconds."
     )
-    render_section(
-        matchday.live_section(ctx.fixtures, favourites.league_filter()), columns=LIVE_COLUMNS
-    )
+    live_now(ctx, columns=LIVE_COLUMNS)
 
     ui.section("What this page is, and what it is not", "with a feed connected")
     st.markdown(
@@ -69,6 +83,33 @@ def render_live() -> None:
         "repository measures, and are not a rendering change. The model card "
         "is explicit that nothing here is fitted on in-play state."
     )
+
+
+# ---- the live strip, which reruns itself -------------------------------------
+
+
+@st.fragment(run_every=watch.REFRESH_SECONDS)
+def live_now(ctx: context.Context, *, columns: int = 3) -> None:
+    """What is in play, repainted without the reader touching anything.
+
+    A fragment rather than a whole-page rerun: everything else here is a file
+    read or an HTTP call — the results table, the reliability tables, the
+    service's fixture list — and repainting all of it every minute to move one
+    score would be the most expensive way to show the cheapest change.
+
+    ``run_every`` is matched to the feed's own memo, so a refresh that finds
+    nothing new costs no request at all.
+    """
+    fixtures, events = watch.since_last_look(
+        ctx.fixtures,
+        competitions=favourites.league_filter(),
+        teams=favourites.teams(),
+    )
+    for event in events:
+        st.toast(event.message, icon=EVENT_ICONS[event.kind])
+    watch.announce(events, ctx.notifier)
+
+    render_section(matchday.live_section(ctx.fixtures, fixtures=fixtures), columns=columns)
 
 
 # ---- rendering a section -----------------------------------------------------

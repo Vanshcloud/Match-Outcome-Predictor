@@ -33,9 +33,12 @@ from streamlit.testing.v1 import AppTest
 
 from dashboard.context import Context
 from dashboard.domain import identity, store
-from dashboard.domain.match import Fixture, MatchStatus, Prediction
+from dashboard.domain.match import Fixture, MatchEvent, MatchStatus, Prediction
+from dashboard.providers import football_data_org
 from dashboard.providers.historical import HistoricalResults
-from dashboard.providers.null import NullFixtures
+from dashboard.providers.null import NullFixtures, NullNotifier
+from dashboard.services import watch
+from dashboard.views import home as dashboard_home
 from src.models.ensemble import SHIPPED
 from src.utils.config import load_settings
 from src.utils.paths import PROJECT_ROOT
@@ -139,6 +142,20 @@ class StubPredictions:
         )
 
 
+class Recorder:
+    """A transport that keeps what it was told instead of posting it."""
+
+    name = "recorder"
+    available = True
+
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    def send(self, event: MatchEvent) -> bool:
+        self.sent.append(event.message)
+        return True
+
+
 class ConnectedFeed:
     """The fixture feed Milestone 13 registers, stubbed."""
 
@@ -185,6 +202,7 @@ def _stub_context(
     *,
     predictions: object | None = None,
     feed: object | None = None,
+    notifier: object | None = None,
     matches: bool = True,
     reports: bool = True,
 ) -> None:
@@ -206,6 +224,7 @@ def _stub_context(
             results=HistoricalResults(settings.paths.processed_dir / "matches.parquet"),
             predictions=predictions if predictions is not None else StubPredictions(),  # type: ignore[arg-type]
             fixtures=feed if feed is not None else NullFixtures(),  # type: ignore[arg-type]
+            notifier=notifier if notifier is not None else NullNotifier(),  # type: ignore[arg-type]
         )
 
     monkeypatch.setattr("dashboard.context.resolve", resolve)
@@ -221,6 +240,7 @@ def run(
     *,
     predictions: object | None = None,
     feed: object | None = None,
+    notifier: object | None = None,
     matches: bool = True,
     reports: bool = True,
     query: dict[str, str] | None = None,
@@ -237,6 +257,7 @@ def run(
         monkeypatch,
         predictions=predictions,
         feed=feed,
+        notifier=notifier,
         matches=matches,
         reports=reports,
     )
@@ -253,11 +274,18 @@ def run_shell(
     *,
     predictions: object | None = None,
     feed: object | None = None,
+    notifier: object | None = None,
     matches: bool = True,
 ) -> AppTest:
     """The whole application, chrome and all, with stub providers behind it."""
     _stub_context(
-        tmp_path, monkeypatch, predictions=predictions, feed=feed, matches=matches, reports=True
+        tmp_path,
+        monkeypatch,
+        predictions=predictions,
+        feed=feed,
+        notifier=notifier,
+        matches=matches,
+        reports=True,
     )
     return AppTest.from_file(APP, default_timeout=TIMEOUT).run()
 
@@ -999,3 +1027,74 @@ def test_signing_in_is_wired_to_streamlits_own_login(
     signin[0].click().run()
     assert app.exception == []
     assert called == ["login"]
+
+
+# ---- what changed while the reader was looking (Milestone 15) -----------------
+
+
+class ChangingFeed:
+    """A feed whose live answer differs between looks, like a real one."""
+
+    name = "stub-feed"
+    available = True
+    error = None
+
+    def __init__(self, *answers: list[Fixture]) -> None:
+        self._answers = list(answers)
+
+    def live(self, **_filters: object) -> list[Fixture]:
+        return self._answers.pop(0) if len(self._answers) > 1 else self._answers[0]
+
+    def scheduled(self, **_filters: object) -> list[Fixture]:
+        return []
+
+
+def _live(**overrides: object) -> Fixture:
+    goals: dict[str, object] = {"home_goals": 0, "away_goals": 0}
+    goals.update(overrides)
+    return _fixture(status=MatchStatus.LIVE, **goals)
+
+
+def test_the_first_look_at_the_live_strip_toasts_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening the page during a match must not announce a kick-off that
+    happened an hour ago."""
+    app = run("home", tmp_path, monkeypatch, feed=ChangingFeed([_live()]))
+    assert app.exception == []
+    assert [one.value for one in app.toast] == []
+    assert CLUB in text_of(app)
+
+
+def test_a_goal_while_the_page_is_open_is_a_toast_and_a_post(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The milestone, end to end through the view: one change, one toast, one
+    delivery to whatever transport is configured."""
+    recorder = Recorder()
+    feed = ChangingFeed([_live()], [_live(home_goals=1)])
+    app = run("home", tmp_path, monkeypatch, feed=feed, notifier=recorder)
+    app.run()
+    assert app.exception == []
+    assert [one.value for one in app.toast] == [f"Goal: {CLUB} 1-0 {RIVAL}"]
+    assert recorder.sent == [f"Goal: {CLUB} 1-0 {RIVAL}"]
+
+
+def test_the_live_strip_repaints_on_its_own_clock() -> None:
+    """A fragment rather than a whole-page rerun: everything else on this page
+    is a file read or an HTTP call, and repainting all of it to move one score
+    would be the most expensive way to show the cheapest change."""
+    assert dashboard_home.live_now.__wrapped__ is not None  # it is a fragment
+    assert watch.REFRESH_SECONDS == football_data_org.CACHE_SECONDS
+
+
+def test_with_no_transport_configured_a_goal_is_still_a_toast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The toast is in the page and needs nothing configured. The transport is
+    the half that is optional."""
+    feed = ChangingFeed([_live()], [_live(away_goals=1)])
+    app = run("home", tmp_path, monkeypatch, feed=feed)
+    app.run()
+    assert [one.value for one in app.toast] == [f"Goal: {CLUB} 0-1 {RIVAL}"]
+    assert app.exception == []

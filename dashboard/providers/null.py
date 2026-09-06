@@ -17,7 +17,7 @@ import datetime as dt
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from dashboard.domain.match import Fixture
+from dashboard.domain.match import Fixture, MatchEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,3 +51,27 @@ class NullFixtures:
 
     def live(self, *, competitions: Sequence[str] | None = None) -> list[Fixture]:
         return []
+
+
+@dataclass(frozen=True, slots=True)
+class NullNotifier:
+    """Nowhere to send an event, which is the default and not a failure.
+
+    A dashboard with no webhook configured still tracks matches and still
+    toasts what changed — the toast is in the page and needs no transport. This
+    is the *other* half, and it says what configuring one would add rather than
+    pretending an event went somewhere.
+    """
+
+    name: str = "none"
+    available: bool = False
+
+    reason: str = (
+        "No transport is configured, so events appear here and nowhere else. "
+        "Set `DASHBOARD_WEBHOOK_URL` to post them to Slack, Discord, ntfy or "
+        "anything else that accepts a POST."
+    )
+
+    def send(self, event: MatchEvent) -> bool:
+        """Deliver nothing, and say so by returning ``False``."""
+        return False

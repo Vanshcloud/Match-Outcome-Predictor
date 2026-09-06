@@ -179,9 +179,9 @@ reason until one is configured.
 
 ### Live centre
 The same feed given the whole screen, for the weekend with forty matches
-running at once. Plus a short note on what connecting a provider changes, and
-what it does not: in-play probabilities are a *different model* from the one
-this repository measures, not a rendering change.
+running at once, repainting itself every sixty seconds. Plus a short note on
+what this page is and is not: in-play probabilities are a *different model*
+from the one this repository measures, not a rendering change.
 
 ### Competitions
 Every competition in `configs/leagues.yaml`, grouped by country, each with its
@@ -216,6 +216,75 @@ The three panels Milestone 12 shipped, unchanged in substance: the scoreboard,
 the reliability diagram filtered by competition and fold, and the
 per-competition breakdown. Moved onto their own page so the home page can be
 about football and this one about the forecaster.
+
+## Live tracking and alerts
+
+Milestone 15. The live strip **repaints itself** — `@st.fragment(run_every=60)`
+— and says what changed since it last looked.
+
+A fragment rather than a whole-page rerun: everything else on the home page is
+a file read or an HTTP call (the results table, the reliability tables, the
+service's fixture list), and repainting all of it every minute to move one
+score would be the most expensive way to show the cheapest change. The interval
+is matched to the feed's own sixty-second memo rather than chosen, so a refresh
+that finds nothing new costs no request at all — which matters on a free tier
+of ten a minute.
+
+### Three events, and the rules that keep them honest
+
+| | When |
+|---|---|
+| 🟢 Kick-off | A match appears in the live answer that was not there before |
+| ⚽ Goal | A tracked match's score changed |
+| 🔔 Full time | A tracked match has gone from the live answer |
+
+Two of those rules are wrong in the obvious implementation and are worth
+stating:
+
+- **The first look announces nothing.** With no previous snapshot there is no
+  "since", and a page that toasted a kick-off for a match already an hour old
+  would be telling a reader something untrue.
+- **An empty answer is not full time.** The feed returns nothing both when
+  nothing is in play and when it could not be reached, so a diff that read
+  absence as "the match ended" would announce eight final whistles because of
+  one rate limit. The feed is asked whether it thinks it answered, and a failed
+  look produces no events at all.
+
+A changing *minute* is deliberately not an event. A notification per minute of
+a match is a notification a person turns off.
+
+The snapshot lives in `st.session_state` — one per browser tab, because "since
+*I* last looked" is a per-tab question, and a snapshot in the profile store
+would mean the first tab to refresh silently consumed the second one's news.
+
+### Where an event goes
+
+| `DASHBOARD_NOTIFIER` | Class | What it does |
+|---|---|---|
+| `none` (default) | `providers/null.py` | Nothing, and says what configuring a transport would add |
+| `webhook` | `providers/webhook.py` | One POST per event to `DASHBOARD_WEBHOOK_URL` |
+
+```bash
+export DASHBOARD_NOTIFIER=webhook
+export DASHBOARD_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+The toast is in the page and needs no transport; the webhook is the half that
+reaches a phone. One body serves the common receivers — `text` for Slack,
+`content` for Discord, and the event's own fields for anything programmatic —
+so there is no "which flavour of webhook" setting, which is a setting nobody
+can answer without opening the receiving service's documentation anyway.
+
+A transport that refuses is a `False` and a caption, never an exception: the
+strip it hangs off is about football, and a webhook that 404s must not cost a
+reader the scores. Nothing is retried — `HttpClient` retries only GET and HEAD,
+and a POST that failed may already have been acted on, so a duplicate goal
+alert can never be this dashboard's doing.
+
+**Alerts exist while something is watching.** The page has to be open. A
+process that polls with every browser closed is a different thing with its own
+lifecycle — a second consumer of a ten-request budget, reading favourites
+outside Streamlit — and it is not in this milestone.
 
 ## Favourites
 
@@ -319,6 +388,8 @@ set of contrast ratios to check.
 | `DASHBOARD_FIXTURE_PROVIDER` | `none` | Which fixture feed supplies today, upcoming and live: `none` or `football-data.org` |
 | `FOOTBALL_DATA_API_KEY` | unset | The key for that feed. Environment only — `configs/config.yaml` is committed |
 | `DASHBOARD_PROFILE_STORE` | `<DATA_DIR>/dashboard/profiles.json` | Where saved favourites live. Compose points it at a writable volume |
+| `DASHBOARD_NOTIFIER` | `none` | Where match events are sent: `none` or `webhook` |
+| `DASHBOARD_WEBHOOK_URL` | unset | The URL `webhook` posts to. A credential — environment only |
 | `DATA_DIR` | `data` | Where the match table and the report tables are read from |
 | `DASHBOARD_PORT` | `8501` | Container only; the bind address is a literal `0.0.0.0` |
 

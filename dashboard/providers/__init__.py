@@ -22,15 +22,19 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 
-from dashboard.providers.base import FixtureProvider
+from dashboard.providers.base import FixtureProvider, Notifier
 from dashboard.providers.football_data_org import FootballDataOrgFixtures
-from dashboard.providers.null import NullFixtures
+from dashboard.providers.null import NullFixtures, NullNotifier
+from dashboard.providers.webhook import WebhookNotifier
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 FIXTURE_PROVIDER_ENV = "DASHBOARD_FIXTURE_PROVIDER"
 DEFAULT_FIXTURE_PROVIDER = "none"
+
+NOTIFIER_ENV = "DASHBOARD_NOTIFIER"
+DEFAULT_NOTIFIER = "none"
 
 FIXTURE_PROVIDERS: dict[str, Callable[[], FixtureProvider]] = {
     "none": NullFixtures,
@@ -67,4 +71,33 @@ def fixtures(name: str | None = None) -> FixtureProvider:
             ", ".join(sorted(FIXTURE_PROVIDERS)),
         )
         return NullFixtures()
+    return build()
+
+
+NOTIFIERS: dict[str, Callable[[], Notifier]] = {
+    "none": NullNotifier,
+    "webhook": WebhookNotifier,
+}
+"""Where a match event can be sent, by the name that selects it.
+
+The same shape as :data:`FIXTURE_PROVIDERS` and read the same way, because
+"which transport is configured" and "which feed is configured" are the same
+question asked of different things. Milestone 15 added ``webhook``; a phone or
+an inbox is one more entry.
+"""
+
+
+def notifier(name: str | None = None) -> Notifier:
+    """The configured transport, or the one that delivers nothing.
+
+    Falls back rather than failing, for the reason the fixture registry does: a
+    dashboard that refused to start over a typo in an environment variable —
+    on a page whose alerts are one strip of six — would be a worse failure than
+    the misconfiguration.
+    """
+    chosen = name or os.environ.get(NOTIFIER_ENV) or DEFAULT_NOTIFIER
+    build = NOTIFIERS.get(chosen)
+    if build is None:
+        logger.warning("unknown notifier %r; known: %s", chosen, ", ".join(sorted(NOTIFIERS)))
+        return NullNotifier()
     return build()

@@ -120,3 +120,65 @@ class Prediction:
         generated from — see :mod:`dashboard.services.reports`.
         """
         return float(self.probabilities[self.outcome])
+
+
+class EventKind(StrEnum):
+    """What changed about a match since the page last looked.
+
+    Three, because they are the three a reader would want told: it started,
+    somebody scored, it finished. A change in the *minute* is not an event —
+    it happens every minute of every match, and a notification that fires
+    ninety times per fixture is one a person turns off.
+    """
+
+    KICK_OFF = "kick-off"
+    GOAL = "goal"
+    FULL_TIME = "full-time"
+
+
+@dataclass(frozen=True, slots=True)
+class MatchEvent:
+    """One change, as a toast reads it and a webhook posts it.
+
+    Carries the fixture rather than a copy of its fields, so a transport that
+    wants the competition, the kick-off time or the crests has them without
+    this type growing a column every time one is asked for.
+    """
+
+    kind: EventKind
+    fixture: Fixture
+
+    @property
+    def score(self) -> str:
+        """``"2-1"``, or an empty string before there is one."""
+        if not self.fixture.has_score:
+            return ""
+        return f"{self.fixture.home_goals}-{self.fixture.away_goals}"
+
+    @property
+    def message(self) -> str:
+        """One line a person reads, whatever it is delivered by.
+
+        The same sentence in a toast and in a webhook post on purpose: two
+        wordings of one event is two things to keep in step, and the first time
+        they disagree is the first time somebody doubts both.
+        """
+        home, away = self.fixture.teams
+        if self.kind is EventKind.KICK_OFF:
+            return f"Kick-off: {home} v {away}"
+        if self.kind is EventKind.FULL_TIME:
+            return f"Full time: {home} {self.score} {away}".replace("  ", " ")
+        return f"Goal: {home} {self.score} {away}"
+
+    def as_payload(self) -> dict[str, str | None]:
+        """The event as a machine reads it, for a transport that wants fields."""
+        return {
+            "event": str(self.kind),
+            "message": self.message,
+            "match_id": self.fixture.match_id,
+            "competition_id": self.fixture.competition_id,
+            "home_team": self.fixture.home_team,
+            "away_team": self.fixture.away_team,
+            "score": self.score or None,
+            "kickoff": self.fixture.kickoff,
+        }

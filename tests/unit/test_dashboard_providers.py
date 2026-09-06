@@ -25,14 +25,19 @@ import requests
 
 from dashboard import providers
 from dashboard.client import ServiceError
-from dashboard.domain.match import MatchStatus
-from dashboard.providers import football_data_org
+from dashboard.domain.match import EventKind, Fixture, MatchEvent, MatchStatus
+from dashboard.providers import football_data_org, webhook
 from dashboard.providers.api import ApiPredictions, as_prediction, to_fixtures
-from dashboard.providers.base import FixtureProvider, PredictionProvider, ResultProvider
+from dashboard.providers.base import (
+    FixtureProvider,
+    Notifier,
+    PredictionProvider,
+    ResultProvider,
+)
 from dashboard.providers.football_data_org import FootballDataOrgFixtures
 from dashboard.providers.historical import HistoricalResults
 from dashboard.providers.historical import to_fixtures as results_to_fixtures
-from dashboard.providers.null import NullFixtures
+from dashboard.providers.null import NullFixtures, NullNotifier
 from tests.factories import league_frame, season_labels
 
 LEAGUE = league_frame(seasons=season_labels(2024, 2), teams=8)
@@ -322,6 +327,17 @@ class StubHttp:
         self.calls: list[dict[str, Any]] = []
 
     def get(self, url: str, **kwargs: Any) -> StubResponse:
+        return self._record(url, kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> StubResponse:
+        """Milestone 15 posts through the same client the feeds read with."""
+        return self._record(url, kwargs)
+
+    def close(self) -> None:
+        """`HttpClient` owns a connection pool, so standing in for one means
+        standing in for closing it."""
+
+    def _record(self, url: str, kwargs: dict[str, Any]) -> StubResponse:
         self.calls.append({"url": url, **kwargs})
         if self._fails is not None:
             raise self._fails
@@ -763,3 +779,119 @@ def test_a_service_answering_a_component_list_that_is_not_a_list_is_refused() ->
     provider = predictions(health={"status": "ok", "components": "all good"})
     assert not provider.available
     assert "not this project's API" in str(provider.error)
+
+
+# ---- where an event is sent (Milestone 15) -----------------------------------
+
+
+def event(kind: MatchEvent | EventKind = EventKind.GOAL) -> MatchEvent:
+    fixture = Fixture(
+        match_id="fdorg-1",
+        competition_id="ENG_1",
+        date=dt.date(2026, 9, 6),
+        home_team="Arsenal",
+        away_team="Chelsea",
+        status=MatchStatus.LIVE,
+        home_goals=2,
+        away_goals=1,
+        kickoff="20:30 IST",
+    )
+    return MatchEvent(kind, fixture)  # type: ignore[arg-type]
+
+
+def test_with_no_transport_configured_events_go_nowhere_and_say_so() -> None:
+    """The default. The toast is in the page and needs no transport; this is
+    the other half, and it must not pretend an event was delivered."""
+    sink = NullNotifier()
+    assert not sink.available
+    assert not sink.send(event())
+    assert "DASHBOARD_WEBHOOK_URL" in sink.reason
+
+
+def test_a_webhook_with_no_url_names_the_variable_rather_than_posting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(webhook.WEBHOOK_URL_ENV, raising=False)
+    sink = webhook.WebhookNotifier()
+    assert not sink.available
+    assert not sink.send(event())
+    assert webhook.WEBHOOK_URL_ENV in str(sink.error)
+
+
+def test_an_event_is_posted_in_the_shape_slack_discord_and_a_script_all_read() -> None:
+    http = StubHttp()
+    sink = webhook.WebhookNotifier(url="https://hooks.test/abc", http=http)  # type: ignore[arg-type]
+    assert sink.send(event())
+    assert sink.error is None
+    (call,) = http.calls
+    assert call["url"] == "https://hooks.test/abc"
+    body = call["json"]
+    assert body["text"] == "Goal: Arsenal 2-1 Chelsea"  # Slack
+    assert body["content"] == body["text"]  # Discord
+    assert body["event"] == "goal"  # anything programmatic
+    assert body["match_id"] == "fdorg-1"
+    assert body["score"] == "2-1"
+
+
+def test_a_webhook_that_refuses_is_a_false_and_a_caption_not_an_exception() -> None:
+    """The live section it hangs off is about football. A transport that 404s
+    must not cost a reader the scores."""
+    response = requests.Response()
+    response.status_code = 404
+    response.reason = "Not Found"
+    http = StubHttp(fails=requests.HTTPError(response=response))
+    sink = webhook.WebhookNotifier(url="https://hooks.test/gone", http=http)  # type: ignore[arg-type]
+    assert not sink.send(event())
+    assert "answered 404" in str(sink.error)
+
+
+def test_a_webhook_that_cannot_be_reached_says_that_instead() -> None:
+    http = StubHttp(fails=requests.ConnectionError("no route to host"))
+    sink = webhook.WebhookNotifier(url="https://hooks.test/abc", http=http)  # type: ignore[arg-type]
+    assert not sink.send(event())
+    assert "could not be reached" in str(sink.error)
+
+
+def test_a_client_this_transport_built_is_closed_and_an_injected_one_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Streamlit reruns the script on every interaction; a pool leaked per
+    rerun is a pool nobody is tracking. An injected one belongs to its owner."""
+    closed: list[str] = []
+
+    class Owned(StubHttp):
+        def close(self) -> None:
+            closed.append("closed")
+
+    made = Owned()
+    monkeypatch.setattr(webhook, "HttpClient", lambda **_kwargs: made)
+    assert webhook.WebhookNotifier(url="https://hooks.test/abc").send(event())
+    assert closed == ["closed"]
+
+    injected = Owned()
+    assert webhook.WebhookNotifier(url="https://hooks.test/abc", http=injected).send(event())  # type: ignore[arg-type]
+    assert closed == ["closed"]
+
+
+def test_the_url_is_read_from_the_environment_like_every_other_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(webhook.WEBHOOK_URL_ENV, "https://hooks.test/from-env")
+    assert webhook.WebhookNotifier().url == "https://hooks.test/from-env"
+
+
+def test_the_transport_is_chosen_by_environment_and_falls_back_on_a_typo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(providers.NOTIFIER_ENV, "webhook")
+    monkeypatch.setenv(webhook.WEBHOOK_URL_ENV, "https://hooks.test/abc")
+    assert providers.notifier().name == "webhook"
+    monkeypatch.setenv(providers.NOTIFIER_ENV, "telegram")
+    assert providers.notifier().name == "none"
+    monkeypatch.delenv(providers.NOTIFIER_ENV)
+    assert providers.notifier().name == "none"
+
+
+def test_every_shipped_transport_satisfies_the_interface() -> None:
+    assert isinstance(NullNotifier(), Notifier)
+    assert isinstance(webhook.WebhookNotifier(url="https://hooks.test/abc"), Notifier)

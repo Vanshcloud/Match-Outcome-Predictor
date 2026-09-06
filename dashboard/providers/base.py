@@ -20,6 +20,14 @@ answer came from a Parquet file, an HTTP feed or a websocket.
     says so — where one is not. Milestone 13 was the first of these, and it was
     one class satisfying this protocol.
 
+:class:`Notifier`
+    Where an event is sent. Answered by
+    :class:`~dashboard.providers.webhook.WebhookNotifier` where one is
+    configured, and by :class:`~dashboard.providers.null.NullNotifier` — which
+    delivers nothing and says so — where one is not. A fourth *kind* of thing
+    rather than a fourth source: the three above answer questions, this one is
+    told something.
+
 :class:`PredictionProvider`
     What the model says. Answered by
     :class:`~dashboard.providers.api.ApiPredictions`, over HTTP, because there
@@ -43,7 +51,7 @@ import datetime as dt
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from dashboard.domain.match import Fixture, Prediction
+from dashboard.domain.match import Fixture, MatchEvent, Prediction
 
 
 @runtime_checkable
@@ -122,3 +130,29 @@ class PredictionProvider(Provider, Protocol):
 
     def predict(self, match_id: str) -> Prediction | None:
         """One fixture, priced. ``None`` when the provider could not answer."""
+
+
+@runtime_checkable
+class Notifier(Protocol):
+    """Somewhere an event can be sent: a webhook, and one day a phone.
+
+    Not a provider — nothing is fetched — but it lives beside them and is
+    chosen the same way, because "which transport is configured" is the same
+    question as "which feed is configured" and one registry is better than two.
+
+    ``send`` returns whether the event went, and never raises. A transport that
+    is refusing must not take down a live section that is otherwise working:
+    the reader came for the football, and the reason the webhook is unhappy
+    belongs in a caption rather than in a stack trace.
+    """
+
+    @property
+    def name(self) -> str:
+        """How this transport is named in the registry and in a caption."""
+
+    @property
+    def available(self) -> bool:
+        """Whether it is configured. ``False`` is the ordinary default."""
+
+    def send(self, event: MatchEvent) -> bool:
+        """Deliver one event. ``False`` when it did not go."""

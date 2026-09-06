@@ -18,7 +18,13 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from dashboard.domain import competition, identity, store
-from dashboard.domain.match import Fixture, MatchStatus, Prediction
+from dashboard.domain.match import (
+    EventKind,
+    Fixture,
+    MatchEvent,
+    MatchStatus,
+    Prediction,
+)
 
 KICKOFF = dt.date(2026, 8, 31)
 
@@ -73,6 +79,45 @@ def test_a_flat_forecast_still_names_one_outcome() -> None:
     that raised on it would fail on the least surprising input there is."""
     flat = Prediction("abc", {"home": 1 / 3, "draw": 1 / 3, "away": 1 / 3}, "m", "1", False)
     assert flat.outcome in {"home", "draw", "away"}
+
+
+# ---- an event ----------------------------------------------------------------
+#
+# One wording per kind, and the same wording in a toast and in a webhook post:
+# two phrasings of one event is two things to keep in step, and the first time
+# they disagree is the first time somebody doubts both.
+
+
+def test_each_kind_of_event_reads_as_a_person_would_say_it() -> None:
+    playing = fixture(status=MatchStatus.LIVE, home_goals=2, away_goals=1)
+    assert MatchEvent(EventKind.GOAL, playing).message == "Goal: Aston Villa 2-1 Arsenal"
+    assert MatchEvent(EventKind.FULL_TIME, playing).message == "Full time: Aston Villa 2-1 Arsenal"
+    assert MatchEvent(EventKind.KICK_OFF, playing).message == "Kick-off: Aston Villa v Arsenal"
+
+
+def test_a_match_with_no_score_yet_has_no_score_in_its_message() -> None:
+    """A feed can report a match in play before it reports a scoreline, and
+    "Arsenal  Chelsea" with a hole in it is worse than no number."""
+    goalless = MatchEvent(EventKind.KICK_OFF, fixture(status=MatchStatus.LIVE))
+    assert goalless.score == ""
+    assert goalless.message == "Kick-off: Aston Villa v Arsenal"
+    assert MatchEvent(EventKind.FULL_TIME, goalless.fixture).message == (
+        "Full time: Aston Villa Arsenal"
+    )
+
+
+def test_an_event_carries_the_fields_a_transport_might_branch_on() -> None:
+    payload = MatchEvent(
+        EventKind.GOAL, fixture(status=MatchStatus.LIVE, home_goals=1, away_goals=0)
+    ).as_payload()
+    assert payload["event"] == "goal"
+    assert payload["match_id"] == "abc"
+    assert payload["score"] == "1-0"
+    assert payload["home_team"] == "Aston Villa"
+
+
+def test_an_unplayed_fixture_reports_no_score_rather_than_a_dash() -> None:
+    assert MatchEvent(EventKind.KICK_OFF, fixture()).as_payload()["score"] is None
 
 
 # ---- the catalogue -----------------------------------------------------------

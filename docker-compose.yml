@@ -69,6 +69,11 @@ services:
       # provider says which variable to set instead of failing to start.
       DASHBOARD_FIXTURE_PROVIDER: ${DASHBOARD_FIXTURE_PROVIDER:-none}
       FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY:-}
+      # Milestone 15: where a goal or a final whistle is posted. Both empty
+      # by default, so the container behaves like a fresh checkout — the live
+      # strip still toasts what changed, and nothing is sent anywhere.
+      DASHBOARD_NOTIFIER: ${DASHBOARD_NOTIFIER:-none}
+      DASHBOARD_WEBHOOK_URL: ${DASHBOARD_WEBHOOK_URL:-}
       # Milestone 14's favourites, on the one writable path this container has.
       # It cannot default to `data/`: that is mounted read-only below, on
       # purpose, and a container that cannot corrupt its own inputs is worth

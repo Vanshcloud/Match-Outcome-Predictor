@@ -19,9 +19,9 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from dashboard.domain.match import Fixture, MatchStatus
+from dashboard.domain.match import EventKind, Fixture, MatchStatus
 from dashboard.providers.null import NullFixtures
-from dashboard.services import history, matchday
+from dashboard.services import history, matchday, watch
 from tests.factories import league_frame, season_labels
 
 LEAGUE = league_frame(seasons=season_labels(2024, 2), teams=8)
@@ -317,3 +317,142 @@ def test_narrowed_rows_become_the_cards_a_view_renders(table: str) -> None:
     frame = history.all_matches(table)
     assert len(history.as_fixtures(frame, limit=3)) == 3
     assert len(history.as_fixtures(frame)) == len(frame)
+
+
+# ---- what changed since the page last looked (Milestone 15) -------------------
+#
+# The diff is a pure function over two lists, so most of this needs no browser.
+# What it has to get right is the pair of rules that are wrong in the obvious
+# implementation: the first look announces nothing, and a match that vanished
+# is only full time if the feed was actually answering.
+
+
+def in_play(match_id: str = "m1", *, home: int = 0, away: int = 0, **overrides: object) -> Fixture:
+    fields: dict[str, object] = {
+        "match_id": match_id,
+        "competition_id": "ENG_1",
+        "date": dt.date(2026, 9, 6),
+        "home_team": CLUB,
+        "away_team": RIVAL,
+        "status": MatchStatus.LIVE,
+        "home_goals": home,
+        "away_goals": away,
+    }
+    fields.update(overrides)
+    return Fixture(**fields)  # type: ignore[arg-type]
+
+
+class Feed:
+    """A fixture feed whose live answer changes between looks."""
+
+    name = "stub-feed"
+
+    def __init__(self, *answers: list[Fixture], available: bool = True, error: str | None = None):
+        self._answers = list(answers) or [[]]
+        self.available = available
+        self.error = error
+        self.asked: list[object] = []
+
+    def live(self, *, competitions: object = None) -> list[Fixture]:
+        self.asked.append(competitions)
+        return self._answers.pop(0) if len(self._answers) > 1 else self._answers[0]
+
+    def scheduled(self, **_filters: object) -> list[Fixture]:
+        return []
+
+
+def test_the_first_look_records_and_says_nothing() -> None:
+    """A toast reading "kick-off" for a match an hour old is a page telling a
+    reader something untrue."""
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    fixtures, events = watch.since_last_look(Feed([in_play()]))  # type: ignore[arg-type]
+    assert [one.match_id for one in fixtures] == ["m1"]
+    assert events == []
+
+
+def test_a_goal_between_two_looks_is_one_event() -> None:
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    feed = Feed([in_play(home=0)], [in_play(home=1)])
+    watch.since_last_look(feed)  # type: ignore[arg-type]
+    _, events = watch.since_last_look(feed)  # type: ignore[arg-type]
+    assert [one.kind for one in events] == [EventKind.GOAL]
+    assert events[0].message == f"Goal: {CLUB} 1-0 {RIVAL}"
+
+
+def test_a_match_that_was_not_there_before_is_a_kick_off() -> None:
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    feed = Feed([in_play("m1")], [in_play("m1"), in_play("m2")])
+    watch.since_last_look(feed)  # type: ignore[arg-type]
+    _, events = watch.since_last_look(feed)  # type: ignore[arg-type]
+    assert [(one.kind, one.fixture.match_id) for one in events] == [(EventKind.KICK_OFF, "m2")]
+
+
+def test_a_match_that_has_gone_is_full_time_with_the_score_last_seen() -> None:
+    """`live()` answers what is in play, so a finished match leaves the list
+    rather than appearing in it as finished — and by then the snapshot is the
+    only record of the score it finished on."""
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    feed = Feed([in_play(home=2, away=1)], [])
+    watch.since_last_look(feed)  # type: ignore[arg-type]
+    _, events = watch.since_last_look(feed)  # type: ignore[arg-type]
+    assert [one.kind for one in events] == [EventKind.FULL_TIME]
+    assert events[0].message == f"Full time: {CLUB} 2-1 {RIVAL}"
+
+
+def test_a_feed_that_failed_announces_nothing_rather_than_a_page_of_full_times() -> None:
+    """An empty answer means both "nothing is in play" and "the feed could not
+    be reached", and reading the second as the first would announce a final
+    whistle for every tracked match because of one rate limit."""
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    watch.since_last_look(Feed([in_play(), in_play("m2")]))  # type: ignore[arg-type]
+    fixtures, events = watch.since_last_look(Feed([], error="429 Too Many Requests"))  # type: ignore[arg-type]
+    assert (fixtures, events) == ([], [])
+
+
+def test_a_feed_that_is_not_configured_is_not_watched() -> None:
+    assert watch.since_last_look(NullFixtures()) == ([], [])  # type: ignore[arg-type]
+
+
+def test_only_the_clubs_a_reader_follows_raise_an_event() -> None:
+    """The section still shows every match in the competitions they follow;
+    being *told* is the narrower thing."""
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    other = in_play("m2", home_team="Team 04", away_team="Team 05")
+    feed = Feed([in_play(home=0), other], [in_play(home=1), other])
+    live, _ = watch.since_last_look(feed, teams=[CLUB])  # type: ignore[arg-type]
+    _, events = watch.since_last_look(feed, teams=[CLUB])  # type: ignore[arg-type]
+    assert len(live) == 2
+    assert [one.fixture.match_id for one in events] == ["m1"]
+
+
+def test_the_competitions_a_reader_follows_are_passed_to_the_feed() -> None:
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    feed = Feed([in_play()])
+    watch.since_last_look(feed, competitions=["ENG_1"])  # type: ignore[arg-type]
+    assert feed.asked == [["ENG_1"]]
+
+
+def test_a_diff_against_no_previous_look_is_empty() -> None:
+    assert watch.diff(None, [in_play()]) == []
+
+
+def test_announce_reports_how_many_went() -> None:
+    class Half:
+        def send(self, event: object) -> bool:
+            return getattr(event, "kind", None) is EventKind.GOAL
+
+    events = [
+        watch.MatchEvent(EventKind.GOAL, in_play()),
+        watch.MatchEvent(EventKind.FULL_TIME, in_play()),
+    ]
+    assert watch.announce(events, Half()) == 1  # type: ignore[arg-type]
+
+
+def test_nothing_is_announced_for_a_minute_that_merely_advanced() -> None:
+    """A notification per minute of a match is a notification a person turns
+    off, so the minute is deliberately not part of a look."""
+    st.session_state.pop(watch.SNAPSHOT_KEY, None)
+    feed = Feed([in_play(minute=10)], [in_play(minute=11)])
+    watch.since_last_look(feed)  # type: ignore[arg-type]
+    _, events = watch.since_last_look(feed)  # type: ignore[arg-type]
+    assert events == []

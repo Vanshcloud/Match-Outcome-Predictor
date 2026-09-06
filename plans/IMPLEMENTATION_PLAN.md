@@ -1209,18 +1209,91 @@ and a store that a test can reach is a store a test will write to.
 
 ---
 
-## Milestones 15–20 — the platform
+## Milestone 15 — Real-time tracking and notifications ✅
+
+Milestone 12 estimated this as *"a second method on the fixture feed; the card
+already carries a minute and a score."* The card estimate held — no card
+changed. The method did not: the feed already had `live()`, and what was
+missing was **memory**. A page that can say what is in play cannot say what
+*changed* without remembering what it said last time.
+
+### Three parts
+
+- **`dashboard/services/watch.py`** — one snapshot per browser tab, and the
+  diff between two looks. `st.session_state`, because "since *I* last looked"
+  is a per-tab question and a snapshot in the profile store would mean the
+  first tab to refresh silently consumed the second one's news.
+- **`dashboard/providers/webhook.py`** behind a new `Notifier` protocol, with
+  `NullNotifier` as the default — the same registry-plus-environment-variable
+  shape as the fixture feed, because "which transport is configured" and
+  "which feed is configured" are the same question asked of different things.
+- **`@st.fragment(run_every=60)`** on the live strip. A fragment rather than a
+  whole-page rerun: everything else on that page is a file read or an HTTP
+  call, and repainting all of it every minute to move one score would be the
+  most expensive way to show the cheapest change. The interval is *matched* to
+  the feed's memo rather than chosen, so a refresh that finds nothing new costs
+  no request at all.
+
+### The two rules that are wrong in the obvious implementation
+
+- **The first look announces nothing.** With no previous snapshot there is no
+  "since", and a toast reading "kick-off" for a match already an hour old is a
+  page telling a reader something untrue.
+- **An empty answer is not full time.** The feed returns nothing both when
+  nothing is in play and when it could not be reached, so absence read as "the
+  match ended" would announce eight final whistles because of one rate limit.
+  The feed is asked whether it thinks it answered, and a failed look produces
+  no events at all.
+
+A changing *minute* is deliberately not an event — a notification per minute of
+a match is a notification a person turns off — which is also why the free
+tier's missing `minute` field costs this milestone nothing.
+
+Full time turned out to be a match that has **gone** from the answer rather
+than one whose status changed, because `live()` returns what is in play. That
+is why a snapshot holds fixtures rather than a status-and-score string: by the
+time a match is over, the snapshot is the only record of the score it finished
+on.
+
+### What was cut, and where the line is
+
+**Alerts exist while something is watching.** The page has to be open. A
+process that polls with every browser closed is a different thing with its own
+lifecycle — a second consumer of a ten-request budget, reading favourites from
+outside Streamlit — and it was left out rather than half-built. Everything it
+would need is here: the diff is a pure function over two lists, and the
+transport is a class with one method.
+
+### Verified against real matches
+
+Two matches genuinely in play on the live feed (Alavés v Osasuna, Vitória SC v
+Casa Pia). The first look reported both and announced nothing. Rewinding the
+snapshot by one goal — the feed will not score on demand — produced exactly one
+`goal` event, delivered to a local webhook receiver; removing the match from the
+answer produced one `full-time` carrying the score it finished on. The body a
+receiver gets carries `text` for Slack, `content` for Discord and the event's
+own fields for anything programmatic, so there is no "which flavour of webhook"
+setting to answer.
+
+Two dead branches were deleted rather than tested: a "was scheduled, is now
+live" case that a snapshot of `live()` answers can never contain, and — from
+the earlier draft — a full-time-by-status-change that the same fact rules out.
+A branch no test can honestly reach is a branch that should not exist.
+
+---
+
+## Milestones 16–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
-ones after it. These are the ones it was shaped for. Milestones 13 and 14 above
-are the first two spent, and both cost what the table said they would — a
-provider class, and four accessors.
+ones after it. These are the ones it was shaped for. Milestones 13, 14 and 15
+above are spent, and the shape held each time — a provider class, four
+accessors, and a service plus a transport.
 
 | | | Where it plugs in |
 |---|---|---|
 | 13 ✅ | Live fixture ingestion | Done — `dashboard/providers/football_data_org.py` behind `FixtureProvider` |
 | 14 ✅ | Accounts and saved favourites | Done — `dashboard/domain/{identity,store}.py` behind the same four accessors |
-| 15 | Real-time tracking and notifications | The fixture feed, plus a push transport |
+| 15 ✅ | Real-time tracking and notifications | Done — `services/watch.py` diffs the feed; `providers/webhook.py` behind a `Notifier` |
 | 16 | Cloud deployment, monitoring, caching | The image and compose file that already exist |
 | 17 | Bookmaker odds, expected goals, value detection | A fourth provider protocol; the match page has the placeholder |
 | 18 | Player availability, injuries, transfers | A fifth; likewise |

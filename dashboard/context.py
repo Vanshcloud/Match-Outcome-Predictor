@@ -1,6 +1,6 @@
 """The providers one page render needs, resolved once and handed round.
 
-Six views, each wanting some of three providers and the settings. Building
+Six views, each wanting some of four sources and the settings. Building
 those inside each view would mean six places that know how a client is
 constructed and six places to change when a fourth provider is added.
 
@@ -26,7 +26,7 @@ from pathlib import Path
 from dashboard import providers
 from dashboard.client import PredictionClient
 from dashboard.providers.api import ApiPredictions
-from dashboard.providers.base import FixtureProvider
+from dashboard.providers.base import FixtureProvider, Notifier
 from dashboard.providers.historical import HistoricalResults
 from src.ingestion.base import MATCHES_FILENAME
 from src.utils.config import Settings, load_settings
@@ -40,6 +40,7 @@ class Context:
     results: HistoricalResults
     predictions: ApiPredictions
     fixtures: FixtureProvider
+    notifier: Notifier
 
     @property
     def reports_dir(self) -> Path:
@@ -57,7 +58,7 @@ class Context:
 
 
 def resolve() -> Context:
-    """Resolve the settings and the three providers.
+    """Resolve the settings, the three providers and the transport.
 
     Called as ``context.resolve()`` from every view rather than imported by
     name, deliberately: a module attribute is looked up when it is called, so a
@@ -74,4 +75,5 @@ def resolve() -> Context:
         results=HistoricalResults(settings.paths.processed_dir / MATCHES_FILENAME),
         predictions=ApiPredictions(client=client),
         fixtures=providers.fixtures(),
+        notifier=providers.notifier(),
     )

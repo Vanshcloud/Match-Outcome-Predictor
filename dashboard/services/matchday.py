@@ -80,18 +80,28 @@ def home_page(
     )
 
 
-def live_section(provider: FixtureProvider, competitions: Sequence[str] | None) -> Section:
-    """Matches in play, or the provider's own reason there are none."""
+def live_section(
+    provider: FixtureProvider,
+    competitions: Sequence[str] | None = None,
+    *,
+    fixtures: Sequence[Fixture] | None = None,
+) -> Section:
+    """Matches in play, or the provider's own reason there are none.
+
+    ``fixtures`` is the answer the caller already has.
+    :func:`dashboard.services.watch.since_last_look` asks the feed for what is
+    in play *and* what changed since the last look in one call, and this
+    renders that answer rather than asking a second time — on a free tier of
+    ten requests a minute, one paint should cost one request.
+    """
+    note = "in play, across the competitions you follow"
     if not provider.available:
-        return Section(
-            "Live now",
-            "in play, across the competitions you follow",
-            unavailable=reason(provider),
-        )
+        return Section("Live now", note, unavailable=reason(provider))
+    found = provider.live(competitions=competitions) if fixtures is None else fixtures
     return Section(
         "Live now",
-        "in play, across the competitions you follow",
-        fixtures=tuple(provider.live(competitions=competitions)),
+        note,
+        fixtures=tuple(found),
         empty="Nothing in play right now.",
     )
 

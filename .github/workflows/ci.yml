@@ -399,26 +399,35 @@ jobs:
         # a concrete one, because the day a view does, connecting the next
         # feed stops being one class and becomes a search. Milestone 13
         # connected football-data.org under exactly this rule and moved no
-        # view; the module is named here so the rule keeps covering it.
+        # view, and Milestone 15 added a webhook transport the same way — a
+        # view toasts an event and hands it to `ctx.notifier`, without knowing
+        # whether that posts to Slack or drops it on the floor. Both modules
+        # are named here so the rule keeps covering them.
         #
         # `dashboard/context.py` names them because something must, and a
         # service may compose one — that is what a service is. A *view* may
         # not, and that is the line this checks.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.providers\.(historical|api|null|football_data_org)\b' \
+          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.providers\.(historical|api|null|football_data_org|webhook)\b' \
                       dashboard/views || true)
           if [ -n "$offenders" ]; then
             echo "a view imports a concrete provider:"; echo "$offenders"; exit 1
           fi
           echo "views name no provider; the context and the services do"
 
-      - name: Only the identity module knows where a reader is kept
+      - name: Session state is never touched by a view
         # Milestone 12 claimed that swapping the favourites store for an
         # account store would touch four accessors and no view. Milestone 14
-        # spent that claim, and this is what kept it spendable: `session_state`
-        # is named in exactly one module. A view that reaches for it is a view
-        # that has to be rewritten by the milestone after this one — accounts
-        # today, a shared server-side session tomorrow.
+        # spent that claim, and this is what keeps it spendable.
+        #
+        # The rule was written at Milestone 14 as "exactly one module", which
+        # was stricter than the property it protects. Milestone 15 needs a
+        # per-tab snapshot of what the live feed said last time, which is
+        # per-*session* state by definition, so the check now names the
+        # property: `dashboard/views/` never touches session state, and outside
+        # the views only the two modules whose whole job is per-reader state
+        # may. A view that reaches for it is a view that has to be rewritten by
+        # the milestone after this one.
         #
         # The pattern matches a *use* — a subscript or an attribute — rather
         # than the bare name, because three modules explain in prose what they
@@ -428,12 +437,16 @@ jobs:
         # macOS — rejects the pattern outright while GNU grep accepts it, which
         # is a check that silently passes on one machine and errors on another.
         run: |
-          offenders=$(grep -rEn --include='*.py' 'st\.session_state(\[|\.)' dashboard \
-                      | grep -v '^dashboard/domain/identity.py' || true)
-          if [ -n "$offenders" ]; then
-            echo "session_state is used outside dashboard/domain/identity.py:"; echo "$offenders"; exit 1
+          in_views=$(grep -rEn --include='*.py' 'st\.session_state(\[|\.)' dashboard/views || true)
+          if [ -n "$in_views" ]; then
+            echo "a view touches session state:"; echo "$in_views"; exit 1
           fi
-          echo "a reader's identity lives in one module; nothing else touches session_state"
+          elsewhere=$(grep -rEn --include='*.py' 'st\.session_state(\[|\.)' dashboard \
+                      | grep -vE '^dashboard/(domain/identity|services/watch)\.py' || true)
+          if [ -n "$elsewhere" ]; then
+            echo "session state is used outside identity.py and watch.py:"; echo "$elsewhere"; exit 1
+          fi
+          echo "no view touches session state; only identity.py and watch.py do"
 
       - name: No network access from the unit suite
         # The suite must stay runnable offline, and every outbound request in

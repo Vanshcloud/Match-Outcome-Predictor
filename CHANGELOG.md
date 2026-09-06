@@ -12,6 +12,49 @@ extra steps.
 
 ### Added
 
+- **Milestone 14 — accounts and saved favourites.** Favourites used to live in
+  `st.session_state`: per browser tab, gone when it closed. They now live in a
+  JSON file keyed by whoever the reader is, and Milestone 12's estimate held —
+  four accessors in `dashboard/domain/favourites.py` changed, every signature
+  stayed, and no view was touched.
+
+  `dashboard/domain/identity.py` is the only module that knows how a reader is
+  named, and there are two answers: a **profile** (`profile:<name>`, picked
+  from the sidebar, `Guest` by default and a real row rather than a null case,
+  so favourites persist for someone who never opens the picker) and an
+  **account** (`account:<verified email>`, where a deployment configures OIDC
+  for Streamlit's `st.login()`). The keys are namespaced because without the
+  prefixes a profile named after a colleague's email address would be handed
+  that colleague's favourites.
+
+  Accounts are off unless configured, and the sidebar offers the button only
+  when signing in would actually work. Three things about Streamlit's auth
+  surface were checked rather than assumed: `st.user.is_logged_in` *raises*
+  with no provider configured (the key exists only when `secrets.toml` has an
+  `[auth]` section, which is how "is a provider configured" is answered without
+  touching `st.secrets`, which raises when there is no file); and `st.login()`
+  raises without `streamlit[auth]`, which the dashboard image deliberately does
+  not install.
+
+  The store is a file rather than the PostgreSQL already in the compose file —
+  that database is the service's, and reaching it from here would mean `psycopg`
+  in an image documenting its absence, a pool nobody tracks across reruns, and
+  a migration for a preference. Written through a temporary file and an atomic
+  rename, because a partial JSON document is unreadable and would be read on
+  the next page load. A write that cannot land is a sentence in the sidebar
+  rather than an exception: `data/` is mounted read-only in compose, so it is a
+  state a real deployment reaches. Its path is `$DASHBOARD_PROFILE_STORE`, and
+  compose points it at a writable named volume.
+
+  Two things this milestone hardened rather than added. CI now asserts that
+  `session_state` is used in exactly one module — Milestone 12 claimed that
+  property and nothing checked it, and it is the reason accounts were three new
+  files instead of a search through six pages; the rule was confirmed to bite
+  by planting a violation in a view. And `tests/conftest.py` now points the
+  store at a temporary file for every test, autouse, after the first suite run
+  wrote real profiles into the developer's `data/` directory and later tests
+  began inheriting clubs that earlier ones had followed.
+
 - **Milestone 13 — live fixtures.** `dashboard/providers/football_data_org.py`
   reads `GET /v4/matches` from football-data.org and answers the three
   questions this project's results feed cannot: what is on today, what is on
@@ -90,6 +133,25 @@ reported number changed in either; every fix is on the serving and packaging
 side, and the walk-forward tables are the same tables.
 
 ### Fixed
+
+- **The dashboard no longer reports a healthy prediction service when an
+  unrelated one is on the port.** `DASHBOARD_API_URL` defaults to
+  `http://127.0.0.1:8000`, a different project's API was listening there, and
+  its `/health` answered `{"status": "ok"}` — which is all `ApiPredictions`
+  checked. The sidebar therefore showed `✓ Prediction service` while every
+  `/predict` would have come back 404, and the failure would have surfaced as
+  an unexplained error on the match page rather than as the misconfiguration it
+  was. `available` now also requires the body to be the document
+  `api/schemas.py` describes: `components` is a required field of
+  `HealthResponse` and is present whether the service is ready or degraded, so
+  its absence means something else is on the port. The caption says so and
+  names the variable to set.
+
+  Checked by shape rather than by matching component names, because the set of
+  components is a thing later milestones add to and a check that enumerated
+  them would fail on the milestone that adds one. Found by running the
+  dashboard, not by a test — a liveness probe that accepts any 200 is a probe
+  for "something is listening", which is not the question anyone was asking.
 
 - **An unreachable prediction log no longer takes the service down.**
   `open_prediction_log` creates its table on the way up, so a configured

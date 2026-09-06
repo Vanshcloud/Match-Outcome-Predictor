@@ -14,7 +14,14 @@
 #   joblib                 Only used to read the artefact. See above.
 #   catboost, lightgbm     Not in the blend at all.
 #   optuna, mlflow, shap   Search, tracking, explainability. None is a page.
-#   psycopg                The prediction log is written by the service.
+#   psycopg                The prediction log is written by the service. It is
+#                          also not where Milestone 14 keeps favourites — that
+#                          is a JSON file, for the reasons in docs/DASHBOARD.md.
+#   authlib                `streamlit[auth]`, which powers st.login(). Accounts
+#                          are optional: with no [auth] section in secrets the
+#                          sidebar offers named profiles instead and never
+#                          calls st.login(). A deployment that wants OIDC
+#                          installs `streamlit[auth]` and supplies the secrets.
 #   fastapi, uvicorn       This image is a client of that server, not a copy.
 #
 # What is left is the reporting path and one HTTP client.

@@ -36,6 +36,11 @@ data/reports/*
 !data/features/.gitkeep
 !data/reports/.gitkeep
 
+# Milestone 14's profile store: which leagues and clubs a reader follows,
+# written by the dashboard. Local state about a person, not data about
+# football, and it is per-deployment rather than per-checkout.
+data/dashboard/
+
 # ---- Models ----
 models/*
 !models/.gitkeep

@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 13 of 20 — the dashboard, with a live fixture feed.**
+> **Status: Milestone 14 of 20 — the dashboard, with a live fixture feed and saved favourites.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -588,6 +588,8 @@ api/                the inference service                 [Milestone 11] ✅
 dashboard/          the presentation layer               [Milestone 12] ✅
   app.py              the shell: theme, sidebar, six declared pages
   domain/             what a match, a forecast and a competition are
+    identity.py         who the reader is: a profile, or an account
+    store.py            what they follow, kept between visits  [Milestone 14] ✅
   providers/          where football comes from — one protocol per source
     historical.py       results, from the canonical table
     api.py              forecasts, from the service over HTTP

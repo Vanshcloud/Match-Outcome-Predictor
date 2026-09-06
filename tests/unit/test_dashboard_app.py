@@ -32,6 +32,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from dashboard.context import Context
+from dashboard.domain import identity, store
 from dashboard.domain.match import Fixture, MatchStatus, Prediction
 from dashboard.providers.historical import HistoricalResults
 from dashboard.providers.null import NullFixtures
@@ -70,6 +71,9 @@ what a reader opening a league the backtest never covered actually sees.
 
 LEAGUE = pd.concat([ENGLAND, GERMANY], ignore_index=True)
 CLUB, RIVAL = "Team 00", "Team 01"
+
+GUEST = f"{identity.PROFILE_PREFIX}{identity.GUEST}"
+"""The store key a reader who has picked no profile is using."""
 TIMEOUT = 120
 
 PAGES = {
@@ -258,6 +262,24 @@ def run_shell(
     return AppTest.from_file(APP, default_timeout=TIMEOUT).run()
 
 
+def followed(**lists: list[str]) -> dict[str, list[str]]:
+    """Seed the default profile's favourites, where Milestone 14 keeps them.
+
+    Tests used to write ``st.session_state`` directly, which asserted the
+    storage mechanism rather than the behaviour — and that is exactly the thing
+    the account store replaced. The store file is a temporary one per test; see
+    the autouse fixture in ``tests/conftest.py``.
+    """
+    saved = {"leagues": [], "teams": [], **lists}
+    store.save(GUEST, leagues=saved["leagues"], teams=saved["teams"])
+    return saved
+
+
+def favourites_now() -> dict[str, list[str]]:
+    """What the store holds for the profile a test's reader is using."""
+    return store.saved(GUEST)
+
+
 def text_of(app: AppTest) -> str:
     """Everything the page said, as one string to search."""
     parts = [
@@ -344,7 +366,7 @@ def test_following_a_league_from_the_sidebar_is_remembered(
     app = run_shell(tmp_path, monkeypatch)
     app.sidebar.multiselect[0].select("ENG_1").run()
     assert app.exception == []
-    assert app.session_state["favourite_leagues"] == ["ENG_1"]
+    assert favourites_now()["leagues"] == ["ENG_1"]
 
 
 # ---- home --------------------------------------------------------------------
@@ -648,7 +670,7 @@ def test_following_a_club_from_search_is_remembered(
     app.text_input[0].set_value(CLUB).run()
     app.button[0].click().run()
     assert app.exception == []
-    assert CLUB in app.session_state["favourite_teams"]
+    assert CLUB in favourites_now()["teams"]
 
 
 def test_a_query_matching_many_clubs_is_capped_and_says_so(
@@ -717,12 +739,11 @@ def test_a_club_the_reader_follows_can_be_dropped_from_the_sidebar(
 ) -> None:
     """Followed clubs lead every page, so unfollowing has to be reachable from
     every page — which is why it is in the chrome and not on Search."""
+    followed(teams=[CLUB])
     app = run_shell(tmp_path, monkeypatch)
-    app.session_state["favourite_teams"] = [CLUB]
-    app.run()
     assert any(CLUB in one.label for one in app.sidebar.button)
     app.sidebar.button[0].click().run()
-    assert app.session_state["favourite_teams"] == []
+    assert favourites_now()["teams"] == []
 
 
 def test_following_a_league_from_the_competitions_browser_is_remembered(
@@ -731,7 +752,7 @@ def test_following_a_league_from_the_competitions_browser_is_remembered(
     app = run("competitions", tmp_path, monkeypatch)
     app.multiselect[0].select("ESP_1").run()
     assert app.exception == []
-    assert app.session_state["favourite_leagues"] == ["ESP_1"]
+    assert favourites_now()["leagues"] == ["ESP_1"]
 
 
 def test_the_browsers_filter_hides_the_countries_that_do_not_match(
@@ -750,9 +771,9 @@ def test_a_competition_page_can_be_followed_and_unfollowed(
 ) -> None:
     app = run("competitions", tmp_path, monkeypatch, query={"competition": "ENG_1"})
     app.button[0].click().run()
-    assert app.session_state["favourite_leagues"] == ["ENG_1"]
+    assert favourites_now()["leagues"] == ["ENG_1"]
     app.button[0].click().run()
-    assert app.session_state["favourite_leagues"] == []
+    assert favourites_now()["leagues"] == []
 
 
 def test_the_picker_opens_the_fixture_it_was_given(
@@ -811,9 +832,8 @@ def test_a_section_with_no_cards_says_so_rather_than_rendering_a_blank_strip(
 ) -> None:
     """A reader who follows a club that has not played recently gets a
     sentence, not an empty column they will read as a bug."""
+    followed(teams=["Nobody FC"])
     app = run("home", tmp_path, monkeypatch)
-    app.session_state["favourite_teams"] = ["Nobody FC"]
-    app.run()
     assert "Nothing finished recently" in text_of(app)
 
 
@@ -877,3 +897,105 @@ def test_the_entry_point_imports_with_only_its_own_directory_on_the_path() -> No
     )
     assert "ModuleNotFoundError" not in finished.stderr, finished.stderr[-2000:]
     assert "ImportError" not in finished.stderr, finished.stderr[-2000:]
+
+
+# ---- who the favourites belong to (Milestone 14) ------------------------------
+
+
+def test_the_sidebar_offers_the_profiles_the_store_already_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store.save(f"{identity.PROFILE_PREFIX}Vansh", leagues=["ESP_1"], teams=[])
+    app = run_shell(tmp_path, monkeypatch)
+    assert app.exception == []
+    offered = list(app.sidebar.selectbox[0].options)
+    assert offered[:2] == [identity.GUEST, "Vansh"]
+    assert offered[-1] == identity.NEW_PROFILE
+
+
+def test_switching_profile_switches_which_favourites_are_shown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The milestone's point, through the chrome a reader actually uses."""
+    store.save(f"{identity.PROFILE_PREFIX}Vansh", leagues=["ESP_1"], teams=[])
+    followed(leagues=["ENG_1"])
+    app = run_shell(tmp_path, monkeypatch)
+    assert app.sidebar.multiselect[0].value == ["ENG_1"]
+    app.sidebar.selectbox[0].select("Vansh").run()
+    assert app.exception == []
+    assert app.sidebar.multiselect[0].value == ["ESP_1"]
+
+
+def test_a_new_profile_starts_empty_and_leaves_the_old_one_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    followed(leagues=["ENG_1"])
+    app = run_shell(tmp_path, monkeypatch)
+    app.sidebar.selectbox[0].select(identity.NEW_PROFILE).run()
+    app.sidebar.text_input[0].set_value("Someone").run()
+    assert app.exception == []
+    assert app.sidebar.multiselect[0].value == []
+    assert favourites_now()["leagues"] == ["ENG_1"]
+
+
+def test_a_signed_in_reader_is_named_and_offered_the_way_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No picker for an account: the identity provider decided who this is."""
+    monkeypatch.setattr(st, "user", {"is_logged_in": True, "email": "reader@example.com"})
+    app = run_shell(tmp_path, monkeypatch)
+    assert app.exception == []
+    said = " ".join(str(one.value) for one in app.sidebar.caption)
+    assert "reader@example.com" in said
+    assert any("Sign out" in one.label for one in app.sidebar.button)
+    assert app.sidebar.selectbox == []
+
+
+def test_the_sign_in_button_appears_only_where_signing_in_would_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(st, "user", {"is_logged_in": False})
+    monkeypatch.setattr(identity.importlib.util, "find_spec", lambda _name: object())
+    app = run_shell(tmp_path, monkeypatch)
+    assert app.exception == []
+    assert any("Sign in" in one.label for one in app.sidebar.button)
+
+
+def test_favourites_that_could_not_be_saved_say_so_in_the_chrome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`data/` is read-only in the compose file. A preference that silently
+    fails to save is the kind of thing a reader discovers a week later."""
+    monkeypatch.setattr(store, "last_error", "favourites could not be saved to /x: read-only")
+    app = run_shell(tmp_path, monkeypatch)
+    said = " ".join(str(one.value) for one in app.sidebar.caption)
+    assert "could not be saved" in said
+
+
+def test_signing_out_is_wired_to_streamlits_own_logout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The button has to call the framework rather than clear a key itself: the
+    session cookie is Streamlit's, and a "sign out" that only forgot the name
+    would leave the reader signed in."""
+    called: list[str] = []
+    monkeypatch.setattr(st, "user", {"is_logged_in": True, "email": "reader@example.com"})
+    monkeypatch.setattr(st, "logout", lambda: called.append("logout"))
+    app = run_shell(tmp_path, monkeypatch)
+    app.sidebar.button[0].click().run()
+    assert app.exception == []
+    assert called == ["logout"]
+
+
+def test_signing_in_is_wired_to_streamlits_own_login(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called: list[str] = []
+    monkeypatch.setattr(st, "user", {"is_logged_in": False})
+    monkeypatch.setattr(st, "login", lambda: called.append("login"))
+    monkeypatch.setattr(identity.importlib.util, "find_spec", lambda _name: object())
+    app = run_shell(tmp_path, monkeypatch)
+    signin = [one for one in app.sidebar.button if "Sign in" in one.label]
+    signin[0].click().run()
+    assert app.exception == []
+    assert called == ["login"]

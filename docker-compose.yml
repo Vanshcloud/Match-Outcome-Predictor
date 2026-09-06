@@ -69,12 +69,22 @@ services:
       # provider says which variable to set instead of failing to start.
       DASHBOARD_FIXTURE_PROVIDER: ${DASHBOARD_FIXTURE_PROVIDER:-none}
       FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY:-}
+      # Milestone 14's favourites, on the one writable path this container has.
+      # It cannot default to `data/`: that is mounted read-only below, on
+      # purpose, and a container that cannot corrupt its own inputs is worth
+      # more than one that can save a preference to them.
+      DASHBOARD_PROFILE_STORE: /app/profiles/profiles.json
       LOG_LEVEL: INFO
     volumes:
       # Read-only, and only `data/`. The dashboard reads report tables and
       # never the artefact — it asks the service for a probability instead — so
       # `models/` is not mounted here at all.
       - ./data:/app/data:ro
+      # The one writable mount, and it holds preferences rather than data: who
+      # follows which leagues. A named volume rather than a bind mount, so that
+      # `docker compose down` keeps it and a checkout never acquires a file
+      # about a person.
+      - profiles:/app/profiles
     depends_on:
       api:
         # `service_healthy`, so the predict tab has something to talk to on the
@@ -109,3 +119,4 @@ services:
 
 volumes:
   predictions:
+  profiles:

@@ -46,6 +46,20 @@ def _isolate_logging() -> Iterator[None]:
     root.setLevel(saved_level)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_the_profile_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point Milestone 14's favourites store at a temporary file, everywhere.
+
+    Autouse and suite-wide rather than per-test, because the failure it
+    prevents is silent in both directions: without it a test writes real
+    profiles into the developer's ``data/`` — which the first run of this
+    fixture's absence actually did — and every later test inherits whatever
+    clubs an earlier one followed, so the suite's result depends on collection
+    order.
+    """
+    monkeypatch.setenv("DASHBOARD_PROFILE_STORE", str(tmp_path / "profiles.json"))
+
+
 @pytest.fixture
 def config_file(tmp_path: Path) -> Path:
     """A minimal but complete config file, written to a temp directory.

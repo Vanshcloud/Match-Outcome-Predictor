@@ -63,6 +63,11 @@ and becomes a search.
 | Scoreboard, reliability, per-competition | `data/reports/ensemble/*.parquet` | A measurement that already exists. Reading a file is the honest way to read one, and it works with no service running. |
 | Forecasts | `POST /predict` on the running service | A live probability is the model's, and there should be exactly one process that holds the model. |
 
+The third path checks *which* service answered. A `/health` returning
+`{"status": "ok"}` is not evidence that the thing on the port is this project's
+API — on a machine running more than one service, it is quite likely not — so
+the body must also carry the component list `api/schemas.py` makes required.
+
 The consequence is deliberate: **the page works with the API down, and with no
 data at all.** Each section says which of the three is missing and names the
 command that produces it.
@@ -214,11 +219,73 @@ about football and this one about the forecaster.
 
 ## Favourites
 
-Competitions and clubs, held in `st.session_state` — per browser tab, lasting
-as long as it is open. Every page reads them; none of them touches
-`st.session_state`, which is the whole of the Milestone 14 seam: an account
-store replaces the four accessors in `dashboard/domain/favourites.py` and
-nothing else changes.
+Competitions and clubs, and since Milestone 14 they **outlive the browser
+tab**. They are saved against whoever the reader is, in a small JSON file that
+`dashboard/domain/store.py` owns.
+
+Who the reader is, is decided in one module — `dashboard/domain/identity.py` —
+and there are two answers:
+
+| | Key | When |
+|---|---|---|
+| **A profile** | `profile:<name>` | Always available. Picked from the sidebar; `Guest` until someone picks otherwise, and `Guest` is a real profile with a real row, so favourites persist for a reader who never opens the picker. |
+| **An account** | `account:<verified email>` | Only where the deployment configures an OIDC provider for Streamlit's own `st.login()`. |
+
+The keys are namespaced on purpose. Without the prefixes, someone who typed a
+colleague's email address as their profile name would be handed that
+colleague's favourites — small here, and exactly the shape of a serious thing
+in an application that stored more.
+
+**A profile is not an account, and the page says so.** There is no password: on
+a deployment with no provider configured, anyone who can open the page can pick
+any profile. That is the right amount of security for something this document
+already describes as not for public hosting, and the wrong amount for anything
+else — which is what the account half is for.
+
+### Turning accounts on
+
+Two things, neither of which this repository ships:
+
+```toml
+# .streamlit/secrets.toml — gitignored, and every value in it is a credential
+[auth]
+redirect_uri = "http://localhost:8501/oauth2callback"
+cookie_secret = "..."
+[auth.google]
+client_id = "..."
+client_secret = "..."
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+```
+```bash
+pip install "streamlit[auth]"      # authlib; requirements-dashboard.txt omits it
+```
+
+The sidebar offers a sign-in button only when **both** are present. Streamlit
+adds `is_logged_in` to `st.user` only when an `[auth]` section exists, and
+`st.login()` raises without authlib — so a button offered on either half alone
+is a button that always errors, and the page shows the profile picker instead.
+
+### Where the file goes
+
+`$DASHBOARD_PROFILE_STORE`, or `<DATA_DIR>/dashboard/profiles.json` by default.
+The compose file mounts `data/` **read-only** — a container that cannot corrupt
+its own inputs is worth more than one that can save a preference to them — so
+the image gets a named volume at `/app/profiles` and the variable points there.
+
+A write that cannot land is a sentence in the sidebar, not an exception: a
+read-only filesystem is a state a real deployment reaches, and losing a
+preference must not lose the page. Reads are equally forgiving — a truncated or
+hand-edited file gives a reader with no favourites rather than a stack trace on
+every page.
+
+It is a file rather than the PostgreSQL the compose file already runs, and that
+is a decision with a ceiling written next to it: that database is the
+*service's*, holding served predictions so calibration can be measured, and
+reaching it from here would mean `psycopg` in an image that documents its
+absence, a connection pool nobody tracks across Streamlit reruns, and a schema
+migration for a preference. One JSON file, rewritten whole, last writer wins.
+Two people editing different profiles in the same second lose one edit. The
+upgrade is that database, and the seam for it is `store.py`.
 
 Following no league means *all* the football, not none of it. That distinction
 is made in exactly one place, `favourites.league_filter`.
@@ -248,9 +315,10 @@ set of contrast ratios to check.
 
 | Variable | Default | |
 |---|---|---|
-| `DASHBOARD_API_URL` | `http://127.0.0.1:8000` | Where forecasts are asked for. Compose sets `http://api:8000` |
+| `DASHBOARD_API_URL` | `http://127.0.0.1:8000` | Where forecasts are asked for. Compose sets `http://api:8000`. The dashboard checks that what answers there is *this* project's API — a `/health` that says `ok` but carries no component list is reported as the misconfiguration it is |
 | `DASHBOARD_FIXTURE_PROVIDER` | `none` | Which fixture feed supplies today, upcoming and live: `none` or `football-data.org` |
 | `FOOTBALL_DATA_API_KEY` | unset | The key for that feed. Environment only — `configs/config.yaml` is committed |
+| `DASHBOARD_PROFILE_STORE` | `<DATA_DIR>/dashboard/profiles.json` | Where saved favourites live. Compose points it at a writable volume |
 | `DATA_DIR` | `data` | Where the match table and the report tables are read from |
 | `DASHBOARD_PORT` | `8501` | Container only; the bind address is a literal `0.0.0.0` |
 
@@ -268,9 +336,13 @@ constant the API and the model card use.
   against, and showing both invites the comparison to be made without the
   walk-forward folds that make it meaningful. `docs/EVALUATION.md` is where
   that comparison lives.
-- **Not authenticated, and not for public hosting.** It reads local files and
-  talks to a local service. `docker-compose.yml` is a local reproduction of a
-  deployment, not a deployment — see `SECURITY.md`.
+- **Not authenticated by default, and not for public hosting.** It reads local
+  files and talks to a local service, and out of the box its profiles are
+  names without passwords. Milestone 14 added optional OIDC login for
+  deployments that configure one, which changes who favourites belong to — not
+  what the pages will show a reader who is not signed in. Every page remains
+  readable by anyone who can reach it. `docker-compose.yml` is a local
+  reproduction of a deployment, not a deployment — see `SECURITY.md`.
 - **Not a second explainability report.** SHAP and permutation importance are
   in `docs/EXPLAINABILITY.md`; a page that recomputed them would be recomputing
   a five-minute job on a page load.

@@ -727,3 +727,39 @@ def test_the_feeds_own_message_is_what_a_reader_is_shown() -> None:
     provider, _ = feed(fails=requests.HTTPError(response=response))
     assert not provider.available
     assert provider.error == "football-data.org answered 400: Your API token is invalid."
+
+
+# ---- it has to be *this* service ---------------------------------------------
+
+
+def test_another_project_answering_on_the_port_is_not_a_prediction_service() -> None:
+    """Found by running the dashboard: `DASHBOARD_API_URL` defaults to port
+    8000, an unrelated service was listening there, and its `/health` answered
+    `{"status": "ok"}` — so the sidebar reported a healthy prediction service
+    while every `/predict` would have come back 404."""
+    provider = predictions(
+        health={
+            "status": "ok",
+            "model_loaded": True,
+            "model_name": "lstm_predictive_maintenance",
+            "version": "1.0.0",
+        }
+    )
+    assert not provider.available
+    assert "not this project's API" in str(provider.error)
+    assert "DASHBOARD_API_URL" in str(provider.error)
+
+
+def test_the_check_is_the_documents_shape_not_a_list_of_component_names() -> None:
+    """A service that is ours but has grown a component this build has never
+    heard of is still ours. The set of components is a thing later milestones
+    add to, and a check that enumerated them would fail on the one that does."""
+    provider = predictions(health={"status": "ok", "components": [{"name": "odds", "ready": True}]})
+    assert provider.available
+    assert provider.error is None
+
+
+def test_a_service_answering_a_component_list_that_is_not_a_list_is_refused() -> None:
+    provider = predictions(health={"status": "ok", "components": "all good"})
+    assert not provider.available
+    assert "not this project's API" in str(provider.error)

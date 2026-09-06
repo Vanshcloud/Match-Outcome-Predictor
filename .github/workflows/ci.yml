@@ -412,6 +412,29 @@ jobs:
           fi
           echo "views name no provider; the context and the services do"
 
+      - name: Only the identity module knows where a reader is kept
+        # Milestone 12 claimed that swapping the favourites store for an
+        # account store would touch four accessors and no view. Milestone 14
+        # spent that claim, and this is what kept it spendable: `session_state`
+        # is named in exactly one module. A view that reaches for it is a view
+        # that has to be rewritten by the milestone after this one — accounts
+        # today, a shared server-side session tomorrow.
+        #
+        # The pattern matches a *use* — a subscript or an attribute — rather
+        # than the bare name, because three modules explain in prose what they
+        # stopped doing, and a rule that failed on its own documentation is one
+        # somebody deletes. An alternation rather than a bracket: `[[.` opens a
+        # collating symbol, and BSD grep — what a developer runs this under on
+        # macOS — rejects the pattern outright while GNU grep accepts it, which
+        # is a check that silently passes on one machine and errors on another.
+        run: |
+          offenders=$(grep -rEn --include='*.py' 'st\.session_state(\[|\.)' dashboard \
+                      | grep -v '^dashboard/domain/identity.py' || true)
+          if [ -n "$offenders" ]; then
+            echo "session_state is used outside dashboard/domain/identity.py:"; echo "$offenders"; exit 1
+          fi
+          echo "a reader's identity lives in one module; nothing else touches session_state"
+
       - name: No network access from the unit suite
         # The suite must stay runnable offline, and every outbound request in
         # this project goes through src/utils/http, which owns the timeout, the

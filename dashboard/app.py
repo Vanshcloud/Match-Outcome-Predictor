@@ -41,7 +41,7 @@ import streamlit as st  # noqa: E402
 
 from dashboard import context, theme  # noqa: E402
 from dashboard.domain import competition as catalogue  # noqa: E402
-from dashboard.domain import favourites  # noqa: E402
+from dashboard.domain import favourites, identity, store  # noqa: E402
 from dashboard.services import history, matchday  # noqa: E402
 from dashboard.views import competitions, home, match, performance, search  # noqa: E402
 
@@ -76,6 +76,8 @@ def sidebar(ctx: context.Context) -> None:
         st.markdown(f"### {ICON} {TITLE}")
         st.caption("Calibrated home / draw / away probabilities for football.")
 
+        _reader()
+
         followed = st.multiselect(
             "Competitions you follow",
             options=[one.id for one in catalogue.competitions()],
@@ -99,10 +101,49 @@ def sidebar(ctx: context.Context) -> None:
 
         st.divider()
         _status(ctx)
-        st.caption(
-            "Favourites last as long as this browser tab. Accounts and saved "
-            "preferences are Milestone 14."
-        )
+        if store.last_error is not None:
+            st.caption(f"⚠ {store.last_error}")
+
+
+def _reader() -> None:
+    """Who these favourites belong to: an account, or a profile.
+
+    The account half only appears where a deployment has configured one —
+    ``st.login`` raises without both an ``[auth]`` section and ``streamlit[auth]``
+    installed, and a button that always errors is worse than no button.
+    """
+    if identity.signed_in():
+        st.caption(f"Signed in as **{identity.label()}**")
+        if st.button("Sign out", width="stretch"):
+            st.logout()
+        return
+
+    names = identity.profile_names(store.identities())
+    current = identity.profile()
+    chosen = st.selectbox(
+        "Profile",
+        options=[*names, identity.NEW_PROFILE],
+        index=names.index(current) if current in names else 0,
+        help="Favourites are saved against this name and kept between visits.",
+        # Keyed on the profile in use, so that switching gives Streamlit a new
+        # widget rather than an old one holding an old selection. Without it,
+        # naming a new profile left the box reading "New profile…" while the
+        # page below it had already switched — the widget keeps what was picked
+        # across a rerun, and `index` only decides where a *fresh* one starts.
+        key=f"profile-picker-{current}",
+    )
+    if chosen == identity.NEW_PROFILE:
+        typed = st.text_input("New profile name", placeholder="Your name")
+        if typed and identity.use_profile(typed) != current:
+            st.rerun()
+    elif chosen != current:
+        identity.use_profile(chosen)
+        st.rerun()
+
+    if identity.sign_in_offered():
+        if st.button("Sign in", width="stretch"):
+            st.login()
+        st.caption("Signing in keeps favourites against your account instead.")
 
 
 def _status(ctx: context.Context) -> None:

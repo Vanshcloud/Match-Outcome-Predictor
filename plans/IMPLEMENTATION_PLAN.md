@@ -1128,16 +1128,98 @@ whole of the caching: the stdlib already holds, bounds and evicts the entries.
 
 ---
 
-## Milestones 14–20 — the platform
+## Milestone 14 — Accounts and saved favourites ✅
+
+Milestone 12 wrote down what this would cost: *"four accessors in
+`domain/favourites.py`. No view touches `st.session_state`."* It cost exactly
+that. Every signature in `favourites.py` is the one it shipped, six views are
+untouched, and what changed underneath is where the answer comes from.
+
+Favourites used to live in `st.session_state` — per browser tab, gone when it
+closed. They now live in a JSON file keyed by whoever the reader is.
+
+### Two ways to be someone, and the second is optional
+
+`dashboard/domain/identity.py` is the only module in the application that knows
+how a reader is named:
+
+| | Key | Needs |
+|---|---|---|
+| A profile | `profile:<name>` | Nothing. Picked from the sidebar, `Guest` by default |
+| An account | `account:<verified email>` | An `[auth]` section in `secrets.toml` **and** `streamlit[auth]` |
+
+`Guest` is a real profile with a real row rather than a null case, which is the
+user-visible point: favourites persist for a reader who never opens the picker.
+
+The keys are namespaced because without the prefixes, a profile named after a
+colleague's email address would be handed that colleague's favourites. Small
+here; the same shape is serious in an application that stored anything worth
+taking.
+
+### What the Streamlit auth surface actually does
+
+Checked rather than assumed, which is the habit Milestone 13 paid for:
+
+- **`st.user.is_logged_in` raises `AttributeError`** when no provider is
+  configured — Streamlit adds the key only when `secrets.toml` has an `[auth]`
+  section, and with none the object has no attributes at all. Everything here
+  reads it through `.get`, and the key's *presence* is how the sidebar knows
+  whether a provider exists.
+- **`st.secrets` raises** outright when there is no secrets file, so "is auth
+  configured" is never answered by reading it.
+- **`st.login()` raises `StreamlitMissingAuthlibError`** without
+  `streamlit[auth]`, which `requirements-dashboard.txt` deliberately does not
+  install. The button appears only when both halves are present; a button that
+  always errors is worse than no button.
+
+### A file, with the ceiling written next to it
+
+`data/dashboard/profiles.json`, or `$DASHBOARD_PROFILE_STORE`. Not the
+PostgreSQL that is already in the compose file: that one is the *service's*,
+holding served predictions so calibration can be measured against what
+happened, and reaching it from here would mean `psycopg` in an image whose
+requirements file documents its absence, a connection pool nobody tracks across
+Streamlit reruns, and a schema migration for a preference.
+
+One JSON file, rewritten whole, last writer wins — two people editing different
+profiles in the same second lose one edit. The upgrade is that database and the
+seam for it is `store.py`, which is the same trade Milestone 12 made and the
+reason this one was cheap.
+
+Writes go through a temporary file in the target's own directory and an atomic
+rename, because a partial JSON document is unreadable and the failures that
+produce one — a process killed mid-write, a disk filling — are exactly when a
+reader can least afford to lose the file. A write that cannot land at all is a
+sentence in the sidebar rather than an exception: `data/` is mounted read-only
+in the compose file, so it is a state a real deployment reaches.
+
+### The invariant that made this cheap, now enforced
+
+`session_state` is used in exactly one module, asserted by CI and confirmed to
+bite by planting a violation in a view. Milestone 12 claimed the property;
+until now nothing checked it, and it is the reason accounts were three new
+files instead of a search through six pages.
+
+One test isolation bug is worth recording because it was found the honest way —
+by it happening. The first suite run wrote real profiles into the developer's
+`data/` directory, and every later test inherited whichever clubs an earlier
+one had followed. `tests/conftest.py` now points the store at a temporary file
+for every test in the suite, autouse: the failure is silent in both directions,
+and a store that a test can reach is a store a test will write to.
+
+---
+
+## Milestones 15–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
-ones after it. These are the ones it was shaped for; Milestone 13 above is the
-first of them spent, and it cost what the table said it would.
+ones after it. These are the ones it was shaped for. Milestones 13 and 14 above
+are the first two spent, and both cost what the table said they would — a
+provider class, and four accessors.
 
 | | | Where it plugs in |
 |---|---|---|
 | 13 ✅ | Live fixture ingestion | Done — `dashboard/providers/football_data_org.py` behind `FixtureProvider` |
-| 14 | Accounts and saved favourites | `dashboard/domain/favourites.py` |
+| 14 ✅ | Accounts and saved favourites | Done — `dashboard/domain/{identity,store}.py` behind the same four accessors |
 | 15 | Real-time tracking and notifications | The fixture feed, plus a push transport |
 | 16 | Cloud deployment, monitoring, caching | The image and compose file that already exist |
 | 17 | Bookmaker odds, expected goals, value detection | A fourth provider protocol; the match page has the placeholder |

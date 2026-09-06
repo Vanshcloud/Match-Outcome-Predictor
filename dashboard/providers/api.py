@@ -44,18 +44,33 @@ class ApiPredictions:
 
     @property
     def available(self) -> bool:
-        """Whether the service is up **and** has a model and a table loaded.
+        """Whether **this project's** service is up and has a model and a table.
 
-        Both, because ``/health`` answers 200 while degraded on purpose: "the
-        container is wedged" and "the model has not been built yet" are
-        different problems and a person does different things about them. To
-        this provider they are the same — it cannot price a fixture — and the
-        detail is kept in :attr:`error` for the caption.
+        Three questions, because ``/health`` answers 200 while degraded on
+        purpose: "the container is wedged" and "the model has not been built
+        yet" are different problems and a person does different things about
+        them. To this provider they are the same — it cannot price a fixture —
+        and the detail is kept in :attr:`error` for the caption.
+
+        The first question used to be missing, and the way that surfaced is
+        worth recording. ``DASHBOARD_API_URL`` defaults to port 8000, an
+        unrelated service was listening there, and its ``/health`` answered
+        ``{"status": "ok"}`` — so the sidebar reported a healthy prediction
+        service while every ``/predict`` would have come back 404. A liveness
+        probe that accepts any 200 is a probe for "something is listening",
+        which is not the question anyone was asking.
         """
         try:
             health = self.client.health()
         except ServiceError as failure:
             self.error = f"{failure}"
+            return False
+        if not _is_this_service(health):
+            self.error = (
+                f"something is answering at {self.client.base_url}, but it is not this "
+                "project's API — its `/health` carries no component list. Point "
+                "`DASHBOARD_API_URL` at the service `make api` starts."
+            )
             return False
         if health.get("status") != "ok":
             self.error = _degraded(health)
@@ -96,6 +111,20 @@ class ApiPredictions:
             return None
         self.error = None
         return as_prediction(match_id, answer)
+
+
+def _is_this_service(health: Mapping[str, Any]) -> bool:
+    """Whether that ``/health`` body is the one ``api/schemas.py`` describes.
+
+    ``components`` is a required field of ``HealthResponse`` and is present in
+    every state the service has, ready or degraded, so its absence means
+    something else is on the port. Checked by shape rather than by matching a
+    component's name: the set of components is a thing this project will add to
+    — an odds provider, a cache — and a check that enumerated them would fail
+    on the milestone that adds one, which is the wrong thing to be brittle
+    about.
+    """
+    return isinstance(health.get("components"), list)
 
 
 def _degraded(health: Mapping[str, Any]) -> str:

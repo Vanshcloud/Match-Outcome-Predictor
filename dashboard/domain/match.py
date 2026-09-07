@@ -2,9 +2,15 @@
 
 Every card, every list and every detail page renders a :class:`Fixture`.
 Nothing renders a dictionary from an HTTP response or a row of a DataFrame, and
-that is the point: this project has two sources of matches today and will have
-four by Milestone 17, and a page written against one of them is a page that has
-to be rewritten when the second arrives.
+that is the point: this project has three sources of matches and a page written
+against one of them is a page that has to be rewritten when the second arrives.
+
+Milestone 17 added two value types rather than a third source of matches:
+:class:`MarketPrice` is what the bookmaker said about a fixture, and
+:class:`ExpectedGoals` is what a fitted goal-rate model expects from each side.
+Both are *about* a match rather than being one, which is why neither is a
+field on :class:`Fixture` — a card has no use for either, and a type that grew
+every optional fact anybody might want is a type every source has to fill.
 
 Pure value types. No provider, no network, no file, no Streamlit — everything
 that fetches lives in :mod:`dashboard.providers` and everything that renders in
@@ -17,6 +23,17 @@ import datetime as dt
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+
+OUTCOMES: tuple[str, str, str] = ("home", "draw", "away")
+"""The three outcomes, in one order everywhere on this dashboard.
+
+The same order as :data:`src.evaluation.metrics.CLASSES`, and the same *names*
+the service answers with — a page showing them in a different order from the
+array the model returns is a page where a reader checking one against the other
+reads the wrong number. Declared here rather than in the theme because it is
+vocabulary before it is presentation: a provider builds a mapping keyed by
+these, and the palette is one consumer of that.
+"""
 
 
 class MatchStatus(StrEnum):
@@ -120,6 +137,61 @@ class Prediction:
         generated from — see :mod:`dashboard.services.reports`.
         """
         return float(self.probabilities[self.outcome])
+
+
+@dataclass(frozen=True, slots=True)
+class MarketPrice:
+    """What the bookmaker said, as a page shows it beside what the model said.
+
+    Milestone 17. Three decimal prices, the probabilities they imply once the
+    overround is removed, and the overround itself — because the removal is an
+    assumption about *how* the margin is spread across three outcomes, and a
+    reader who can see its size can judge how much that assumption matters.
+
+    **The de-vig is not done here.** It is
+    :func:`src.evaluation.market.implied_probabilities`, the same function the
+    backtest's ``bookmaker`` benchmark uses, so the percentages on this page
+    are the percentages the model was scored against. A domain type that did
+    its own arithmetic would be a second answer to "what did the market say".
+    """
+
+    match_id: str
+    odds: Mapping[str, float]
+    probabilities: Mapping[str, float]
+    overround: float
+
+
+@dataclass(frozen=True, slots=True)
+class ExpectedGoals:
+    """How many goals a fitted goal-rate model expects from each side.
+
+    Milestone 17, and the label matters more than the numbers. These are the
+    Poisson rates Milestone 4's Dixon-Coles model fits — ``dc_home_lambda`` and
+    ``dc_away_lambda`` in the ratings table — not shot-quality xG. Nothing in
+    this project has ever seen a shot map: the ingested feed carries shots and
+    shots on target and no expected-goals column, so a panel labelled "xG"
+    would be attributing a rival provider's measurement to a model that made an
+    estimate.
+
+    They are worth showing because they are *how the rating thinks*: the
+    three-class probability this project reports is a sum over a Poisson grid
+    built from exactly these two numbers, so a reader who wants to know why a
+    forecast leans one way is looking at its inputs.
+    """
+
+    match_id: str
+    home: float
+    away: float
+
+    @property
+    def total(self) -> float:
+        """Expected goals in the match, the number a totals market is about."""
+        return self.home + self.away
+
+    @property
+    def supremacy(self) -> float:
+        """Expected goal difference, positive when the home side is favoured."""
+        return self.home - self.away
 
 
 class EventKind(StrEnum):

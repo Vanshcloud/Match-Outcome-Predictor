@@ -48,6 +48,16 @@ needs the same rows on every page load. So the card writes them down.
 """
 
 
+MARKET_FILENAME = "market.parquet"
+"""What the model's disagreement with the closing line is worth, by size.
+
+Five rows, written by `make card` beside the forecasts it is computed from.
+Small enough to be a page load rather than a computation: the join behind it is
+62,000 forecasts against 300,000 matches, and a dashboard that redid it per
+render would be doing Milestone 17's measurement to draw one caption.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class TablePaths:
     """Where the three tables are. Named rather than positional, because two of
@@ -129,6 +139,38 @@ def read_forecasts(path: Path) -> pd.DataFrame | None:
     Absent is the clean-checkout state and the state before `make card` has
     run, so the dashboard reports what is missing and which command produces
     it rather than failing at the expected condition.
+    """
+    return read_scores(path)
+
+
+def read_market(path: Path) -> pd.DataFrame | None:
+    """The disagreement table, or ``None`` before `make card` has written one.
+
+    Reads like the scores because it *is* a score table — five rows of two
+    forecasters' log losses — and giving it its own loader would be a second
+    implementation of "open a small Parquet report through the store".
+    """
+    return read_scores(path)
+
+
+def read_ratings(path: Path) -> pd.DataFrame | None:
+    """The Elo and Dixon-Coles columns, or ``None`` when there is no table.
+
+    A narrow read of the ratings table for the readers that want the rating
+    itself rather than a design matrix — Milestone 17's expected goals are
+    ``dc_home_lambda`` and ``dc_away_lambda``, and
+    :func:`load_modelling_frame` would join three hundred thousand rows across
+    three tables to reach two of them.
+
+    Delegates like :func:`read_forecasts` above, because it is the same read:
+    attach one Parquet file through the store and select it whole. The store's
+    own :meth:`~src.storage.duckdb_store.DuckDBStore.read_ratings` is for a
+    catalogue that already has the three tables attached; this is for a caller
+    holding one path.
+
+    Returns:
+        The rating rows, or ``None`` when the file is not there — the
+        clean-checkout state, and a caller's to report.
     """
     return read_scores(path)
 

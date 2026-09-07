@@ -35,7 +35,7 @@ from dashboard.providers.base import (
     ResultProvider,
 )
 from dashboard.providers.football_data_org import FootballDataOrgFixtures
-from dashboard.providers.historical import HistoricalResults
+from dashboard.providers.historical import HistoricalOdds, HistoricalResults, expected_goals
 from dashboard.providers.historical import to_fixtures as results_to_fixtures
 from dashboard.providers.null import NullFixtures, NullNotifier
 from tests.factories import league_frame, season_labels
@@ -895,3 +895,78 @@ def test_the_transport_is_chosen_by_environment_and_falls_back_on_a_typo(
 def test_every_shipped_transport_satisfies_the_interface() -> None:
     assert isinstance(NullNotifier(), Notifier)
     assert isinstance(webhook.WebhookNotifier(url="https://hooks.test/abc"), Notifier)
+
+
+# ---- Milestone 17: the closing line, and the goal model's rates ---------------
+
+
+@pytest.fixture
+def priced(tmp_path: Path) -> Path:
+    """A match table where one fixture has no closing price.
+
+    The feed carries odds for about 81% of the real table — effectively
+    everything from 2003 and nothing before it — so "played, and no price" is
+    an ordinary row rather than a corrupt one, and the provider has to answer
+    ``None`` for it rather than a forecast that sums to something.
+    """
+    frame = LEAGUE.copy()
+    frame.loc[frame.index[0], ["odds_home", "odds_draw", "odds_away"]] = None
+    path = tmp_path / "matches.parquet"
+    frame.to_parquet(path, index=False)
+    return path
+
+
+def test_a_closing_price_is_read_and_de_vigged(priced: Path) -> None:
+    """The percentages a reader sees are the percentages the model was scored
+    against: one implementation, in `src/evaluation/market.py`."""
+    match_id = str(LEAGUE.iloc[1]["match_id"])
+    quoted = HistoricalOdds(priced).price(match_id)
+
+    assert quoted is not None
+    assert set(quoted.probabilities) == {"home", "draw", "away"}
+    assert sum(quoted.probabilities.values()) == pytest.approx(1.0)
+    assert quoted.overround > 0
+    assert quoted.odds["home"] == pytest.approx(float(LEAGUE.iloc[1]["odds_home"]))
+
+
+def test_a_played_match_with_no_price_is_not_a_forecast(priced: Path) -> None:
+    assert HistoricalOdds(priced).price(str(LEAGUE.iloc[0]["match_id"])) is None
+
+
+def test_a_fixture_the_table_does_not_hold_has_no_price(priced: Path) -> None:
+    assert HistoricalOdds(priced).price("no-such-match") is None
+
+
+def test_no_table_means_unavailable_and_no_price(tmp_path: Path) -> None:
+    absent = HistoricalOdds(tmp_path / "nothing.parquet")
+    assert not absent.available
+    assert absent.price("abc") is None
+
+
+def test_the_goal_rates_are_read_from_the_ratings_table() -> None:
+    """Milestone 4's Dixon-Coles fits these; Milestone 17 shows them. They are
+    a goal model's expectation, not xG off a shot map."""
+    ratings = pd.DataFrame(
+        {"match_id": ["a", "b"], "dc_home_lambda": [1.42, None], "dc_away_lambda": [1.03, None]}
+    )
+    rates = expected_goals(ratings, "a")
+
+    assert rates is not None
+    assert (rates.home, rates.away) == (1.42, 1.03)
+    assert rates.total == pytest.approx(2.45)
+    assert rates.supremacy == pytest.approx(0.39)
+
+
+def test_a_match_the_goal_model_never_rated_has_no_rates() -> None:
+    """Dixon-Coles refits on a rolling window and says nothing before its first
+    fit. A null there means exactly that, not a zero."""
+    ratings = pd.DataFrame(
+        {"match_id": ["a", "b"], "dc_home_lambda": [1.42, None], "dc_away_lambda": [1.03, None]}
+    )
+    assert expected_goals(ratings, "b") is None
+    assert expected_goals(ratings, "missing") is None
+
+
+def test_no_ratings_table_means_no_rates() -> None:
+    assert expected_goals(pd.DataFrame(), "a") is None
+    assert expected_goals(pd.DataFrame({"match_id": ["a"]}), "a") is None

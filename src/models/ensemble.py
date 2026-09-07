@@ -54,6 +54,16 @@ logger = get_logger(__name__)
 FORECAST_COLUMNS: tuple[str, str, str] = ("prob_home", "prob_draw", "prob_away")
 """The three probabilities, in :data:`~src.evaluation.metrics.CLASSES` order."""
 
+KEY_COLUMN = "match_id"
+"""What a forecast is *about*, carried on every row from Milestone 17.
+
+Declared here rather than imported, matching what `src/ratings`,
+`src/pipelines`, `src/feature_engineering` and `src/validation` each do. Those
+packages are forbidden from importing one another — that is the point of the
+layering CI enforces — so the join key is spelled once per layer, and a shared
+definition would mean a module importing another package to learn a string.
+"""
+
 MAX_ERROR_CORRELATION = 0.99
 """How alike two members' mistakes may be.
 
@@ -153,24 +163,36 @@ def fold_forecasts(
     states. Both need the matches back.
 
     Columns: ``fold``, ``match`` (the row's position within its evaluation
-    half, which is what makes two forecasters' rows line up),
+    half, which is what makes two forecasters' rows line up), ``match_id``,
     ``competition_id``, ``forecaster``, the three probabilities, and the
     outcome. The competition is carried because Milestone 10 asks where a model
     is reliable rather than whether it is, and that is a grouping this frame
     can answer and the scored table cannot — the backtest keeps competition and
     fold, but only as means.
+
+    ``match_id`` joined it at Milestone 17, and ``match`` stays beside it
+    rather than being replaced. They answer different questions: ``match``
+    lines two forecasters up within a fold, which is what the error
+    correlations need, and ``match_id`` names the fixture, which is what
+    anything joining these rows back to the canonical table needs — the closing
+    odds, in that milestone's case. Reconstructing the second from the first
+    means re-deriving the fold split somewhere else and trusting it to produce
+    the same order, which is a silent, plausible-looking wrong answer waiting
+    for the day a split parameter changes.
     """
     collected: list[pd.DataFrame] = []
     for fold in walk_forward(matches, folds=folds, horizon_days=horizon_days):
         outcomes = fold.evaluate[TARGET_COLUMN].to_numpy()
         competitions = fold.evaluate["competition_id"].to_numpy()
+        identifiers = fold.evaluate[KEY_COLUMN].to_numpy()
         for forecaster in forecasters:
             stated = pd.DataFrame(
                 forecaster.forecast(fold.train, fold.evaluate), columns=list(FORECAST_COLUMNS)
             )
             stated.insert(0, "fold", fold.index)
             stated.insert(1, "match", np.arange(len(fold.evaluate)))
-            stated.insert(2, "competition_id", competitions)
+            stated.insert(2, KEY_COLUMN, identifiers)
+            stated.insert(3, "competition_id", competitions)
             stated["forecaster"] = forecaster.name
             stated[TARGET_COLUMN] = outcomes
             collected.append(stated)

@@ -12,6 +12,73 @@ extra steps.
 
 ### Added
 
+- **Milestone 17 — the closing line, and what a gap from it measures.** The
+  odds have been in the canonical table since Milestone 2 and off every page
+  since Milestone 12, on the stated grounds that *"showing both invites the
+  comparison to be made without the walk-forward folds that make it
+  meaningful."* This milestone satisfies that objection rather than overruling
+  it: the comparison is made **with** the folds, and the page shows the answer.
+
+  The answer is not the one the layout implies. Over 61,889 out-of-sample
+  forecasts, grouped by how far the model was from the price:
+
+  | Apart | n | Model | Market | Model − market | Model better |
+  |---|---:|---:|---:|---:|---:|
+  | <2% | 9,628 | 0.9881 | 0.9872 | **+0.0009** | 49.2% |
+  | 2–5% | 21,139 | 1.0136 | 1.0099 | +0.0037 | 48.4% |
+  | 5–10% | 20,874 | 1.0199 | 1.0059 | +0.0140 | 46.4% |
+  | 10–20% | 9,419 | 1.0402 | 0.9864 | +0.0538 | 41.9% |
+  | >20% | 829 | 1.0810 | 0.8975 | **+0.1835** | 35.5% |
+
+  **Where the model agrees with the closing line it is level with it** —
+  +0.0009 over 9,628 matches — so the 0.0163 project-level deficit reported
+  since Milestone 9 is not spread thinly across every match. It is concentrated
+  in the ones the model sees differently, and it grows by a factor of about 200
+  from the narrowest band to the widest. In that widest band the market's own
+  log loss *falls* to 0.8975: those 829 matches are ones it prices confidently
+  and correctly while the model does not.
+
+  That rules out the reading a value detector rests on, so **no value detector
+  was built.** A gap is presented as what it measures — this model's likely
+  error on that fixture — and no page suggests a bet, flags value or computes
+  an expected return. The restraint is a measurement rather than caution.
+
+  **`src/evaluation/market.py`** is new and holds both ends of the subject: the
+  de-vig, moved out of the `bookmaker` baseline because three callers now need
+  "what did the market say" and three implementations of removing an overround
+  is three chances to publish a number that is not the one the benchmark was
+  scored against; and `disagreement`, which produces the table above.
+  `src/pipelines/report.py::market_comparison` joins it to the forecasts and
+  `make card` writes `market.parquet` beside them.
+
+  **`fold_forecasts` now carries `match_id`.** One line, and it is what makes
+  the join a join. The alternative — re-deriving the fold split wherever the
+  odds are needed and trusting it to produce the same row order — is a
+  plausible-looking wrong answer waiting for a split parameter to change. The
+  model card is byte-identical after the regeneration: no model, metric or
+  reported number moved.
+
+  **The dashboard gained a fourth provider protocol**, which is exactly what
+  Milestone 12's estimate said this would cost. `OddsProvider`, satisfied by
+  `HistoricalOdds` over the same canonical table the results come from, one
+  field on the context, and no view moved. Two panels replace two placeholders
+  on the match page: what the market said (with the overround stated, about 8%
+  in this feed) and how far apart the two are, with the band's measured verdict
+  under it.
+
+  **Expected goals ship as the goal model's own rates**, and the label is the
+  point. `dc_home_lambda` and `dc_away_lambda` are the two Poisson rates
+  Milestone 4's Dixon-Coles model fits, and they were already in the ratings
+  table — the placeholder that used to sit in that panel claimed this project
+  "fits none", which was simply wrong. They are not xG off a shot map, nothing
+  here ingests one, and the panel says so rather than blurring it.
+
+  One defect found on the way: reading three nullable `Float64` cells out of a
+  *row* of the match table yields an object array, and a missing price in one
+  is a `NAType` that `float()` refuses. About a fifth of the table has no
+  price, so that was the ordinary path rather than an edge case; the read is
+  off the one-row frame now.
+
 - **Milestone 16 — deployment and operations.** Three things stood between "it
   builds" and "it is running and somebody would know if it stopped": a
   published image, a scrape target, and a cache.

@@ -1,6 +1,6 @@
 """The providers one page render needs, resolved once and handed round.
 
-Six views, each wanting some of four sources and the settings. Building
+Six views, each wanting some of five sources and the settings. Building
 those inside each view would mean six places that know how a client is
 constructed and six places to change when a fourth provider is added.
 
@@ -27,8 +27,9 @@ from dashboard import providers
 from dashboard.client import PredictionClient
 from dashboard.providers.api import ApiPredictions
 from dashboard.providers.base import FixtureProvider, Notifier
-from dashboard.providers.historical import HistoricalResults
+from dashboard.providers.historical import HistoricalOdds, HistoricalResults
 from src.ingestion.base import MATCHES_FILENAME
+from src.pipelines.ratings import RATINGS_FILENAME
 from src.utils.config import Settings, load_settings
 
 
@@ -40,11 +41,23 @@ class Context:
     results: HistoricalResults
     predictions: ApiPredictions
     fixtures: FixtureProvider
+    odds: HistoricalOdds
     notifier: Notifier
 
     @property
     def reports_dir(self) -> Path:
         return self.settings.paths.reports_dir
+
+    @property
+    def ratings_path(self) -> str:
+        """Where the ratings table is, as the string its cache is keyed on.
+
+        Milestone 17 reads two columns of it — Dixon-Coles' goal rates — and
+        nothing else in this application reads it at all. A property rather
+        than a provider because it is *this project's own fitted model*, in the
+        same category as the report tables, not somebody else's football.
+        """
+        return str(self.settings.paths.features_dir / RATINGS_FILENAME)
 
     @property
     def matches_path(self) -> str:
@@ -58,7 +71,7 @@ class Context:
 
 
 def resolve() -> Context:
-    """Resolve the settings, the three providers and the transport.
+    """Resolve the settings, the four providers and the transport.
 
     Called as ``context.resolve()`` from every view rather than imported by
     name, deliberately: a module attribute is looked up when it is called, so a
@@ -75,5 +88,10 @@ def resolve() -> Context:
         results=HistoricalResults(settings.paths.processed_dir / MATCHES_FILENAME),
         predictions=ApiPredictions(client=client),
         fixtures=providers.fixtures(),
+        # The same file the results come from — the closing price is three
+        # columns of the canonical table — and a separate provider because a
+        # result and a price answer different questions about different
+        # moments. See dashboard/providers/base.py.
+        odds=HistoricalOdds(settings.paths.processed_dir / MATCHES_FILENAME),
         notifier=providers.notifier(),
     )

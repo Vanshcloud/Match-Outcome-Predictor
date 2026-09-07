@@ -28,6 +28,11 @@ everywhere, in all 39 competitions, which is the result to expect. A model that
 beat the closing line on public data would be evidence of a leak rather than of
 skill.
 
+**Where that 0.0163 lives** is a Milestone 17 measurement rather than a guess:
+grouped by how far the model was from the closing line, the deficit runs from
++0.0009 where the two agree to +0.1835 where they are furthest apart. See
+[Where the gap to the closing line actually lives](#where-the-gap-to-the-closing-line-actually-lives).
+
 ---
 
 ## How the folds are cut
@@ -232,6 +237,57 @@ justify it with.
 
 ---
 
+## Where the gap to the closing line actually lives
+
+Milestone 17. The project-level number — the shipped model 0.0163 behind the
+bookmaker — is a mean over 61,889 matches, and a mean can hide two very
+different worlds: a model uniformly a little worse everywhere, or a model level
+with the line on most fixtures and badly wrong on some. It is the second.
+
+Every out-of-sample forecast, grouped by how far it was from the closing line.
+"Apart" is total-variation distance, which for three outcomes reads as a
+percentage-point gap — 0.07 is "seven points apart":
+
+| Apart | n | Model | Market | Model − market | Model better |
+|---|---:|---:|---:|---:|---:|
+| <2% | 9,628 | 0.9881 | 0.9872 | **+0.0009** | 49.2% |
+| 2–5% | 21,139 | 1.0136 | 1.0099 | +0.0037 | 48.4% |
+| 5–10% | 20,874 | 1.0199 | 1.0059 | +0.0140 | 46.4% |
+| 10–20% | 9,419 | 1.0402 | 0.9864 | +0.0538 | 41.9% |
+| >20% | 829 | 1.0810 | 0.8975 | **+0.1835** | 35.5% |
+
+`make card` writes this to `data/reports/ensemble/market.parquet` from
+`src/pipelines/report.py::market_comparison`, over the same per-match forecasts
+the reliability tables are computed from.
+
+**Where the model agrees with the line, it is level with it.** +0.0009 over
+9,628 matches is not a deficit worth a sentence. Two milestones of model work
+bought 0.0003 of the 0.0165 that Milestone 8 left; this says the remaining gap
+is not spread thinly across every match, it is concentrated in the ones the
+model sees differently.
+
+**The disagreement predicts the model's error, not the market's.** The deficit
+grows by a factor of about 200 from the narrowest band to the widest, and in
+that widest band the market's own log loss *improves* to 0.8975 — those 829
+matches are ones it prices confidently and correctly while the model does not.
+The share of matches the model scores better on falls monotonically, 49.2% to
+35.5%.
+
+That rules out the reading a value detector rests on. "The model says 45% and
+the price says 38%, so there is value in the difference" is a testable claim,
+and the test is above: the wider that difference, the more likely it is that
+the model is the one that is wrong. Milestone 17 ships the comparison on the
+dashboard's match page with that sentence attached rather than a stake
+suggestion — see [DASHBOARD.md](DASHBOARD.md#the-market-and-what-a-gap-from-it-means).
+
+**What this is not.** It is not a claim that a model *cannot* beat a closing
+line, and it is not a betting result: log loss is a scoring rule, not a profit
+and loss, and none of these figures accounts for the margin that was removed to
+compute them. It is a statement about this model against this line over these
+folds.
+
+---
+
 ## What is measured, and what is not
 
 **Log loss** is the likelihood of what happened. It is the metric the
@@ -269,6 +325,7 @@ make backtest                      # 5 folds of a year each, ~5 seconds
 python scripts/backtest.py --folds 10 --horizon-days 182
 python scripts/backtest.py --competition ENG_1
 python scripts/backtest.py --markdown        # the tables above
+make card                          # also writes the disagreement table, ~5 min
 ```
 
 The finest grain — one row per fold, per competition, per forecaster, per

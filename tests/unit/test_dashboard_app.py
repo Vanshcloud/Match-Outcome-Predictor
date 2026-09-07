@@ -35,7 +35,7 @@ from dashboard.context import Context
 from dashboard.domain import identity, store
 from dashboard.domain.match import Fixture, MatchEvent, MatchStatus, Prediction
 from dashboard.providers import football_data_org
-from dashboard.providers.historical import HistoricalResults
+from dashboard.providers.historical import HistoricalOdds, HistoricalResults
 from dashboard.providers.null import NullFixtures, NullNotifier
 from dashboard.services import watch
 from dashboard.views import home as dashboard_home
@@ -43,7 +43,7 @@ from src.models.ensemble import SHIPPED
 from src.utils.config import load_settings
 from src.utils.paths import PROJECT_ROOT
 from tests.factories import league_frame, season_labels
-from tests.unit.test_dashboard_reports import forecasts_frame, scores_frame
+from tests.unit.test_dashboard_reports import forecasts_frame, market_frame, scores_frame
 
 APP = str(PROJECT_ROOT / "dashboard" / "app.py")
 
@@ -184,16 +184,38 @@ def _fixture(**overrides: object) -> Fixture:
 # ---- driving a page ----------------------------------------------------------
 
 
-def write_data(root: Path, *, matches: bool = True, reports: bool = True) -> None:
+def ratings_frame(frame: pd.DataFrame = LEAGUE) -> pd.DataFrame:
+    """Dixon-Coles goal rates for every match but the first.
+
+    The first is null on purpose: the model refits on a rolling window and has
+    nothing to say before its first fit, and "no rates for this fixture" is a
+    state the page has to render rather than an error.
+    """
+    return pd.DataFrame(
+        {
+            "match_id": frame["match_id"].to_numpy(),
+            "dc_home_lambda": [None, *([1.42] * (len(frame) - 1))],
+            "dc_away_lambda": [None, *([1.03] * (len(frame) - 1))],
+        }
+    )
+
+
+def write_data(
+    root: Path, *, matches: bool = True, reports: bool = True, ratings: bool = True
+) -> None:
     """A data directory holding whichever tables the test wants present."""
     if matches:
         (root / "processed").mkdir(parents=True, exist_ok=True)
         LEAGUE.to_parquet(root / "processed" / "matches.parquet", index=False)
+    if ratings:
+        (root / "features").mkdir(parents=True, exist_ok=True)
+        ratings_frame().to_parquet(root / "features" / "ratings.parquet", index=False)
     if reports:
         directory = root / "reports" / "ensemble"
         directory.mkdir(parents=True, exist_ok=True)
         scores_frame().to_parquet(directory / "backtest.parquet", index=False)
         forecasts_frame().to_parquet(directory / "forecasts.parquet", index=False)
+        market_frame().to_parquet(directory / "market.parquet", index=False)
 
 
 def _stub_context(
@@ -205,6 +227,7 @@ def _stub_context(
     notifier: object | None = None,
     matches: bool = True,
     reports: bool = True,
+    ratings: bool = True,
 ) -> None:
     """Point the dashboard at a temporary data directory and stub providers.
 
@@ -214,7 +237,7 @@ def _stub_context(
     the one place in the package that names a concrete one — which is the
     architecture being asserted as much as it is a convenience here.
     """
-    write_data(tmp_path, matches=matches, reports=reports)
+    write_data(tmp_path, matches=matches, reports=reports, ratings=ratings)
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
     def resolve() -> Context:
@@ -224,6 +247,7 @@ def _stub_context(
             results=HistoricalResults(settings.paths.processed_dir / "matches.parquet"),
             predictions=predictions if predictions is not None else StubPredictions(),  # type: ignore[arg-type]
             fixtures=feed if feed is not None else NullFixtures(),  # type: ignore[arg-type]
+            odds=HistoricalOdds(settings.paths.processed_dir / "matches.parquet"),
             notifier=notifier if notifier is not None else NullNotifier(),  # type: ignore[arg-type]
         )
 
@@ -243,6 +267,7 @@ def run(
     notifier: object | None = None,
     matches: bool = True,
     reports: bool = True,
+    ratings: bool = True,
     query: dict[str, str] | None = None,
 ) -> AppTest:
     """Render one page against a temporary data directory and stub providers.
@@ -260,6 +285,7 @@ def run(
         notifier=notifier,
         matches=matches,
         reports=reports,
+        ratings=ratings,
     )
     prelude = "".join(
         f"import streamlit as st\nst.query_params['{key}'] = {value!r}\n"
@@ -553,7 +579,12 @@ def test_a_fixture_page_shows_the_forecast_the_form_and_the_head_to_head(
 ) -> None:
     app = run("match", tmp_path, monkeypatch, query={"match": match_id()})
     assert app.exception == []
-    labels = {one.label: one.value for one in app.metric}
+    # First occurrence of each label, not last: Milestone 17 put a second
+    # Home/Draw/Away trio on this page — what the market said — under its own
+    # heading, and the forecast is the one rendered first.
+    labels: dict[str, str] = {}
+    for one in app.metric:
+        labels.setdefault(one.label, one.value)
     assert labels["Home"] == "17.8%"
     assert labels["Draw"] == "24.1%"
     assert labels["Away"] == "58.1%"
@@ -1098,3 +1129,68 @@ def test_with_no_transport_configured_a_goal_is_still_a_toast(
     app.run()
     assert [one.value for one in app.toast] == [f"Goal: {CLUB} 0-1 {RIVAL}"]
     assert app.exception == []
+
+
+# ---- Milestone 17: the market, and what a gap from it means -------------------
+
+
+def test_the_match_page_shows_the_closing_line_beside_the_forecast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Milestone 12 kept the odds off this page because showing both invites
+    the comparison to be made without the folds. Milestone 17 makes the
+    comparison *with* the folds and shows the answer instead."""
+    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
+    assert "What the market said" in said
+    assert "overround" in said
+
+
+def test_a_gap_from_the_market_is_reported_as_the_model_s_likely_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The finding, on the page: a gap is not an edge. A page that presented
+    it as one would contradict the measurement three directories away."""
+    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
+    assert "A gap is not an edge" in said
+    assert "more likely to be wrong about this match" in said
+
+
+def test_without_the_measurement_the_page_says_which_command_makes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`make card` writes the disagreement table. Before it has run, the page
+    still shows both forecasts and says how far apart they are — it just
+    declines to say what that has been worth."""
+    said = text_of(run("match", tmp_path, monkeypatch, reports=False, query={"match": match_id()}))
+    assert "make card" in said
+    assert "A gap is not an edge" not in said
+
+
+def test_the_match_page_shows_the_goal_model_s_expectation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Labelled as a goal-rate model's expectation, not as xG. Nothing in this
+    project has ever seen a shot map, and the label is the whole point."""
+    app = run("match", tmp_path, monkeypatch, query={"match": match_id()})
+    said = text_of(app)
+    assert "not shot-quality xG" in said
+    labels = {one.label: one.value for one in app.metric}
+    assert labels["Total"] == "2.45"
+    assert labels["Supremacy"] == "+0.39"
+
+
+def test_a_fixture_the_goal_model_never_rated_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dixon-Coles refits on a rolling window and has nothing to say before its
+    first fit. A null there means exactly that."""
+    first = str(LEAGUE.sort_values("date").iloc[0]["match_id"])
+    said = text_of(run("match", tmp_path, monkeypatch, query={"match": first}))
+    assert "before its first fit" in said
+
+
+def test_with_no_ratings_table_the_page_names_the_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    said = text_of(run("match", tmp_path, monkeypatch, ratings=False, query={"match": match_id()}))
+    assert "make ratings" in said

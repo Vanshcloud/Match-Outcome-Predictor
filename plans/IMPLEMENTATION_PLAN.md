@@ -948,7 +948,7 @@ views  ──▶  services  ──▶  providers  ──▶  domain
 | 13 — live fixtures | One class satisfying `FixtureProvider`, one registry entry, one environment variable. No view moves. |
 | 14 — accounts | Four accessors in `domain/favourites.py`. No view touches `st.session_state`. |
 | 15 — real-time | A second method on the fixture feed; the card already carries a minute and a score. |
-| 17 — odds, xG | A fourth protocol beside the three, and a section on the match page that already has its placeholder. |
+| 17 — odds, xG ✅ | A fourth protocol beside the three, and a section on the match page that already has its placeholder. **Spent, and it held exactly.** |
 | React client | `views/` is replaced; `domain`, `providers` and `services` are reused. This is why the caching is in the services and the providers hold no state. |
 
 CI asserts the arrows, including the one that matters: **no view names a
@@ -1437,6 +1437,135 @@ somebody deploying it would look.
 
 ---
 
+## Milestone 17 — The closing line, and what a gap from it measures ✅
+
+Milestone 12 wrote this one down as *"a fourth protocol beside the three, and a
+section on the match page that already has its placeholder."* Both held. What
+Milestone 12 did **not** predict is that the interesting half would be a
+measurement rather than a panel.
+
+### The objection this milestone had to answer
+
+Milestone 12 kept the odds off every page and said why: *"showing both invites
+the comparison to be made without the walk-forward folds that make it
+meaningful."* That is a good objection and it is not answered by adding a
+disclaimer. It is answered by making the comparison **with** the folds and
+putting the answer on the page instead of the invitation.
+
+`src/pipelines/report.py::market_comparison` is that comparison. Over 61,889
+out-of-sample forecasts, grouped by how far the model was from the price:
+
+| Apart | n | Model | Market | Model − market | Model better |
+|---|---:|---:|---:|---:|---:|
+| <2% | 9,628 | 0.9881 | 0.9872 | **+0.0009** | 49.2% |
+| 2–5% | 21,139 | 1.0136 | 1.0099 | +0.0037 | 48.4% |
+| 5–10% | 20,874 | 1.0199 | 1.0059 | +0.0140 | 46.4% |
+| 10–20% | 9,419 | 1.0402 | 0.9864 | +0.0538 | 41.9% |
+| >20% | 829 | 1.0810 | 0.8975 | **+0.1835** | 35.5% |
+
+### Two readings, and the second is the milestone
+
+**Where the model agrees with the closing line it is level with it.** +0.0009
+over 9,628 matches. The 0.0163 this project has reported since Milestone 9 is a
+mean, and a mean can hide two different worlds — a model uniformly a little
+worse everywhere, or a model level with the line on most fixtures and badly
+wrong on some. It is the second, and nothing before this milestone could tell
+them apart.
+
+**A gap is not an edge.** The deficit grows by a factor of about 200 across the
+bands, and in the widest one the market's own log loss *falls* to 0.8975 while
+the model's rises to 1.0810 — those 829 matches are ones the market prices
+confidently and correctly. The share the model wins falls monotonically, 49.2%
+to 35.5%.
+
+So the reading a value detector rests on — "the model says 45%, the price says
+38%, there is value in the difference" — is a testable claim, and it does not
+survive. **No value detector was built.** The page presents a gap as what it
+measures, which is this model's likely error on that fixture. That is a
+measurement rather than caution, and it is the only form of "value detection"
+this project's own evidence supports.
+
+### What it cost, against the estimate
+
+| | Estimated at Milestone 12 | Actual |
+|---|---|---|
+| Odds | "A fourth protocol beside the three" | `OddsProvider`, satisfied by `HistoricalOdds` over the same canonical table, one field on the context. No view moved. |
+| The panel | "A section on the match page that already has its placeholder" | Two placeholders replaced, both of them |
+| Expected goals | (assumed to need a feed) | Already in the ratings table |
+
+### The placeholder that was wrong
+
+The expected-goals placeholder read: *"the primary feed carries shots and shots
+on target; it carries no xG and this project fits none."* The first half is
+true. The second is not — **Dixon-Coles is a goal model.** It fits
+`dc_home_lambda` and `dc_away_lambda` per fixture, those columns have been in
+the ratings table since Milestone 4, and the three-class probability this
+project reports is a sum over a Poisson grid built from exactly those two
+numbers.
+
+So the panel ships them, labelled as a goal-rate model's expectation and
+explicitly not as shot-quality xG. The distinction is the whole point: nothing
+here has ever seen a shot map, and a panel labelled "xG" would be attributing a
+rival provider's measurement to a model that made an estimate. A reader asking
+why a forecast leans one way is now looking at its inputs.
+
+### One line in `src`, and why it is the load-bearing one
+
+`fold_forecasts` now carries `match_id` on every row. The alternative was to
+re-derive the fold split wherever the odds are needed and trust it to produce
+the same row order — which works today, looks right, and silently stops being
+right the first time a split parameter moves. That is the class of bug this
+project spends its CI budget on, so the id is carried rather than reconstructed.
+
+`make card` was re-run to write it. **`docs/MODEL_CARD.md` came back
+byte-identical**: no model, feature, split, metric or reported number changed
+this milestone.
+
+### The de-vig has one implementation
+
+It moved out of the `bookmaker` baseline into `src/evaluation/market.py`,
+because three callers now need "what did the market say": the benchmark, the
+disagreement table, and the dashboard's match page. Three implementations of
+removing an overround is three chances to put a percentage on a screen that is
+not the percentage the model was scored against.
+
+The removal is proportional, which is the transparent way rather than the most
+accurate one — the favourite carries more of the margin than an equal share —
+and the size of what was removed is published beside the result so a reader can
+judge how much the assumption matters. About 8% in this feed.
+
+### One defect, found by a test that had to be written anyway
+
+Reading three nullable `Float64` cells out of a *row* of the match table yields
+an object array, and a missing price in one is a `NAType` that `float()`
+refuses. Roughly a fifth of this table has no price — the feed's coverage is
+81%, effectively nothing before 2003 — so that was the ordinary path rather
+than an edge case, and the page would have raised on it. The read is off the
+one-row frame now, which is what the `bookmaker` baseline has always done.
+
+### Verified against the real tables
+
+The join was checked before anything was built on it, by asserting that the
+outcome column of the stored forecasts agrees with the outcome column of the
+reconstructed fold rows — 62,036 of 62,036 — and by landing on **61,889 priced
+matches with a market log loss of 0.99994**, which is the count and the figure
+`docs/EVALUATION.md` already reported from a completely different path. The
+shipped `market_comparison` then reproduced all five bands through `make card`.
+
+The page was driven against the live tables and a running service: a 4.5%
+disagreement on Remo v Coritiba landing in the 2–5% band, a 24.4% one on Raith
+Rovers v Stenhousemuir landing in >20%, and a pre-2003 fixture answering "no
+closing price" rather than raising.
+
+An earlier draft of this analysis was wrong and was caught by that check. It
+assigned a freshly-indexed Series onto a frame whose index had gaps after a
+`dropna`, so pandas aligned by label and scrambled the per-band losses while
+leaving the overall mean plausible. The bands were right; the numbers in them
+were another match's. A measurement that survives only because its headline
+figure looks reasonable is not a measurement.
+
+---
+
 ## Milestones 16–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
@@ -1445,6 +1574,7 @@ above are spent, and the shape held each time — a provider class, four
 accessors, and a service plus a transport. Milestone 16 spent none of it and
 was not supposed to: it is the one operational milestone in this stretch, and
 it touched `api/` and the workflows rather than a layer of the dashboard.
+Milestone 17 spent the fourth-protocol estimate and it held to the word.
 
 | | | Where it plugs in |
 |---|---|---|
@@ -1452,7 +1582,7 @@ it touched `api/` and the workflows rather than a layer of the dashboard.
 | 14 ✅ | Accounts and saved favourites | Done — `dashboard/domain/{identity,store}.py` behind the same four accessors |
 | 15 ✅ | Real-time tracking and notifications | Done — `services/watch.py` diffs the feed; `providers/webhook.py` behind a `Notifier` |
 | 16 ✅ | Deployment, monitoring, caching | Done — `api/metrics.py`, a prediction cache behind `PredictionService`, and a GHCR publish on a tag |
-| 17 | Bookmaker odds, expected goals, value detection | A fourth provider protocol; the match page has the placeholder |
+| 17 ✅ | Bookmaker odds, expected goals, value detection | Done — `OddsProvider` behind `HistoricalOdds`, `src/evaluation/market.py`, and the measurement that says why there is no value detector |
 | 18 | Player availability, injuries, transfers | A fifth; likewise |
 | 19 | Historical prediction archive, and drift | `src/storage/predictions.py` already logs every served forecast; Milestone 16 moved drift here, because it is measured from that log |
 | 20 | The platform | — |

@@ -5,7 +5,7 @@ of the package can be written before any of them exists. A view asks a provider
 for matches; it never asks *which* provider, and it never learns whether the
 answer came from a Parquet file, an HTTP feed or a websocket.
 
-**Three protocols, because there are three genuinely different questions.**
+**Four protocols, because there are four genuinely different questions.**
 
 :class:`ResultProvider`
     What has been played. Answered today by
@@ -33,6 +33,19 @@ answer came from a Parquet file, an HTTP feed or a websocket.
     :class:`~dashboard.providers.api.ApiPredictions`, over HTTP, because there
     must be exactly one process in this system that holds the model.
 
+:class:`OddsProvider`
+    What the *market* says. Answered by
+    :class:`~dashboard.providers.historical.HistoricalOdds`, out of the same
+    canonical table the results come from — the closing price is a column of
+    it. Milestone 12 predicted this as "a fourth protocol beside the three",
+    and that is what it cost.
+
+    Its own protocol rather than three more fields on :class:`ResultProvider`,
+    because the two answer different questions about different moments: a
+    result is what happened and a price is what was believed beforehand, and
+    the source that has tomorrow's prices is emphatically not the source that
+    has last season's scorelines.
+
 They are separate because a source that has one rarely has the others: the feed
 that knows tonight's kick-off times has no forecast, and the service that has
 the forecast does not know what kicked off. A single provider interface would
@@ -51,7 +64,7 @@ import datetime as dt
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from dashboard.domain.match import Fixture, MatchEvent, Prediction
+from dashboard.domain.match import Fixture, MarketPrice, MatchEvent, Prediction
 
 
 @runtime_checkable
@@ -130,6 +143,21 @@ class PredictionProvider(Provider, Protocol):
 
     def predict(self, match_id: str) -> Prediction | None:
         """One fixture, priced. ``None`` when the provider could not answer."""
+
+
+@runtime_checkable
+class OddsProvider(Provider, Protocol):
+    """The bookmaker's closing price for a fixture, and what it implies."""
+
+    def price(self, match_id: str) -> MarketPrice | None:
+        """One fixture's closing line, or ``None`` when there is no price for it.
+
+        ``None`` is ordinary rather than exceptional and covers two different
+        ordinary things: a match the feed carried no odds for — about 19% of
+        this table, nearly all of it before 2003 — and a match that has not
+        been played, which this project has no price for at all because it
+        ingests results.
+        """
 
 
 @runtime_checkable

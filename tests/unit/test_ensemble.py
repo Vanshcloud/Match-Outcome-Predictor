@@ -116,6 +116,7 @@ def test_the_pass_returns_the_matches_the_backtest_only_returns_means_of() -> No
     assert list(forecasts.columns) == [
         "fold",
         "match",
+        "match_id",
         "competition_id",
         *FORECAST_COLUMNS,
         "forecaster",
@@ -125,6 +126,17 @@ def test_the_pass_returns_the_matches_the_backtest_only_returns_means_of() -> No
     # Carried for Milestone 10's "where is it reliable", which is a grouping
     # the scored table keeps only as means.
     assert set(forecasts["competition_id"]) == set(LEAGUE["competition_id"])
+
+
+def test_every_forecast_names_the_fixture_it_is_about() -> None:
+    """Milestone 17. ``match`` lines two forecasters up within a fold;
+    ``match_id`` is what joins these rows to the closing odds, and
+    re-deriving it from the split somewhere else would be a plausible-looking
+    wrong answer waiting for a split parameter to change."""
+    forecasts = fold_forecasts(LEAGUE, [HOME], folds=2)
+    assert set(forecasts["match_id"]) <= set(LEAGUE["match_id"])
+    # One row per fixture per fold: the id identifies the row, not just labels it.
+    assert not forecasts.duplicated(["fold", "forecaster", "match_id"]).any()
 
 
 # ---- who is alike, and who that admits ---------------------------------------

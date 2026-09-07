@@ -24,7 +24,13 @@ from src.evaluation.reliability import expected_calibration_error, reliability
 from src.models.ensemble import FORECAST_COLUMNS, SHIPPED
 from src.pipelines.backtest import BACKTEST_FILENAME, per_competition_table, pooled_table
 from src.pipelines.report import reliability_by_class, reliability_by_competition
-from src.pipelines.tables import FORECASTS_FILENAME, read_forecasts, read_scores
+from src.pipelines.tables import (
+    FORECASTS_FILENAME,
+    MARKET_FILENAME,
+    read_forecasts,
+    read_market,
+    read_scores,
+)
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,16 +50,22 @@ BUILD_COMMAND = "make reproduce && make card"
 
 @dataclass(frozen=True, slots=True)
 class Reports:
-    """The two tables the dashboard reads, and where they came from.
+    """The three tables the dashboard reads, and where they came from.
 
-    Both optional and independently so: `make ensemble` writes the scores and
-    `make card` writes the forecasts, so a reader can easily have one and not
-    the other, and a page that demanded both would go blank over the half it
-    did not need.
+    All optional and independently so: `make ensemble` writes the scores and
+    `make card` writes the other two, so a reader can easily have one and not
+    the others, and a page that demanded all three would go blank over the two
+    it did not need.
+
+    ``market`` arrived at Milestone 17 — five rows saying what the model scores
+    against the closing line, by how far apart the two were. Five rows and its
+    own file because the join behind them is 62,000 forecasts against 300,000
+    matches, which is a measurement rather than a page load.
     """
 
     scores: pd.DataFrame | None
     forecasts: pd.DataFrame | None
+    market: pd.DataFrame | None
     reports_dir: Path
 
     @property
@@ -64,6 +76,10 @@ class Reports:
     def has_forecasts(self) -> bool:
         return self.forecasts is not None and not self.forecasts.empty
 
+    @property
+    def has_market(self) -> bool:
+        return self.market is not None and not self.market.empty
+
     def missing(self) -> tuple[str, ...]:
         """What is absent, named the way a reader would go looking for it."""
         absent = []
@@ -71,11 +87,13 @@ class Reports:
             absent.append(f"{ENSEMBLE_SUBDIR}/{BACKTEST_FILENAME} (run `make ensemble`)")
         if not self.has_forecasts:
             absent.append(f"{ENSEMBLE_SUBDIR}/{FORECASTS_FILENAME} (run `make card`)")
+        if not self.has_market:
+            absent.append(f"{ENSEMBLE_SUBDIR}/{MARKET_FILENAME} (run `make card`)")
         return tuple(absent)
 
 
 def load_reports(reports_dir: Path) -> Reports:
-    """Both report tables, each ``None`` when its file is not there.
+    """All three report tables, each ``None`` when its file is not there.
 
     Takes the reports directory rather than the whole ``PathsConfig``: this is
     the only thing it needs, and it is what lets the dashboard's cache be keyed
@@ -84,17 +102,21 @@ def load_reports(reports_dir: Path) -> Reports:
     directory = reports_dir / ENSEMBLE_SUBDIR
     scores = read_scores(directory / BACKTEST_FILENAME)
     forecasts = read_forecasts(directory / FORECASTS_FILENAME)
+    market = read_market(directory / MARKET_FILENAME)
     logger.info(
-        "reports: scores=%s forecasts=%s",
+        "reports: scores=%s forecasts=%s market=%s",
         "yes" if scores is not None else "no",
         f"{len(forecasts):,} rows" if forecasts is not None else "no",
+        f"{len(market)} band(s)" if market is not None else "no",
     )
-    return Reports(scores=scores, forecasts=forecasts, reports_dir=directory)
+    return Reports(scores=scores, forecasts=forecasts, market=market, reports_dir=directory)
 
 
 @st.cache_data(show_spinner="reading the reports…")
-def _cached_reports(reports_dir: str) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
-    """Both report tables, cached on the directory they came from.
+def _cached_reports(
+    reports_dir: str,
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
+    """All three report tables, cached on the directory they came from.
 
     Keyed by a plain string because Streamlit hashes a function's arguments to
     decide whether the cache is still valid, and a ``Path`` or a pydantic model
@@ -103,7 +125,7 @@ def _cached_reports(reports_dir: str) -> tuple[pd.DataFrame | None, pd.DataFrame
     the cache should be what pandas already knows how to store.
     """
     loaded = load_reports(Path(reports_dir))
-    return loaded.scores, loaded.forecasts
+    return loaded.scores, loaded.forecasts, loaded.market
 
 
 def reports(reports_dir: Path) -> Reports:
@@ -113,8 +135,13 @@ def reports(reports_dir: Path) -> Reports:
     these tables, so a reader dragging a filter must not re-read a
     two-megabyte Parquet each time.
     """
-    scores, forecasts = _cached_reports(str(reports_dir))
-    return Reports(scores=scores, forecasts=forecasts, reports_dir=reports_dir / ENSEMBLE_SUBDIR)
+    scores, forecasts, market = _cached_reports(str(reports_dir))
+    return Reports(
+        scores=scores,
+        forecasts=forecasts,
+        market=market,
+        reports_dir=reports_dir / ENSEMBLE_SUBDIR,
+    )
 
 
 # ---- the tables a panel renders ----------------------------------------------

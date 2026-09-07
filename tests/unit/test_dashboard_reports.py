@@ -70,27 +70,50 @@ def forecasts_frame(rows: int = 600) -> pd.DataFrame:
     )
 
 
+def market_frame() -> pd.DataFrame:
+    """A disagreement table shaped like the one `make card` writes.
+
+    All five bands, because a page finds its own row by band and a table
+    missing the one a fixture falls in is indistinguishable from no table at
+    all — which is a different sentence on the screen. The numbers are the ones
+    the real run produced, so a reader of this file sees the finding rather
+    than five placeholders.
+    """
+    return pd.DataFrame(
+        {
+            "band": ["<2%", "2-5%", "5-10%", "10-20%", ">20%"],
+            "n": [9628, 21139, 20874, 9419, 829],
+            "model": [0.9881, 1.0136, 1.0199, 1.0402, 1.0810],
+            "market": [0.9872, 1.0099, 1.0059, 0.9864, 0.8975],
+            "model_minus_market": [0.0009, 0.0037, 0.0140, 0.0538, 0.1835],
+            "model_better": [0.4917, 0.4844, 0.4638, 0.4195, 0.3546],
+        }
+    )
+
+
 # ---- loading, and the empty state --------------------------------------------
 
 
 def test_a_clean_checkout_loads_nothing_and_says_what_is_missing(tmp_path: Path) -> None:
     """The state a new reader meets, and the one CI runs in."""
     reports = data.load_reports(tmp_path)
-    assert reports.scores is None and reports.forecasts is None
-    assert not reports.has_scores and not reports.has_forecasts
+    assert reports.scores is None and reports.forecasts is None and reports.market is None
+    assert not (reports.has_scores or reports.has_forecasts or reports.has_market)
     absent = reports.missing()
-    assert len(absent) == 2
-    assert "make ensemble" in absent[0] and "make card" in absent[1]
+    assert len(absent) == 3
+    assert "make ensemble" in absent[0]
+    assert all("make card" in named for named in absent[1:])
 
 
-def test_both_tables_are_read_when_both_are_there(tmp_path: Path) -> None:
+def test_every_table_is_read_when_they_are_all_there(tmp_path: Path) -> None:
     directory = tmp_path / data.ENSEMBLE_SUBDIR
     directory.mkdir(parents=True)
     scores_frame().to_parquet(directory / "backtest.parquet", index=False)
     forecasts_frame().to_parquet(directory / "forecasts.parquet", index=False)
+    market_frame().to_parquet(directory / "market.parquet", index=False)
 
     reports = data.load_reports(tmp_path)
-    assert reports.has_scores and reports.has_forecasts
+    assert reports.has_scores and reports.has_forecasts and reports.has_market
     assert reports.missing() == ()
 
 
@@ -103,7 +126,10 @@ def test_one_table_without_the_other_is_a_real_state(tmp_path: Path) -> None:
 
     reports = data.load_reports(tmp_path)
     assert reports.has_scores and not reports.has_forecasts
-    assert reports.missing() == (f"{data.ENSEMBLE_SUBDIR}/forecasts.parquet (run `make card`)",)
+    assert reports.missing() == (
+        f"{data.ENSEMBLE_SUBDIR}/forecasts.parquet (run `make card`)",
+        f"{data.ENSEMBLE_SUBDIR}/market.parquet (run `make card`)",
+    )
 
 
 def test_an_empty_table_counts_as_absent(tmp_path: Path) -> None:

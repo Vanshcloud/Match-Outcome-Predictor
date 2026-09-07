@@ -23,6 +23,8 @@ from typing import Final
 
 import streamlit as st
 
+from dashboard.domain.match import OUTCOMES
+
 # ---- tokens ------------------------------------------------------------------
 # Repeated in .streamlit/config.toml, which Streamlit reads for its chrome. The
 # two must agree; there is no third place that feeds both.
@@ -52,7 +54,7 @@ showed them in a different order from the array the model returns is a page
 where a reader checking one against the other reads the wrong number.
 """
 
-OUTCOME_COLOURS: Final[dict[str, str]] = {"home": HOME, "draw": DRAW, "away": AWAY}
+OUTCOME_COLOURS: Final[dict[str, str]] = dict(zip(OUTCOMES, (HOME, DRAW, AWAY), strict=True))
 
 CONFIDENCE_COLOURS: Final[dict[str, str]] = {
     "high": "#22c55e",

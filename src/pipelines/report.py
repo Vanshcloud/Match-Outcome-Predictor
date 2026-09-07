@@ -25,9 +25,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src import __version__
+from src.evaluation.market import MARKET_COLUMNS, disagreement, implied_probabilities
 from src.evaluation.metrics import CLASSES
 from src.evaluation.model_card import CARD_FILENAME, ModelCard
 from src.evaluation.reliability import (
@@ -42,7 +44,7 @@ from src.models.ensemble import FORECAST_COLUMNS, MEMBERS, SHIPPED, ensemble
 from src.models.splits import DEFAULT_FOLDS
 from src.pipelines.backtest import COMMON, pooled_table
 from src.pipelines.derived import persist
-from src.pipelines.tables import FORECASTS_FILENAME
+from src.pipelines.tables import FORECASTS_FILENAME, KEY_COLUMN, MARKET_FILENAME
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -166,6 +168,73 @@ def build_model_card(
         trained_from=f"{pd.Timestamp(matches['date'].min()):%Y-%m-%d}",
         trained_to=f"{pd.Timestamp(matches['date'].max()):%Y-%m-%d}",
         columns=tuple(columns),
+    )
+
+
+def market_comparison(
+    forecasts: pd.DataFrame, matches: pd.DataFrame, *, name: str = SHIPPED
+) -> pd.DataFrame:
+    """What the model scores against the closing line, by how far apart they were.
+
+    Milestone 17's measurement, and the reason that milestone ships a verdict
+    rather than a value detector. The obvious reading of a gap between a model
+    and a price is that the gap is an edge. This asks the data instead, and the
+    answer runs the other way: the model's deficit against the line grows with
+    the size of the disagreement.
+
+    The join is on ``match_id``, which
+    :func:`~src.models.ensemble.fold_forecasts` carries from Milestone 17 for
+    exactly this. Reconstructing it by re-deriving the fold split would produce
+    a frame that looks right and silently stops being right the first time a
+    split parameter moves.
+
+    Args:
+        forecasts: The per-match diagnostic pass, one or more forecasters.
+        matches: The canonical table, or any frame carrying the odds columns.
+        name: Which forecaster in ``forecasts`` to compare. The shipped model
+            by default, because the card is about that one.
+
+    Returns:
+        One row per disagreement band. Empty — with the right columns — when
+        the two frames share no priced match, which is what a table with no
+        odds column produces and is a caller's to report.
+    """
+    stated = forecasts[forecasts["forecaster"] == name]
+    columns = [column for column in MARKET_COLUMNS if column in matches]
+    if stated.empty or len(columns) < len(MARKET_COLUMNS):
+        logger.warning("no market comparison: %s forecasts, %d odds column(s)", name, len(columns))
+        return disagreement(
+            np.empty((0, len(CLASSES))), np.empty((0, len(CLASSES))), pd.Series([], dtype=str)
+        )
+
+    priced = stated.merge(
+        matches[[KEY_COLUMN, *MARKET_COLUMNS]].drop_duplicates(KEY_COLUMN),
+        on=KEY_COLUMN,
+        how="inner",
+    )
+    return disagreement(
+        priced[list(FORECAST_COLUMNS)].to_numpy(dtype=float),
+        implied_probabilities(priced[list(MARKET_COLUMNS)].to_numpy(dtype=float)),
+        priced[TARGET_COLUMN],
+    )
+
+
+def write_market(table: pd.DataFrame, destination_dir: Path) -> Path:
+    """Persist the disagreement table, with a manifest beside it.
+
+    Five rows, and worth writing down for the reason the forecasts are: the
+    join behind them is 62,000 forecasts against 300,000 matches, and a
+    dashboard that redid it to draw one caption would be recomputing a
+    milestone's measurement on every page load.
+    """
+    return persist(
+        table,
+        destination_dir / MARKET_FILENAME,
+        extra={
+            "kind": "market-disagreement",
+            "bands": list(table["band"].astype(str)) if not table.empty else [],
+            "rows": len(table),
+        },
     )
 
 

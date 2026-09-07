@@ -1,7 +1,7 @@
 """One fixture, in as much depth as this project can honestly go.
 
-The page a card links to. It answers four questions and is explicit about the
-fifth it cannot:
+The page a card links to. It answers six questions and is explicit about the
+ones it cannot:
 
 1. **What does the model say?** Three calibrated probabilities, from the
    service over HTTP. Never computed here — see :mod:`dashboard.client`.
@@ -13,10 +13,16 @@ fifth it cannot:
 3. **What happened when these two met before?** Head-to-head, from the match
    table.
 4. **How have they been playing?** Form, likewise.
+5. **What did the market think?** The closing line with the overround removed,
+   beside the model, and — this is the part that matters — what the *distance*
+   between the two was worth over 61,889 out-of-sample forecasts. Milestone 17.
+6. **How many goals does the goal model expect?** Dixon-Coles' two Poisson
+   rates, labelled as what they are and not as shot-quality xG, which nothing
+   here has ever seen.
 
-The fifth — expected goals, injuries, availability, bookmaker odds, in-play
-statistics — has no source in this repository, and the sections for them say so
-and name the milestone rather than being absent.
+What remains — injuries, availability, in-play statistics — has no source in
+this repository, and the sections for them say so and name the milestone rather
+than being absent.
 """
 
 from __future__ import annotations
@@ -28,8 +34,8 @@ import streamlit as st
 
 from dashboard import context, ui
 from dashboard.domain import competition as catalogue
-from dashboard.domain.match import Prediction
-from dashboard.services import history, reports
+from dashboard.domain.match import ExpectedGoals, MarketPrice, Prediction
+from dashboard.services import history, market, reports
 
 MATCH_PARAM = "match"
 """The query parameter every card links with. ``match?match=<match_id>``."""
@@ -38,20 +44,13 @@ PICKER_FIXTURES = 25
 
 FUTURE_SECTIONS: tuple[tuple[str, str, str], ...] = (
     (
-        "Expected goals",
-        "Milestone 17",
-        "The primary feed carries shots and shots on target; it carries no xG "
-        "and this project fits none. A shot-quality model is a modelling "
-        "milestone with its own ablation, not a panel.",
-    ),
-    (
-        "Bookmaker odds",
-        "Milestone 17",
-        "Closing odds are in the match table and are deliberately not served "
-        "beside a forecast: they are the benchmark this project measures "
-        "itself against, and a page that showed both invites the comparison to "
-        "be made without the walk-forward folds that make it meaningful. "
-        "<code>docs/EVALUATION.md</code> is where that comparison lives.",
+        "Shot-quality expected goals",
+        "unscheduled",
+        "The panel above is a <em>goal-rate</em> model's expectation, which is "
+        "not the same thing as xG from a shot map. The ingested feed carries "
+        "shots and shots on target and no expected-goals column, so a real xG "
+        "figure needs a second provider — and a shot-quality model fitted here "
+        "would be a modelling milestone with its own ablation, not a panel.",
     ),
     (
         "Injuries and availability",
@@ -61,11 +60,13 @@ FUTURE_SECTIONS: tuple[tuple[str, str, str], ...] = (
         "limitations — it is not a gap in this page.",
     ),
     (
-        "In-play statistics",
-        "Milestone 15",
-        "Needs the same fixture provider the live centre does. The card and "
-        "the <code>Fixture</code> it renders already carry a minute and a "
-        "score.",
+        "In-play statistics on this page",
+        "unscheduled",
+        "Milestone 15 shipped the live strip on the home page, which is where "
+        "a minute and a changing score belong — this page is opened about a "
+        "match a reader has already picked. Per-minute statistics (shots, "
+        "possession) are a different feed from the fixture one, and no "
+        "provider here carries them.",
     ),
 )
 
@@ -87,6 +88,8 @@ def render() -> None:
 
     _header(row)
     _forecast(ctx, row, prediction)
+    _market(ctx, match_id, prediction)
+    _expected_goals(ctx, match_id, row)
     if row is not None:
         _history(ctx, row)
     _future()
@@ -271,6 +274,134 @@ def _bin_for(table: pd.DataFrame, stated: float) -> pd.Series | None:
     """
     inside = table[(table["lower"] <= stated) & (table["upper"] >= stated) & (table["n"] > 0)]
     return None if inside.empty else inside.iloc[0]
+
+
+def _market(ctx: context.Context, match_id: str, prediction: Prediction | None) -> None:
+    """The closing line beside the forecast, and what the distance is worth.
+
+    Milestone 12 kept the odds off this page on the grounds that showing both
+    invites the comparison to be made without the folds that make it
+    meaningful. Milestone 17 does not reverse that judgement — it satisfies it.
+    The comparison is made *with* the folds, in
+    :func:`src.pipelines.report.market_comparison`, and what this panel puts on
+    the screen is the answer rather than the invitation.
+
+    That answer is not the one a reader expects. A gap between the model and
+    the price reads like an edge; over 61,889 out-of-sample forecasts it is the
+    opposite — the model's deficit against the closing line grows with the size
+    of the gap, and where the two are furthest apart the market gets *sharper*.
+    So the caption says what the gap measures, which is this model's likely
+    error on this fixture.
+    """
+    ui.section("What the market said", "the closing line, with the overround removed")
+    quoted = market.price(ctx.odds, match_id)
+    if quoted is None:
+        st.caption(
+            "No closing price for this fixture. The feed carries odds for about "
+            "81% of the table — effectively everything from 2003 — and for "
+            "nothing that has not been played."
+            if ctx.odds.available
+            else "No match table, so no closing price. Run `make data`."
+        )
+        return
+
+    st.markdown(ui.probability_bar(quoted.probabilities), unsafe_allow_html=True)
+    columns = st.columns(3)
+    for column, (label, key) in zip(
+        columns, (("Home", "home"), ("Draw", "draw"), ("Away", "away")), strict=True
+    ):
+        column.metric(label, f"{quoted.probabilities[key]:.1%}", f"{quoted.odds[key]:.2f}")
+    st.caption(
+        f"Decimal prices below each percentage. The book paid out on "
+        f"{1 + quoted.overround:.1%} of the stake — the overround — and it is "
+        "removed proportionally, which is the transparent way rather than the "
+        "most accurate one: the favourite carries more of the margin than an "
+        "equal share. `src/evaluation/market.py` does it once, for this page "
+        "and for the benchmark alike."
+    )
+
+    if prediction is None:
+        return
+    _disagreement(ctx, prediction, quoted)
+
+
+def _disagreement(ctx: context.Context, prediction: Prediction, quoted: MarketPrice) -> None:
+    """How far the model is from the price, and what that distance was worth.
+
+    The verdict is a row of a table `make card` wrote, not a computation here.
+    A dashboard that recomputed a milestone's measurement to draw one caption
+    would be a second number to reconcile with the one in the documents.
+    """
+    apart = market.gap(prediction, quoted)
+    loaded = reports.reports(ctx.reports_dir)
+    found = market.verdict(loaded.market, apart)
+
+    ui.section("How far apart, and what that is worth", "measured on the walk-forward folds")
+    if found is None:
+        st.info(
+            f"The model and the market are **{apart:.1%}** apart on this fixture. "
+            f"What a gap that size has been worth is measured by `{market.BUILD_COMMAND}`, "
+            "which has not been run here."
+        )
+        return
+
+    deficit = float(found["model_minus_market"])
+    columns = st.columns(3)
+    columns[0].metric("Apart", f"{apart:.1%}")
+    columns[1].metric("Model minus market, in this band", f"{deficit:+.4f}")
+    columns[2].metric("Over", f"{int(found['n']):,} forecasts")
+    st.caption(
+        f"On the {int(found['n']):,} walk-forward forecasts that were "
+        f"**{found['band']}** away from the closing line, this model scored "
+        f"{float(found['model']):.4f} against the market's {float(found['market']):.4f}, "
+        f"and beat it on {float(found['model_better']):.1%} of them. "
+        "**A gap is not an edge.** The deficit grows with the distance — 0.0009 "
+        "where the two nearly agree, 0.1835 where they are more than twenty "
+        "points apart — so the honest reading of a wide gap here is that this "
+        "model is more likely to be wrong about this match, not that the price "
+        "is. See `docs/EVALUATION.md`."
+    )
+
+
+def _expected_goals(ctx: context.Context, match_id: str, row: pd.Series | None) -> None:
+    """What the fitted goal model expects each side to score.
+
+    Not xG. These are the two Poisson rates Milestone 4's Dixon-Coles model
+    fits, and the distinction is the whole reason this panel is labelled the
+    way it is — nothing in this project has ever seen a shot map. They are
+    worth showing because the three-class probability this project reports is a
+    sum over a Poisson grid built from exactly these two numbers, so a reader
+    asking why a forecast leans one way is looking at its inputs.
+    """
+    ui.section("Expected goals", "what the fitted goal-rate model expects — not shot-quality xG")
+    rates = market.goals(ctx.ratings_path, match_id)
+    if rates is None:
+        st.caption(
+            "No goal rates for this fixture. Dixon-Coles refits per competition "
+            "on a rolling window and has nothing to say about a match before its "
+            "first fit; a clean checkout has no ratings table at all — "
+            "`make ratings` builds one."
+        )
+        return
+    _rates(rates, row)
+
+
+def _rates(rates: ExpectedGoals, row: pd.Series | None) -> None:
+    """The two rates, the total and the supremacy, with the caveat under them."""
+    home = str(row["home_team"]) if row is not None else "Home"
+    away = str(row["away_team"]) if row is not None else "Away"
+    columns = st.columns(4)
+    columns[0].metric(home, f"{rates.home:.2f}")
+    columns[1].metric(away, f"{rates.away:.2f}")
+    columns[2].metric("Total", f"{rates.total:.2f}")
+    columns[3].metric("Supremacy", f"{rates.supremacy:+.2f}")
+    st.caption(
+        "Poisson rates from `dc_home_lambda` and `dc_away_lambda` in the ratings "
+        "table, fitted on matches strictly earlier than this one — the property "
+        "`src/validation/temporal.py` proves on every build. Expected goals from "
+        "a *goal* model, which is a different measurement from expected goals "
+        "off a shot map, and this project ingests no shot map."
+    )
 
 
 def _history(ctx: context.Context, row: pd.Series) -> None:

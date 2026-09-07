@@ -34,19 +34,13 @@ from typing import Protocol, runtime_checkable
 import numpy as np
 import pandas as pd
 
+from src.evaluation.market import MARKET_COLUMNS as ODDS_COLUMNS
+from src.evaluation.market import implied_probabilities
 from src.evaluation.metrics import CLASSES
 from src.ingestion.base import TARGET_COLUMN
 
-ODDS_COLUMNS: tuple[str, str, str] = ("odds_home", "odds_draw", "odds_away")
-"""The closing prices, in :data:`~src.evaluation.metrics.CLASSES` order."""
-
 DIXON_COLES_PROBABILITIES: tuple[str, str, str] = ("dc_prob_home", "dc_prob_draw", "dc_prob_away")
 """The rating's three-class output, in the same order."""
-
-MIN_DECIMAL_ODDS = 1.0
-"""A decimal price is a multiplier on the stake and cannot be below one. At
-exactly one the implied probability is certainty, which no bookmaker offers and
-no feed should contain."""
 
 
 @runtime_checkable
@@ -135,14 +129,14 @@ class DixonColes:
 
 
 class Bookmaker:
-    """The closing line, normalised.
+    """The closing line, with the overround removed.
 
-    Decimal odds imply probabilities that sum to more than one — the overround,
-    around 8% in this feed — and the standard removal is to divide each by the
-    total. That is not the only way to do it (the favourite carries more of the
-    margin than an equal share), but it is the transparent one, and a cleverer
-    de-vigging would make this benchmark a modelling choice rather than a
-    measurement.
+    The arithmetic moved to :func:`~src.evaluation.market.implied_probabilities`
+    at Milestone 17 and is not repeated here. Three callers now need "what did
+    the market say" — this benchmark, the disagreement table, and the
+    dashboard's match page — and three implementations of removing a margin is
+    three chances to publish a number that is not the one this benchmark was
+    scored against.
     """
 
     name = "bookmaker"
@@ -152,13 +146,7 @@ class Bookmaker:
         missing = [column for column in ODDS_COLUMNS if column not in evaluate]
         if missing:
             return _empty(len(evaluate))
-        odds = evaluate[list(ODDS_COLUMNS)].to_numpy(dtype=float)
-        usable = np.isfinite(odds).all(axis=1) & (odds > MIN_DECIMAL_ODDS).all(axis=1)
-
-        forecast = _empty(len(evaluate))
-        implied = np.reciprocal(odds, where=usable[:, None], out=_empty(len(evaluate)))
-        forecast[usable] = implied[usable] / implied[usable].sum(axis=1, keepdims=True)
-        return forecast
+        return implied_probabilities(evaluate[list(ODDS_COLUMNS)].to_numpy(dtype=float))
 
 
 def default_forecasters(evaluate: pd.DataFrame | None = None) -> tuple[Forecaster, ...]:

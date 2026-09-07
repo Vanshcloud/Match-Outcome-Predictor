@@ -201,9 +201,11 @@ same band actually happened, in this competition, from the same reliability
 tables the model card is generated from. A stated probability with no measured
 reliability beside it is the number this project exists to stop people quoting.
 
-Then form and head-to-head from the match table, and named placeholders for
-expected goals, odds, injuries and in-play statistics — each saying which
-milestone supplies it and why it is not a rendering problem.
+Then, since Milestone 17, **what the market said** and **what the goal model
+expects** — see [The market, and what a gap from it means](#the-market-and-what-a-gap-from-it-means)
+below. Then form and head-to-head from the match table, and named placeholders
+for injuries, in-play statistics and shot-quality xG — each saying what it
+needs and why it is not a rendering problem.
 
 ### Search
 Clubs, competitions and matches from one box. Three sections rather than one
@@ -216,6 +218,87 @@ The three panels Milestone 12 shipped, unchanged in substance: the scoreboard,
 the reliability diagram filtered by competition and fold, and the
 per-competition breakdown. Moved onto their own page so the home page can be
 about football and this one about the forecaster.
+
+## The market, and what a gap from it means
+
+Milestone 17. Two panels on the match page, and one of them is mostly a
+sentence.
+
+### What the market said
+
+The closing line, with the overround removed, beside the model's three
+probabilities and under the same probability bar. The decimal price sits under
+each percentage and the size of the margin is stated — the book on a typical
+match here pays out on about 108% of the stake, and removing that
+proportionally is the *transparent* way rather than the most accurate one,
+because the favourite carries more of the margin than an equal share.
+
+The de-vig is `src/evaluation/market.py::implied_probabilities`, which is the
+same function the backtest's `bookmaker` benchmark calls. One implementation,
+so the percentage a reader sees is the percentage the model was scored against.
+
+Odds cover about **81%** of the match table — effectively everything from 2003
+and nothing before it — and nothing that has not been played, because this
+project ingests results. A fixture without a price says so.
+
+### How far apart, and what that is worth
+
+This is the panel Milestone 12 said should not exist, and the reason it now
+does is that the objection was satisfied rather than overruled. Milestone 12's
+argument was that *"showing both invites the comparison to be made without the
+walk-forward folds that make it meaningful."* So the comparison is made **with**
+the folds, in `src/pipelines/report.py::market_comparison`, and the panel shows
+the answer instead of the invitation.
+
+The answer is not the one the layout implies. Over 61,889 out-of-sample
+forecasts, the model's deficit against the closing line **grows** with the size
+of the disagreement:
+
+| Apart | n | Model | Market | Model − market | Model better |
+|---|---|---|---|---|---|
+| <2% | 9,628 | 0.9881 | 0.9872 | **+0.0009** | 49.2% |
+| 2–5% | 21,139 | 1.0136 | 1.0099 | +0.0037 | 48.4% |
+| 5–10% | 20,874 | 1.0199 | 1.0059 | +0.0140 | 46.4% |
+| 10–20% | 9,419 | 1.0402 | 0.9864 | +0.0538 | 41.9% |
+| >20% | 829 | 1.0810 | 0.8975 | **+0.1835** | 35.5% |
+
+Two readings, and the second is the one that matters.
+
+**Where the model agrees with the closing line, it is level with it.** +0.0009
+over 9,628 matches is not a deficit anybody would act on. The project-level gap
+of 0.0163 that [EVALUATION.md](EVALUATION.md) reports does not come from the
+model being uniformly worse; it comes almost entirely from the matches where
+the model disagrees.
+
+**A gap is not an edge.** In the widest band the market's own log loss *falls*
+to 0.8975 — those are matches it prices confidently and correctly — while the
+model's rises to 1.0810. So the honest reading of a wide gap on a fixture is
+that this model is more likely to be wrong about that match, and the panel says
+so in those words. Nothing on this page suggests a bet, and that is a
+measurement rather than a disclaimer.
+
+The five bands are read from `market.parquet`, written by `make card`. Before
+that command has run the panel still shows both forecasts and how far apart
+they are — it just declines to say what the distance has been worth.
+
+### Expected goals, and the word that is not used
+
+`dc_home_lambda` and `dc_away_lambda` from the ratings table: the two Poisson
+rates Milestone 4's Dixon-Coles model fits, with the total and the supremacy
+beside them.
+
+**These are not xG.** Nothing in this project has ever seen a shot map — the
+ingested feed carries shots and shots on target and no expected-goals column —
+so a panel labelled "xG" would be attributing a rival provider's measurement to
+a model that made an estimate. The placeholder that used to sit here said this
+project "fits none", which was wrong: Dixon-Coles is a goal model, and these
+are its rates.
+
+They are worth showing because they are *how the rating thinks*. The
+three-class probability this project reports is a sum over a Poisson grid built
+from exactly these two numbers, so a reader asking why a forecast leans one way
+is looking at its inputs. A fixture before the model's first fit for its
+competition has no rates, and says that rather than showing zeros.
 
 ## Live tracking and alerts
 
@@ -402,11 +485,13 @@ constant the API and the model card use.
 - **Not a place to retrain anything.** No button here starts a fit. The
   pipelines are commands with manifests, and a fit triggered from a web page is
   a fit nobody can trace to the bytes that produced it.
-- **Not a bookmaker comparison.** Closing odds are in the match table and are
-  kept off every page: they are the benchmark this project measures itself
-  against, and showing both invites the comparison to be made without the
-  walk-forward folds that make it meaningful. `docs/EVALUATION.md` is where
-  that comparison lives.
+- **Not a tipster.** Milestone 17 put the closing line on the match page, and
+  the panel beside it says what a gap from that line has been worth: nothing
+  good for the model. No page here flags value, suggests a stake or computes an
+  expected return, and the reason is a measurement rather than caution — the
+  model's deficit against the price grows with the size of the disagreement, so
+  the difference a value detector would trade on is the best available
+  estimate of this model's own error.
 - **Not authenticated by default, and not for public hosting.** It reads local
   files and talks to a local service, and out of the box its profiles are
   names without passwords. Milestone 14 added optional OIDC login for

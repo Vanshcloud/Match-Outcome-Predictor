@@ -44,10 +44,12 @@ from src.pipelines.backtest import BACKTEST_FILENAME  # noqa: E402
 from src.pipelines.report import (  # noqa: E402
     SHIPPED,
     build_model_card,
+    market_comparison,
     reliability_by_class,
     reliability_by_competition,
     shipped_forecaster,
     write_forecasts,
+    write_market,
     write_model_card,
 )
 from src.pipelines.tables import (  # noqa: E402
@@ -150,6 +152,13 @@ def main(argv: list[str] | None = None) -> int:
     print("\nWhere it is least reliable, by competition:")
     print(render(reliability_by_competition(forecasts, bins=args.bins).head(10)))
 
+    # Milestone 17. Printed rather than only written, because the direction
+    # down this table is the finding and a number in a Parquet file nobody
+    # reads at the end of a five-minute command is a finding nobody has.
+    market = market_comparison(forecasts, frame, name=model.name)
+    print("\nAgainst the closing line, by how far apart the two were:")
+    print(render(market))
+
     card = build_model_card(
         scores,
         forecasts,
@@ -171,6 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     scores_path = args.scores or settings.paths.reports_dir / ENSEMBLE_SUBDIR / BACKTEST_FILENAME
     recorded = write_forecasts(forecasts, scores_path.parent)
     print(f"\n{len(forecasts):,} forecasts written to {recorded}")
+
+    compared = write_market(market, scores_path.parent)
+    print(f"{len(market)} disagreement band(s) written to {compared}")
 
     written = write_model_card(card, args.docs or PROJECT_ROOT / DOCS_DIRNAME)
     print(f"written to {written}")

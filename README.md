@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 16 of 20 — the dashboard, with a live fixture feed, saved favourites and live tracking, published and instrumented.**
+> **Status: Milestone 17 of 20 — the dashboard, with a live fixture feed, saved favourites, live tracking, and the closing line beside every forecast.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -458,7 +458,7 @@ import `api`, and the dashboard image does not contain it.
 | Home | Live, upcoming, just finished, and what the model can price — each a section that carries either fixtures or the reason there are none |
 | Live centre | The same feed given the whole screen, for a weekend with forty matches at once |
 | Competitions | Every league in `configs/leagues.yaml`, each with a page nobody wrote |
-| Match | The forecast, **what that probability is worth**, form, head-to-head |
+| Match | The forecast, **what that probability is worth**, the closing line and what a gap from it measures, expected goals, form, head-to-head |
 | Search | Clubs, competitions and fixtures from one box |
 | Model | The scoreboard, the filterable reliability diagram, the per-competition breakdown |
 
@@ -487,6 +487,35 @@ probabilities it reports how often forecasts stated in the same band actually
 happened, in that competition, from the same reliability tables the model card
 is generated from. A stated probability with no measured reliability beside it
 is the number this project exists to stop people quoting.
+
+**The closing line is on that page too, and so is what disagreeing with it is
+worth.** Milestone 12 kept the odds off every page on the grounds that showing
+both invites the comparison to be made without the walk-forward folds that make
+it meaningful. Milestone 17 satisfied that objection rather than overruling it:
+the comparison is made *with* the folds, and the page shows the answer.
+
+Over 61,889 out-of-sample forecasts, grouped by how far the model was from the
+price:
+
+| Apart | n | Model | Market | Model − market | Model better |
+|---|---:|---:|---:|---:|---:|
+| <2% | 9,628 | 0.9881 | 0.9872 | **+0.0009** | 49.2% |
+| 5–10% | 20,874 | 1.0199 | 1.0059 | +0.0140 | 46.4% |
+| >20% | 829 | 1.0810 | 0.8975 | **+0.1835** | 35.5% |
+
+**Where the model agrees with the line it is level with it**, and the 0.0163
+project-level deficit lives almost entirely in the matches where it does not.
+In the widest band the market gets *sharper* — 0.8975 — while the model gets
+worse. So a gap is not an edge; it is the best available estimate of how wrong
+this model is about that fixture, and the panel says so in those words. There
+is no value detector here, and that is a measurement rather than caution.
+[docs/EVALUATION.md](docs/EVALUATION.md) has all five bands.
+
+**Expected goals are the goal model's, and are labelled as such.** Dixon-Coles
+fits two Poisson rates per fixture and they were already in the ratings table;
+the placeholder that used to sit in that panel claimed this project "fits none",
+which was wrong. They are not xG off a shot map — nothing here ingests one —
+and the difference is stated on the page rather than blurred.
 
 **The reliability diagram is the one figure this project draws.** Milestone 10
 recorded that matplotlib was left out because every figure it would have drawn
@@ -582,6 +611,8 @@ src/
     ensemble.py       members chosen on error correlation, not on score
     calibration.py    one scalar, fitted on a holdout inside the training half
   evaluation/       how good a forecast is, three ways     [Milestone 7-10] ✅
+    market.py         the closing line as a forecast, and the
+                      disagreement measurement               [Milestone 17] ✅
     metrics.py        two proper scoring rules and one improper one
     reliability.py    does a stated probability happen at the rate it states
     model_card.py     the card, rendered from data it is handed
@@ -603,13 +634,14 @@ dashboard/          the presentation layer               [Milestone 12] ✅
     identity.py         who the reader is: a profile, or an account
     store.py            what they follow, kept between visits  [Milestone 14] ✅
   providers/          where football comes from — one protocol per source
-    historical.py       results, from the canonical table
+    historical.py       results, and the closing line  [Milestone 17] ✅
     api.py              forecasts, from the service over HTTP
     football_data_org.py  fixtures and live scores      [Milestone 13] ✅
     webhook.py          where a goal is posted             [Milestone 15] ✅
     null.py             no feed and no transport: nothing, and why
   services/           orchestration and caching over the providers
     watch.py            what changed since this tab last looked [M15] ✅
+    market.py           the price, the goal rates, the verdict [M17] ✅
   views/              Streamlit, thin and swappable
   ui.py               cards, probability bars, crests, form strings
   charts.py           the reliability diagram, and two honest conveniences
@@ -745,7 +777,7 @@ imports is a supply-chain surface with no upside.
 | 14 | Accounts — authentication, saved favourites and preferences | ✅ |
 | 15 | Real-time — in-play updates, notifications, favourite-team alerts | ✅ |
 | 16 | Deployment and operations — published images, Prometheus metrics, prediction cache | ✅ |
-| 17 | Odds and expected goals — bookmaker comparison, value detection | |
+| 17 | Odds and expected goals — the closing line on the match page, and what a gap from it measures | ✅ |
 | 18 | Availability — injuries, suspensions, transfer impact | |
 | 19 | Prediction archive — served forecasts scored against what happened, and the drift that shows up in it | |
 | 20 | The platform | |

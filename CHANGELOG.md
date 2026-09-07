@@ -12,6 +12,69 @@ extra steps.
 
 ### Added
 
+- **Milestone 18 — who is registered, and the two words that are not that.**
+  Scheduled as *player availability, injuries, transfers*. What shipped is a
+  squad panel, and the distance between those two sentences is the milestone.
+
+  Measured against the live API rather than read off a price list:
+  `/v4/competitions/{code}/teams` answers with **every club and every squad**
+  in one request; `/v4/matches/{id}` answers a **finished** match with an
+  **empty** `lineup` and `bench` on the free plan; and football-data.org has
+  **no injury endpoint at any tier** — there is no URL to be refused. Two of
+  the three things the roadmap named have no source, so the fifth protocol is
+  `SquadProvider` rather than `AvailabilityProvider`: a protocol named after
+  the question rather than after the answer would be three methods returning
+  `None`. The panel says *registered*, the caption says what that does not
+  include, and the match page's "Injuries and availability — Milestone 18"
+  placeholder is now "Injuries, suspensions and the team sheet — no source".
+
+  **The first milestone that had to reconcile two vocabularies.** Milestone 13
+  said its feed is not joinable to the match table and that still holds — ids
+  are prefixed `fdorg-` and nothing fetched is written anywhere — but a squad
+  panel on a match page has to find *this* club in *that* feed, and the
+  ingested table says "Hull" where the feed says "Hull City AFC". Two rules in
+  `providers/football_data_org.py::pick`: exact on the normalised name, short
+  name or three-letter code, then every word of ours appearing in theirs and
+  **only when exactly one club matches**. Normalising folds case, punctuation,
+  club-form suffixes and **accents**.
+
+  Measured over the current season of all nine covered competitions, 164 clubs:
+
+  | | Clubs matched |
+  |---|---|
+  | Accents kept | 136 / 164 (82.9%) |
+  | **Shipped — accents folded** | **146 / 164 (89.0%)** |
+
+  Folding accents alone was worth 14 clubs: this feed writes "Grêmio", "São
+  Paulo" and "1. FC Köln" where the ingested table writes them plain, and two
+  spellings of one letter is an encoding convention rather than a different
+  name. Every one of the remaining 18 is an **abbreviation** — "Nott'm Forest"
+  against "Nottingham Forest", "Sp Lisbon" against "Sporting CP" — and each is
+  a sentence saying the lookup missed. No alias table (eighteen hand-written
+  lines that go stale every August) and no fuzzy distance (a coin toss that
+  puts another club's squad on the page). Two candidates also answer nothing,
+  for the same reason.
+
+  Cost against the feed: **one request per competition, not one per club**, and
+  reused for an hour rather than the fixture feed's minute — a squad moves on a
+  transfer deadline and a score moves on a goal, and the same ten requests a
+  minute pay for both.
+
+  `src/` is **unchanged**. Nothing on this panel reaches the model: no table in
+  this repository has ever held a player's name, and the forecast above it was
+  produced by a model fitted on scorelines. A per-lookup detail worth recording
+  because it was a real defect caught in review — the provider carries the
+  *last* failure it had, so the page reads the reason immediately after each
+  club rather than once after both, which would have captioned a missing home
+  squad with why the away one failed.
+
+  `dashboard/domain/match.py` gains `Player` and `Squad`;
+  `dashboard/providers/base.py` gains `SquadProvider`;
+  `dashboard/providers/{football_data_org,null}.py` gain the two
+  implementations; `dashboard/providers/__init__.py` gains a third registry and
+  `DASHBOARD_SQUAD_PROVIDER` — its own variable rather than riding on the
+  fixture feed's, because a reader can want live scores and no squad panel.
+
 - **Milestone 17 — the closing line, and what a gap from it measures.** The
   odds have been in the canonical table since Milestone 2 and off every page
   since Milestone 12, on the stated grounds that *"showing both invites the

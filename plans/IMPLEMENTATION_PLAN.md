@@ -1566,6 +1566,117 @@ figure looks reasonable is not a measurement.
 
 ---
 
+## Milestone 18 — Who is registered, and the two words that are not that ✅
+
+The roadmap wrote this one as *"player availability, injuries, transfers — a
+fifth [protocol]; likewise."* The fifth protocol is exactly what it cost. The
+noun in front of it is what the milestone had to change.
+
+### What was measured before anything was built
+
+The estimate assumed availability had a source. Three probes against the live
+API, before a line of the panel existed:
+
+| Asked | Answered |
+|---|---|
+| `GET /v4/competitions/PL/teams` | 20 clubs, **each with its squad** — name, position, date of birth, nationality — in one request |
+| `GET /v4/matches/{id}` on a **finished** match | `homeTeam` carries id, name, shortName, tla, crest. `lineup` and `bench` are **empty** |
+| An injury endpoint | There is none, at any tier. There is no URL to be refused |
+
+So one of the three subjects has a source and two do not. The honest response
+was not to ship three methods returning `None` behind a protocol named
+`AvailabilityProvider` — a protocol named after the *question* rather than the
+*answer* — so it is `SquadProvider`, with one method, and every consumer of it
+says that a registered squad is an **upper bound** on availability rather than
+availability. The match page's placeholder, which read *"Injuries and
+availability — Milestone 18"*, now reads *"Injuries, suspensions and the team
+sheet — no source"*: a milestone that has been spent must stop being cited as
+the fix.
+
+### The join Milestone 13 said it would not make
+
+Milestone 13's rule was explicit — this feed is **not joinable to the match
+table**, its ids are prefixed `fdorg-`, and *"no alias table: nothing here is
+joined to an ingested row, so a mapping between the two vocabularies would be a
+guess with no reader."*
+
+Milestone 18 is the milestone that gives it a reader. A squad panel on a match
+page has to find *this* club in *that* feed, and the ingested table says "Hull"
+where the feed says "Hull City AFC". Nothing is joined by **id** — that rule
+stands, and no fetched row is written anywhere — but a name has to be matched,
+and the whole of what it cost is one function:
+
+1. Exact on the normalised name, short name or three-letter code.
+2. Every word of ours inside theirs — "Hull" in "Hull City", "Forest" in
+   "Nottingham Forest" — **only when exactly one club matches**.
+
+Normalisation folds case, punctuation, club-form suffixes (`FC`, `AFC`) and
+**accents**. Measured against the live API and the real table, over the current
+season of all nine covered competitions — 164 clubs:
+
+| | Clubs matched |
+|---|---|
+| Exact and subset rules, accents kept | 136 / 164 (82.9%) |
+| **Shipped — accents folded** | **146 / 164 (89.0%)** |
+
+| Competition | | Missed |
+|---|---|---|
+| Premier League | 19/20 | Nott'm Forest |
+| Championship | 23/24 | Wolves |
+| Bundesliga | 8/9 | Bayern Munich |
+| Serie A | 19/19 | — |
+| La Liga | 16/19 | Ath Bilbao, Ath Madrid, Espanol |
+| Ligue 1 | 16/17 | Rennes |
+| Eredivisie | 14/18 | AZ Alkmaar, For Sittard, Nijmegen, PSV Eindhoven |
+| Primeira Liga | 15/18 | Guimaraes, Sp Braga, Sp Lisbon |
+| Brasileirão | 16/20 | Athletico-PR, Atletico-MG, Botafogo RJ, Flamengo RJ |
+
+**Folding accents was worth 14 clubs and is the only rule here that changes a
+letter rather than dropping one.** "Grêmio", "São Paulo", "Alavés" and "1. FC
+Köln" against the same clubs written plain: two spellings of one letter is an
+encoding convention, not a different name.
+
+Every one of the remaining 18 is an **abbreviation**: "Nott'm Forest" against
+"Nottingham Forest", "Wolves" against "Wolverhampton", "Sp Lisbon" against
+"Sporting CP", "PSV Eindhoven" against "PSV". Those need an alias table —
+eighteen hand-written lines that go stale every August, on promotion,
+relegation and a rebrand — or a fuzzy distance, which is a coin toss that puts
+another club's squad on a page under that club's name. **Neither shipped.** A
+miss is a sentence saying the lookup missed, and two candidates answer nothing
+for the same reason.
+
+### What it cost the feed, and what it cost `src`
+
+One request per **competition**, not per club: the competition endpoint answers
+with every squad, so a match page is one call and the next fixture in that
+competition is none. Memoised for an hour against the fixture feed's minute —
+the length is a statement about how fast the thing changes, and a squad
+refetched every minute would spend the whole free-tier budget on a list that
+moves twice a year.
+
+`src/` is **unchanged**. No model, feature, split, metric or reported number
+moved, so `docs/MODEL_CARD.md` was not regenerated and needed not to be.
+Nothing on the panel reaches the forecast above it: no table in this repository
+has ever held a player's name, which is a limitation the model card already
+lists rather than a gap this page opened.
+
+| | Estimated at Milestone 17 | Actual |
+|---|---|---|
+| The protocol | "A fifth; likewise" | `SquadProvider`, one method, satisfied by one class over the feed already configured. Held to the word. |
+| The subject | "Availability, injuries, transfers" | Squads. Two of the three have no source, measured rather than assumed. |
+| The join | (not estimated) | The one thing this milestone actually cost: two vocabularies, 89% reconciled, and a sentence where it is not. |
+
+### One defect, found where the last one was
+
+The provider carries the **last** failure it had — the same mutable-provider
+shape `ApiPredictions` and `FootballDataOrgFixtures` use, and the reason
+`error` exists at all. The first draft of the panel read that reason once,
+after looking up both clubs. With the home club missing and the away one found,
+that captions the missing squad with *no reason at all*; with both missing for
+different reasons, it captions the first with the second's. The reason is now
+read immediately after each lookup, and the test that pins it says which of the
+two orderings is wrong.
+
 ## Milestones 16–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
@@ -1574,7 +1685,10 @@ above are spent, and the shape held each time — a provider class, four
 accessors, and a service plus a transport. Milestone 16 spent none of it and
 was not supposed to: it is the one operational milestone in this stretch, and
 it touched `api/` and the workflows rather than a layer of the dashboard.
-Milestone 17 spent the fourth-protocol estimate and it held to the word.
+Milestone 17 spent the fourth-protocol estimate and it held to the word. So
+did Milestone 18's fifth — but the estimate named three subjects and only one
+of them turned out to have a source, which is a thing an estimate about *shape*
+cannot catch.
 
 | | | Where it plugs in |
 |---|---|---|
@@ -1583,7 +1697,7 @@ Milestone 17 spent the fourth-protocol estimate and it held to the word.
 | 15 ✅ | Real-time tracking and notifications | Done — `services/watch.py` diffs the feed; `providers/webhook.py` behind a `Notifier` |
 | 16 ✅ | Deployment, monitoring, caching | Done — `api/metrics.py`, a prediction cache behind `PredictionService`, and a GHCR publish on a tag |
 | 17 ✅ | Bookmaker odds, expected goals, value detection | Done — `OddsProvider` behind `HistoricalOdds`, `src/evaluation/market.py`, and the measurement that says why there is no value detector |
-| 18 | Player availability, injuries, transfers | A fifth; likewise |
+| 18 ✅ | Player availability, injuries, transfers | Done — `SquadProvider` behind `FootballDataOrgSquads`, and the measurement that says only one of those three words has a source |
 | 19 | Historical prediction archive, and drift | `src/storage/predictions.py` already logs every served forecast; Milestone 16 moved drift here, because it is measured from that log |
 | 20 | The platform | — |
 

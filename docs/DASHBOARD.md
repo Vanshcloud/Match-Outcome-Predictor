@@ -203,9 +203,11 @@ reliability beside it is the number this project exists to stop people quoting.
 
 Then, since Milestone 17, **what the market said** and **what the goal model
 expects** — see [The market, and what a gap from it means](#the-market-and-what-a-gap-from-it-means)
-below. Then form and head-to-head from the match table, and named placeholders
-for injuries, in-play statistics and shot-quality xG — each saying what it
-needs and why it is not a rendering problem.
+below — and since Milestone 18, **who is registered**: both squads, from the
+same feed the live scores come from. Then form and head-to-head from the match
+table, and named placeholders for team sheets, injuries, in-play statistics and
+shot-quality xG — each saying what it needs and why it is not a rendering
+problem.
 
 ### Search
 Clubs, competitions and matches from one box. Three sections rather than one
@@ -299,6 +301,108 @@ three-class probability this project reports is a sum over a Poisson grid built
 from exactly these two numbers, so a reader asking why a forecast leans one way
 is looking at its inputs. A fixture before the model's first fit for its
 competition has no rates, and says that rather than showing zeros.
+
+## Squads, and the three words that are not interchangeable
+
+Milestone 18. The roadmap called it *player availability, injuries, transfers*.
+What shipped is a squad panel, and the gap between those two sentences is the
+milestone.
+
+| `DASHBOARD_SQUAD_PROVIDER` | Class | What it answers |
+|---|---|---|
+| `none` (default) | `providers/null.py` | Nothing, and the reason. |
+| `football-data.org` | `providers/football_data_org.py` | `GET /v4/competitions/{code}/teams`: every club in a competition with its registered squad — name, position, date of birth, nationality. Nine competitions, the same `FOOTBALL_DATA_API_KEY`. |
+
+```bash
+export FOOTBALL_DATA_API_KEY=...
+export DASHBOARD_SQUAD_PROVIDER=football-data.org
+```
+
+Its own variable rather than riding on `DASHBOARD_FIXTURE_PROVIDER`, even
+though the shipped implementation of both is one feed and one key: a reader who
+wants live scores and no squad panel — or the reverse — sets one and not the
+other.
+
+### Registered is not available, and available is not selected
+
+- **Registered** is who the club has on its list. This is what ships.
+- **Available** is who is fit and not suspended. **football-data.org has no
+  injury endpoint at any tier.** There is no URL to be refused.
+- **Selected** is the eleven. The free plan answers `/v4/matches/{id}` with an
+  **empty** `lineup` and `bench`, on a *finished* match — measured against the
+  live API, not inferred from the price list.
+
+So the protocol is `SquadProvider` and not `AvailabilityProvider`: a protocol
+named after the question rather than after the answer would be three methods
+returning `None`. The panel says *registered*, the caption says what that does
+not include, and the section for the other two now reads "no source" instead of
+naming a milestone that has been spent.
+
+### The join Milestone 13 said it would not make
+
+Milestone 13 was explicit that its feed is **not joinable to the match table**,
+and that has not changed: ids are still prefixed `fdorg-` and nothing this feed
+returns is written anywhere. But a squad panel on a match page has to find
+*this* club in *that* feed, and Milestone 18 is the first milestone that needs
+the two vocabularies reconciled at all.
+
+It is done by name, in `providers/football_data_org.py::pick`, with two rules
+and no third:
+
+1. Exact match on the normalised name, short name or three-letter code.
+2. Every word of this project's name appearing in the feed's — "Hull" in "Hull
+   City", "Forest" in "Nottingham Forest" — and **only when exactly one club
+   matches**.
+
+Normalising folds case, punctuation, club-form suffixes (`FC`, `AFC`) and
+**accents**: this feed writes "Grêmio", "São Paulo" and "1. FC Köln" where the
+ingested table writes them plain. Two spellings of one letter is an encoding
+convention rather than a different name, and folding them was worth 14 clubs.
+
+**Measured against the live feed and the real table**, over the current season
+of all nine covered competitions — 164 clubs:
+
+| | Clubs matched |
+|---|---|
+| Exact and subset rules, accents kept | 136 / 164 (82.9%) |
+| **Shipped — accents folded** | **146 / 164 (89.0%)** |
+
+| Competition | | Missed |
+|---|---|---|
+| Premier League | 19/20 | Nott'm Forest |
+| Championship | 23/24 | Wolves |
+| Bundesliga | 8/9 | Bayern Munich |
+| Serie A | 19/19 | — |
+| La Liga | 16/19 | Ath Bilbao, Ath Madrid, Espanol |
+| Ligue 1 | 16/17 | Rennes |
+| Eredivisie | 14/18 | AZ Alkmaar, For Sittard, Nijmegen, PSV Eindhoven |
+| Primeira Liga | 15/18 | Guimaraes, Sp Braga, Sp Lisbon |
+| Brasileirão | 16/20 | Athletico-PR, Atletico-MG, Botafogo RJ, Flamengo RJ |
+
+Every remaining miss is an **abbreviation**, not an encoding: "Nott'm Forest"
+against "Nottingham Forest", "Wolves" against "Wolverhampton", "Sp Lisbon"
+against "Sporting CP". No fuzzy distance and no alias table — an alias table is
+eighteen hand-written lines that go stale every August, and a fuzzy match is a
+coin toss that puts another club's squad on the page. **A miss is a sentence
+saying the lookup missed**, which is the same rule as everywhere else here: two
+candidates also answer nothing, for the same reason.
+
+### What it costs the feed
+
+One request per competition, not one per club: the competition endpoint answers
+with every club *and* every squad, so a match page costs one call and the next
+fixture in that competition costs none. Reused for **an hour** against the
+fixture feed's minute — a squad moves on a transfer deadline and a score moves
+on a goal, and the same ten requests a minute pay for both.
+
+### What it did not touch
+
+No view moved for the odds at Milestone 17 and none moved for this: the panel
+is one function on the match page, and `src/` is **unchanged**. Nothing here
+reaches the model — no table in this project has ever held a player's name, and
+the forecast above the panel was produced by a model fitted on scorelines. A
+squad panel that quietly became a feature would be a model change wearing a
+presentation change's clothes.
 
 ## Live tracking and alerts
 
@@ -470,6 +574,7 @@ set of contrast ratios to check.
 | `DASHBOARD_API_URL` | `http://127.0.0.1:8000` | Where forecasts are asked for. Compose sets `http://api:8000`. The dashboard checks that what answers there is *this* project's API — a `/health` that says `ok` but carries no component list is reported as the misconfiguration it is |
 | `DASHBOARD_FIXTURE_PROVIDER` | `none` | Which fixture feed supplies today, upcoming and live: `none` or `football-data.org` |
 | `FOOTBALL_DATA_API_KEY` | unset | The key for that feed. Environment only — `configs/config.yaml` is committed |
+| `DASHBOARD_SQUAD_PROVIDER` | `none` | Which source supplies registered squads: `none` or `football-data.org`. Its own variable, so live scores and the squad panel are turned on separately |
 | `DASHBOARD_PROFILE_STORE` | `<DATA_DIR>/dashboard/profiles.json` | Where saved favourites live. Compose points it at a writable volume |
 | `DASHBOARD_NOTIFIER` | `none` | Where match events are sent: `none` or `webhook` |
 | `DASHBOARD_WEBHOOK_URL` | unset | The URL `webhook` posts to. A credential — environment only |

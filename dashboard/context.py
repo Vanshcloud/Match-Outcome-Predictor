@@ -1,6 +1,6 @@
 """The providers one page render needs, resolved once and handed round.
 
-Six views, each wanting some of five sources and the settings. Building
+Six views, each wanting some of six sources and the settings. Building
 those inside each view would mean six places that know how a client is
 constructed and six places to change when a fourth provider is added.
 
@@ -26,7 +26,7 @@ from pathlib import Path
 from dashboard import providers
 from dashboard.client import PredictionClient
 from dashboard.providers.api import ApiPredictions
-from dashboard.providers.base import FixtureProvider, Notifier
+from dashboard.providers.base import FixtureProvider, Notifier, SquadProvider
 from dashboard.providers.historical import HistoricalOdds, HistoricalResults
 from src.ingestion.base import MATCHES_FILENAME
 from src.pipelines.ratings import RATINGS_FILENAME
@@ -42,6 +42,7 @@ class Context:
     predictions: ApiPredictions
     fixtures: FixtureProvider
     odds: HistoricalOdds
+    squads: SquadProvider
     notifier: Notifier
 
     @property
@@ -71,7 +72,7 @@ class Context:
 
 
 def resolve() -> Context:
-    """Resolve the settings, the four providers and the transport.
+    """Resolve the settings, the five providers and the transport.
 
     Called as ``context.resolve()`` from every view rather than imported by
     name, deliberately: a module attribute is looked up when it is called, so a
@@ -93,5 +94,6 @@ def resolve() -> Context:
         # result and a price answer different questions about different
         # moments. See dashboard/providers/base.py.
         odds=HistoricalOdds(settings.paths.processed_dir / MATCHES_FILENAME),
+        squads=providers.squads(),
         notifier=providers.notifier(),
     )

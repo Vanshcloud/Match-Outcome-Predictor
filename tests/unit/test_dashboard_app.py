@@ -33,12 +33,13 @@ from streamlit.testing.v1 import AppTest
 
 from dashboard.context import Context
 from dashboard.domain import identity, store
-from dashboard.domain.match import Fixture, MatchEvent, MatchStatus, Prediction
+from dashboard.domain.match import Fixture, MatchEvent, MatchStatus, Player, Prediction, Squad
 from dashboard.providers import football_data_org
 from dashboard.providers.historical import HistoricalOdds, HistoricalResults
-from dashboard.providers.null import NullFixtures, NullNotifier
+from dashboard.providers.null import NullFixtures, NullNotifier, NullSquads
 from dashboard.services import watch
 from dashboard.views import home as dashboard_home
+from dashboard.views import match as match_page
 from src.models.ensemble import SHIPPED
 from src.utils.config import load_settings
 from src.utils.paths import PROJECT_ROOT
@@ -225,6 +226,7 @@ def _stub_context(
     predictions: object | None = None,
     feed: object | None = None,
     notifier: object | None = None,
+    squads: object | None = None,
     matches: bool = True,
     reports: bool = True,
     ratings: bool = True,
@@ -248,6 +250,7 @@ def _stub_context(
             predictions=predictions if predictions is not None else StubPredictions(),  # type: ignore[arg-type]
             fixtures=feed if feed is not None else NullFixtures(),  # type: ignore[arg-type]
             odds=HistoricalOdds(settings.paths.processed_dir / "matches.parquet"),
+            squads=squads if squads is not None else NullSquads(),  # type: ignore[arg-type]
             notifier=notifier if notifier is not None else NullNotifier(),  # type: ignore[arg-type]
         )
 
@@ -265,6 +268,7 @@ def run(
     predictions: object | None = None,
     feed: object | None = None,
     notifier: object | None = None,
+    squads: object | None = None,
     matches: bool = True,
     reports: bool = True,
     ratings: bool = True,
@@ -283,6 +287,7 @@ def run(
         predictions=predictions,
         feed=feed,
         notifier=notifier,
+        squads=squads,
         matches=matches,
         reports=reports,
         ratings=ratings,
@@ -1194,3 +1199,136 @@ def test_with_no_ratings_table_the_page_names_the_command(
 ) -> None:
     said = text_of(run("match", tmp_path, monkeypatch, ratings=False, query={"match": match_id()}))
     assert "make ratings" in said
+
+
+# ---- Milestone 18: who is registered ------------------------------------------
+
+
+class StubSquads:
+    """A squad source, without a source. Answers for whichever clubs it was
+    given and sets the error the real one would for the rest."""
+
+    name = "stub"
+    available = True
+
+    def __init__(self, *, known: dict[str, int] | None = None) -> None:
+        self._known = known or {}
+        self.error: str | None = None
+        self.asked: list[tuple[str, str | None]] = []
+
+    def squad(self, team: str, *, competition_id: str | None = None) -> Squad | None:
+        self.asked.append((team, competition_id))
+        size = self._known.get(team)
+        if size is None:
+            self.error = f"No club in this feed's squad list is spelled like **{team}**."
+            return None
+        self.error = None
+        return Squad(
+            team=team,
+            full_name=f"{team} FC",
+            players=tuple(
+                Player(
+                    name=f"Player {index}",
+                    position="Goalkeeper" if index == 0 else "Midfield",
+                    date_of_birth=dt.date(1996, 1, 1),
+                )
+                for index in range(size)
+            ),
+            source="stub",
+            competition_id=competition_id,
+        )
+
+
+def teams_of(match: str) -> tuple[str, str]:
+    """The two clubs of a fixture, as the match table spells them."""
+    row = LEAGUE[LEAGUE["match_id"] == match].iloc[0]
+    return str(row["home_team"]), str(row["away_team"])
+
+
+def test_the_match_page_shows_both_registered_squads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Milestone 18, and the caption is as much of it as the numbers: a squad
+    is who is registered, which is an upper bound on who is available."""
+    home, away = teams_of(match_id())
+    source = StubSquads(known={home: 3, away: 4})
+    app = run("match", tmp_path, monkeypatch, squads=source, query={"match": match_id()})
+    said = text_of(app)
+    assert "Who is registered" in said
+    assert "Registered is not available" in said
+    assert "Registered squads from stub" in said
+    assert [one.value for one in app.metric if one.label == "Registered"] == ["3", "4"]
+    assert source.asked == [(home, "ENG_1"), (away, "ENG_1")]
+    assert app.exception == []
+
+
+def test_a_club_the_source_could_not_match_says_so_beside_the_one_it_did(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reason has to be read per lookup: a provider carries the *last*
+    failure it had, so a shared read would caption the missing club with why
+    the other one failed — or, since the other succeeded, with nothing."""
+    home, away = teams_of(match_id())
+    app = run(
+        "match",
+        tmp_path,
+        monkeypatch,
+        squads=StubSquads(known={home: 3}),
+        query={"match": match_id()},
+    )
+    said = text_of(app)
+    assert f"spelled like **{away}**" in said
+    assert [one.value for one in app.metric if one.label == "Registered"] == ["3"]
+    assert app.exception == []
+
+
+def test_with_no_squad_source_the_section_says_what_would_configure_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default, and it must read as a boundary rather than as an outage."""
+    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
+    assert "Who is registered" in said
+    assert "DASHBOARD_SQUAD_PROVIDER" in said
+
+
+def test_injuries_are_now_named_as_having_no_source_rather_than_a_milestone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Milestone 18 shipped the squad and found the rest has nowhere to come
+    from — no injury endpoint at any tier, and an empty lineup on this plan."""
+    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
+    assert "no injury endpoint at any tier" in said
+    # The heading no longer promises a milestone that has been spent.
+    assert "Milestone 18" not in {milestone for _, milestone, _ in match_page.FUTURE_SECTIONS}
+
+
+def test_a_fixture_outside_the_match_table_has_no_competition_to_look_up_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A card from the live feed opens a page with no table row. The squad
+    lookup needs the competition that row carries, and says so rather than
+    asking the feed about a competition it guessed."""
+    said = text_of(
+        run(
+            "match",
+            tmp_path,
+            monkeypatch,
+            squads=StubSquads(known={CLUB: 3}),
+            query={"match": "fdorg-497821"},
+        )
+    )
+    assert "no competition to look a squad up in" in said
+
+
+def test_when_neither_club_is_found_the_reason_is_said_once_not_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A competition the source does not cover fails both lookups with the
+    same sentence, and printing it under two empty columns reads as two
+    problems."""
+    home, _ = teams_of(match_id())
+    app = run(
+        "match", tmp_path, monkeypatch, squads=StubSquads(known={}), query={"match": match_id()}
+    )
+    assert text_of(app).count(f"spelled like **{home}**") == 1
+    assert [one.value for one in app.metric if one.label == "Registered"] == []

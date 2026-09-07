@@ -5,7 +5,9 @@ of the package can be written before any of them exists. A view asks a provider
 for matches; it never asks *which* provider, and it never learns whether the
 answer came from a Parquet file, an HTTP feed or a websocket.
 
-**Four protocols, because there are four genuinely different questions.**
+**Five protocols, and a transport, because they are genuinely different
+questions.** Milestone 12 wrote four of these; each milestone since has added
+one, and no view has moved to take any of them.
 
 :class:`ResultProvider`
     What has been played. Answered today by
@@ -46,6 +48,13 @@ answer came from a Parquet file, an HTTP feed or a websocket.
     the source that has tomorrow's prices is emphatically not the source that
     has last season's scorelines.
 
+:class:`SquadProvider`
+    Who is *registered* for a club. Answered by
+    :class:`~dashboard.providers.football_data_org.FootballDataOrgSquads`,
+    which reads the same feed the fixtures come from — squads are on the free
+    tier, team sheets and injuries are not, and the protocol is named after
+    what can be answered rather than after what Milestone 18 was called.
+
 They are separate because a source that has one rarely has the others: the feed
 that knows tonight's kick-off times has no forecast, and the service that has
 the forecast does not know what kicked off. A single provider interface would
@@ -64,7 +73,7 @@ import datetime as dt
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from dashboard.domain.match import Fixture, MarketPrice, MatchEvent, Prediction
+from dashboard.domain.match import Fixture, MarketPrice, MatchEvent, Prediction, Squad
 
 
 @runtime_checkable
@@ -157,6 +166,43 @@ class OddsProvider(Provider, Protocol):
         this table, nearly all of it before 2003 — and a match that has not
         been played, which this project has no price for at all because it
         ingests results.
+        """
+
+
+@runtime_checkable
+class SquadProvider(Provider, Protocol):
+    """Who is registered to play for a club — which is not who is fit to.
+
+    Milestone 18, and the name is the finding. The roadmap called this
+    milestone "player availability, injuries, transfers" and the protocol is
+    not called ``AvailabilityProvider``, because that would be a protocol named
+    after the question rather than after the answer any reachable source gives.
+
+    **Measured against the live feed rather than assumed.**
+    football-data.org's free tier answers ``/v4/competitions/{code}/teams``
+    with all twenty clubs *and* their squads in one request — that is real, and
+    it is what this protocol serves. It answers ``/v4/matches/{id}`` with
+    ``lineup`` and ``bench`` **empty**, on a finished match, so there is no team
+    sheet at this tier. And it has no injury endpoint at any tier: there is no
+    URL to be refused. Two of the three things the roadmap named have no source,
+    and a protocol shaped for them would be three methods returning ``None``.
+
+    So one method, answering the one question. A squad is an upper bound on
+    availability, and every consumer of it has to say so.
+    """
+
+    def squad(self, team: str, *, competition_id: str | None = None) -> Squad | None:
+        """One club's registered players, or ``None`` when there is no answer.
+
+        ``None`` covers three ordinary things and the caller cannot tell them
+        apart from the return value alone — it reads ``error`` for that: a
+        competition the source does not cover, a club whose name in this
+        project's tables matches nothing in the source's vocabulary, and a
+        source that did not answer.
+
+        ``competition_id`` is this project's own id, not the source's code.
+        It is a hint rather than a filter: a source that indexes squads by
+        competition needs it, and one that indexes by club may ignore it.
         """
 
 

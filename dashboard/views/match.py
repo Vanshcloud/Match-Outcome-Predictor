@@ -20,9 +20,15 @@ ones it cannot:
    rates, labelled as what they are and not as shot-quality xG, which nothing
    here has ever seen.
 
-What remains — injuries, availability, in-play statistics — has no source in
-this repository, and the sections for them say so and name the milestone rather
-than being absent.
+7. **Who is registered to play?** Both squads, from the same feed the live
+   scores come from. Milestone 18, and the panel is careful about what it is:
+   a squad is who is *registered*, an upper bound on who is available, and the
+   only one of that milestone's three subjects — availability, injuries,
+   transfers — that any reachable source answers.
+
+What remains — team sheets, injuries, in-play statistics — has no source in
+this repository, and the sections for them say so and name what each would
+need rather than being absent.
 """
 
 from __future__ import annotations
@@ -34,8 +40,8 @@ import streamlit as st
 
 from dashboard import context, ui
 from dashboard.domain import competition as catalogue
-from dashboard.domain.match import ExpectedGoals, MarketPrice, Prediction
-from dashboard.services import history, market, reports
+from dashboard.domain.match import ExpectedGoals, MarketPrice, Prediction, Squad
+from dashboard.services import history, market, matchday, reports
 
 MATCH_PARAM = "match"
 """The query parameter every card links with. ``match?match=<match_id>``."""
@@ -53,11 +59,15 @@ FUTURE_SECTIONS: tuple[tuple[str, str, str], ...] = (
         "would be a modelling milestone with its own ablation, not a panel.",
     ),
     (
-        "Injuries and availability",
-        "Milestone 18",
-        "No squad or availability data is ingested. The model has never seen a "
-        "team sheet, which <code>docs/MODEL_CARD.md</code> lists among its "
-        "limitations — it is not a gap in this page.",
+        "Injuries, suspensions and the team sheet",
+        "no source",
+        "Milestone 18 shipped the squad panel above and found the rest has "
+        "nowhere to come from: football-data.org has no injury endpoint at any "
+        "tier, and its free plan answers a finished match with an "
+        "<em>empty</em> <code>lineup</code> and <code>bench</code> — measured, "
+        "not assumed. So a registered squad is the honest ceiling here. The "
+        "model has never seen a team sheet either, which "
+        "<code>docs/MODEL_CARD.md</code> lists among its limitations.",
     ),
     (
         "In-play statistics on this page",
@@ -90,6 +100,7 @@ def render() -> None:
     _forecast(ctx, row, prediction)
     _market(ctx, match_id, prediction)
     _expected_goals(ctx, match_id, row)
+    _availability(ctx, row)
     if row is not None:
         _history(ctx, row)
     _future()
@@ -402,6 +413,87 @@ def _rates(rates: ExpectedGoals, row: pd.Series | None) -> None:
         "a *goal* model, which is a different measurement from expected goals "
         "off a shot map, and this project ingests no shot map."
     )
+
+
+def _availability(ctx: context.Context, row: pd.Series | None) -> None:
+    """Both registered squads, and the three things they are not.
+
+    Milestone 18. The roadmap called it "player availability, injuries,
+    transfers"; what a reachable source actually answers is *who is
+    registered*, and this panel is named and captioned for that rather than for
+    the ask. A squad is an upper bound on availability: it does not know who is
+    injured, who is suspended or who is being left out, and no feed this
+    project can reach does either.
+
+    Nothing here reaches the model. The forecast above was produced by a model
+    fitted on scorelines, and no column of any table in this repository has
+    ever held a player's name — so this panel is beside the forecast rather
+    than inside it, and saying so is most of what it is for.
+    """
+    ui.section("Who is registered", "squads, which are not team sheets")
+    if row is None:
+        st.caption(
+            "This fixture is not in the match table, so there is no competition "
+            "to look a squad up in."
+        )
+        return
+    if not ctx.squads.available:
+        st.caption(matchday.reason(ctx.squads))
+        return
+
+    competition_id = str(row["competition_id"])
+    # The reason is read immediately after each lookup, not once at the end.
+    # A provider carries the *last* failure it had, so asking after both clubs
+    # would caption a missing home squad with why the away one failed — or,
+    # when the away lookup succeeded, with nothing at all.
+    found: list[tuple[str, Squad | None, str]] = []
+    for column in ("home_team", "away_team"):
+        team = str(row[column])
+        squad = ctx.squads.squad(team, competition_id=competition_id)
+        found.append((team, squad, "" if squad is not None else matchday.reason(ctx.squads)))
+
+    if all(squad is None for _, squad, _ in found):
+        st.caption(found[0][2])
+        return
+    for side, (team, squad, why) in zip(st.columns(2), found, strict=True):
+        with side:
+            _squad(team, squad, why)
+    st.caption(
+        f"Registered squads from {ctx.squads.name}, reread hourly. "
+        "**Registered is not available**: a squad list does not know who is "
+        "injured, suspended or rested, and it is the whole of what this feed "
+        "carries. Nothing on this panel reached the forecast above — no table "
+        "in this project holds a player's name."
+    )
+
+
+def _squad(team: str, squad: Squad | None, error: str) -> None:
+    """One club's panel, or the sentence saying why there is not one."""
+    st.markdown(f"**{team}**")
+    if squad is None:
+        st.caption(error)
+        return
+    age = squad.median_age()
+    columns = st.columns(2)
+    columns[0].metric("Registered", squad.size)
+    columns[1].metric("Median age", f"{age:.1f}" if age is not None else "—")
+    st.caption(
+        ", ".join(f"{count} {position.lower()}" for position, count in squad.positions.items())
+        + (f" · listed as {squad.team}" if squad.team != team else "")
+    )
+    with st.expander(f"The {squad.size} names"):
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "player": [one.name for one in squad.players],
+                    "position": [one.position or "" for one in squad.players],
+                    "age": [one.age() for one in squad.players],
+                    "nationality": [one.nationality or "" for one in squad.players],
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+        )
 
 
 def _history(ctx: context.Context, row: pd.Series) -> None:

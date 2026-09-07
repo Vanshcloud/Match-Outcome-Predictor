@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 17 of 20 — the dashboard, with a live fixture feed, saved favourites, live tracking, and the closing line beside every forecast.**
+> **Status: Milestone 18 of 20 — the dashboard, with a live fixture feed, saved favourites, live tracking, the closing line beside every forecast, and both registered squads.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -517,6 +517,27 @@ the placeholder that used to sit in that panel claimed this project "fits none",
 which was wrong. They are not xG off a shot map — nothing here ingests one —
 and the difference is stated on the page rather than blurred.
 
+**Both squads are on it as well, and the panel is careful about which word it
+uses.** Milestone 18 was scheduled as *availability, injuries, transfers*; what
+a reachable source answers is who is **registered**. football-data.org has no
+injury endpoint at any tier, and its free plan answers a finished match with an
+empty `lineup` and `bench` — measured, not read off a price list. So the fifth
+protocol is called `SquadProvider`, the panel says *registered*, and the
+section for team sheets and injuries now reads "no source" rather than naming a
+milestone.
+
+It is also the first milestone that had to reconcile two vocabularies. Nothing
+is joined by id — Milestone 13's rule stands — but a panel on a match page has
+to find this club in that feed, and the ingested table says "Hull" where the
+feed says "Hull City AFC". Two rules, exact then unique-subset, over names with
+case, punctuation, club suffixes and **accents** folded: **146 of 164 clubs**
+across the current season of all nine covered competitions, measured against
+the live API. Folding accents alone was worth 14 of them. Every remaining miss
+is an abbreviation — "Nott'm Forest" against "Nottingham Forest" — and it is a
+sentence saying the lookup missed rather than a fuzzy match putting another
+club's squad on the page. Nothing on that panel reaches the model: no table
+here has ever held a player's name.
+
 **The reliability diagram is the one figure this project draws.** Milestone 10
 recorded that matplotlib was left out because every figure it would have drawn
 was a five-row table. This is the exception and the reason is specific: the
@@ -636,7 +657,8 @@ dashboard/          the presentation layer               [Milestone 12] ✅
   providers/          where football comes from — one protocol per source
     historical.py       results, and the closing line  [Milestone 17] ✅
     api.py              forecasts, from the service over HTTP
-    football_data_org.py  fixtures and live scores      [Milestone 13] ✅
+    football_data_org.py  fixtures, live scores        [Milestone 13] ✅
+                          and registered squads        [Milestone 18] ✅
     webhook.py          where a goal is posted             [Milestone 15] ✅
     null.py             no feed and no transport: nothing, and why
   services/           orchestration and caching over the providers
@@ -778,7 +800,7 @@ imports is a supply-chain surface with no upside.
 | 15 | Real-time — in-play updates, notifications, favourite-team alerts | ✅ |
 | 16 | Deployment and operations — published images, Prometheus metrics, prediction cache | ✅ |
 | 17 | Odds and expected goals — the closing line on the match page, and what a gap from it measures | ✅ |
-| 18 | Availability — injuries, suspensions, transfer impact | |
+| 18 | Availability — registered squads on the match page, and the two of those three words no reachable source answers | ✅ |
 | 19 | Prediction archive — served forecasts scored against what happened, and the drift that shows up in it | |
 | 20 | The platform | |
 

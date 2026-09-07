@@ -12,6 +12,11 @@ Both are *about* a match rather than being one, which is why neither is a
 field on :class:`Fixture` — a card has no use for either, and a type that grew
 every optional fact anybody might want is a type every source has to fill.
 
+Milestone 18 adds two more of the same kind. :class:`Player` and
+:class:`Squad` are *about* a club rather than a match, and a squad is who is
+registered rather than who is fit — the one distinction that milestone is
+mostly about.
+
 Pure value types. No provider, no network, no file, no Streamlit — everything
 that fetches lives in :mod:`dashboard.providers` and everything that renders in
 :mod:`dashboard.views`, and both import this rather than the other way round.
@@ -20,6 +25,7 @@ that fetches lives in :mod:`dashboard.providers` and everything that renders in
 from __future__ import annotations
 
 import datetime as dt
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -33,6 +39,15 @@ array the model returns is a page where a reader checking one against the other
 reads the wrong number. Declared here rather than in the theme because it is
 vocabulary before it is presentation: a provider builds a mapping keyed by
 these, and the palette is one consumer of that.
+"""
+
+
+UNRECORDED = "Unrecorded"
+"""What a player the source gave no position for is counted under.
+
+A visible bucket rather than a silent drop: about one row in this feed's
+squads carries a null position, and a squad of 30 rendered as 29 is a number
+a reader would take as the club's.
 """
 
 
@@ -192,6 +207,98 @@ class ExpectedGoals:
     def supremacy(self) -> float:
         """Expected goal difference, positive when the home side is favoured."""
         return self.home - self.away
+
+
+@dataclass(frozen=True, slots=True)
+class Player:
+    """One name on a club's registered list, as the source gave it.
+
+    Milestone 18. Everything but the name is optional because everything but
+    the name is optional on the wire: football-data.org records a position for
+    most players and leaves it null for some, and a squad list that dropped
+    those rows would report a smaller squad than the club has.
+
+    ``position`` is the feed's own vocabulary — ``Goalkeeper``, ``Defence``,
+    ``Midfield``, ``Offence`` — passed through rather than remapped. A mapping
+    into some other scheme would be this application inventing a taxonomy for
+    data it does not model with.
+    """
+
+    name: str
+    position: str | None = None
+    date_of_birth: dt.date | None = None
+    nationality: str | None = None
+
+    def age(self, on: dt.date | None = None) -> int | None:
+        """Completed years on ``on``, defaulting to today. ``None`` with no date.
+
+        The date is a parameter rather than a call to
+        :func:`datetime.date.today` inside, so the one piece of arithmetic here
+        can be tested without pinning a clock.
+        """
+        if self.date_of_birth is None:
+            return None
+        day = on or dt.date.today()
+        born = self.date_of_birth
+        return day.year - born.year - ((day.month, day.day) < (born.month, born.day))
+
+
+@dataclass(frozen=True, slots=True)
+class Squad:
+    """A club's registered players, which is not the same thing as its available ones.
+
+    Milestone 18, and the distinction in the first line is the whole milestone.
+    A squad is who is *registered*: it is an upper bound on who can play and it
+    says nothing about who is injured, suspended or left out. No source this
+    project can reach answers the second question — see
+    :class:`~dashboard.providers.base.SquadProvider` for what was measured.
+
+    ``team`` is the club as the *source* names it, kept rather than replaced by
+    the name that was asked for: the two vocabularies differ, the page shows
+    which row the lookup landed on, and a reader can see when it landed on the
+    wrong one.
+    """
+
+    team: str
+    players: tuple[Player, ...]
+    source: str
+    full_name: str = ""
+    """The source's long form of the club's name, where it gives two.
+
+    Kept because matching this project's vocabulary against a feed's needs
+    both — "Hull" is a word of the short form and "Forest" only of the long
+    one — and because it is the source's own answer rather than a derivation.
+    """
+    competition_id: str | None = None
+
+    @property
+    def size(self) -> int:
+        return len(self.players)
+
+    @property
+    def positions(self) -> dict[str, int]:
+        """How many players in each position the source recorded, largest first.
+
+        Players the source gave no position for are counted under
+        :data:`UNRECORDED` rather than dropped, because a squad of 30 that
+        renders as 28 is a number a reader would take as the club's.
+        """
+        counted = Counter(one.position or UNRECORDED for one in self.players)
+        return dict(sorted(counted.items(), key=lambda pair: (-pair[1], pair[0])))
+
+    def median_age(self, on: dt.date | None = None) -> float | None:
+        """The median age of the players with a recorded birth date, or ``None``.
+
+        Median rather than mean: a squad list carries a couple of teenagers
+        promoted from an academy, and one of those moves a mean of twenty-five
+        further than it moves the thing a reader means by "how old is this
+        squad".
+        """
+        ages = sorted(age for one in self.players if (age := one.age(on)) is not None)
+        if not ages:
+            return None
+        middle = len(ages) // 2
+        return float(ages[middle]) if len(ages) % 2 else (ages[middle - 1] + ages[middle]) / 2
 
 
 class EventKind(StrEnum):

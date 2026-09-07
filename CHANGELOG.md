@@ -12,6 +12,74 @@ extra steps.
 
 ### Added
 
+- **Milestone 19 — the prediction archive, and how much of it a verdict needs.**
+  Every served forecast has been written to PostgreSQL since Milestone 11.
+  `make archive` reads them back, joins the matches that have since been played,
+  scores them with the same function the backtest uses, and puts the served
+  figure beside the walk-forward one for the same model.
+
+  **Drift is scored, not inferred.** No feature-distribution distance and no
+  population-stability index: those measure that an *input* moved, which is a
+  hypothesis about performance. Here the outcome is known, so the question is
+  asked directly. A proxy is what you use when you cannot score the thing
+  itself.
+
+  **The sample size is the milestone.** Per-match log loss has a standard
+  deviation of **0.3976** over the 62,036 walk-forward forecasts, against a
+  mean of 1.0165, so a mean over a handful of served forecasts is noise wearing
+  a decimal point. Every report carries `detectable` — the smallest shift the
+  archive at its size could tell from noise — beside `drift`, and
+  `distinguishable` as a column rather than as a caveat somebody has to
+  remember:
+
+  | Shift in log loss | Scored forecasts needed |
+  |---|---:|
+  | 0.10 | 61 |
+  | 0.05 | 243 |
+  | 0.02 | 1,519 |
+  | **0.0163** — the gap to the closing line | **2,286** |
+  | 0.01 | 6,073 |
+
+  So the page and the command never say "no drift detected". They say what the
+  archive could have detected, and report anything smaller as **not evidence**.
+
+  **Three exclusions, published rather than applied silently.** Repeats of one
+  match collapse to the last forecast served — a cached fixture priced three
+  times is three rows in the log, deliberately, but one piece of evidence, and
+  counting it three times would shrink every error bar by a factor nothing
+  supports. In-sample rows are dropped: the artefact is fitted on the whole
+  history, so a match inside it was trained on, and scoring that against the
+  folds would report memorisation as drift. Unresolved rows — fixtures not yet
+  played, or results `make data` has not caught up with — are counted, not
+  dropped. `logged`, `in_sample`, `unresolved` and `n` are all columns, because
+  a mean over eleven matches beside one over sixty-two thousand invites them to
+  be read as comparable.
+
+  **What a real archive says today.** Against the compose stack with the
+  shipped artefact and the real 303,517-row table: 35 rows in the log, 25 after
+  repeats collapse, **25 in-sample and 0 scorable**. That is the deployment
+  rather than a defect — the artefact is fitted through the end of the match
+  table, so every fixture the service can be asked about today is one it
+  trained on. The archive starts scoring when the service is asked about
+  matches *before* they are played and `make data` catches up afterwards.
+
+  **The scoring path was checked against the real tables** by feeding the
+  walk-forward forecasts back in as if they had been served: at 62,036 rows the
+  drift comes back **+0.0000**, the two paths agreeing to four decimals; at
+  3,000 rows a +0.0122 difference is correctly reported as under the 0.0142
+  that could be noise. At 100 rows it is reported as distinguishable, and that
+  is *not* a false positive of the test but a selection effect — the first
+  hundred rows of that table are the first hundred matches of fold 0, which is
+  exactly the shape a young archive has.
+
+  `src/evaluation/archive.py` holds the arithmetic, `scripts/archive.py` and
+  `make archive` the command, `src/pipelines/report.py::write_archive` the
+  table. It is the **one report `make reproduce` cannot rebuild**: every other
+  table under `data/reports/` is derived from ingested data, and this one is a
+  record of things that happened. The dashboard's Model page gains a fourth
+  panel that renders the size of the archive before the drift figure, never the
+  other way round.
+
 - **Milestone 18 — who is registered, and the two words that are not that.**
   Scheduled as *player availability, injuries, transfers*. What shipped is a
   squad panel, and the distance between those two sentences is the milestone.

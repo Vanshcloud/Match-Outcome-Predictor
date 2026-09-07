@@ -91,6 +91,38 @@ def market_frame() -> pd.DataFrame:
     )
 
 
+def archive_frame(
+    *, scored: int = 40, distinguishable: bool = False, spread: float = 0.3976
+) -> pd.DataFrame:
+    """A drift report shaped like the one `make archive` writes.
+
+    One served version, and the young-archive case by default: rows logged,
+    a handful scorable, and a difference smaller than the noise at that size.
+    That is the state a real deployment is in for months, and it is the one the
+    panel has to render without implying a finding.
+    """
+    return pd.DataFrame(
+        {
+            "model": [SHIPPED],
+            "model_version": ["0.13.0"],
+            "logged": [scored + 12],
+            "in_sample": [8],
+            "unresolved": [4],
+            "n": [scored],
+            "log_loss": [1.0800 if distinguishable else 1.0190],
+            "rps": [0.2101],
+            "accuracy": [0.4900],
+            "baseline": [1.0165],
+            "spread": [spread],
+            "drift": [0.0635 if distinguishable else 0.0025],
+            "detectable": [0.0123 if distinguishable else 0.1232],
+            "distinguishable": [distinguishable],
+            "first_served": [pd.Timestamp("2026-09-01T09:00:00Z")],
+            "last_served": [pd.Timestamp("2026-09-07T21:00:00Z")],
+        }
+    )
+
+
 # ---- loading, and the empty state --------------------------------------------
 
 
@@ -103,6 +135,11 @@ def test_a_clean_checkout_loads_nothing_and_says_what_is_missing(tmp_path: Path)
     assert len(absent) == 3
     assert "make ensemble" in absent[0]
     assert all("make card" in named for named in absent[1:])
+    # The drift report is deliberately not in that list: the other three are
+    # missing because a command has not been run, and this one is missing
+    # because the service has not been called.
+    assert reports.archive is None
+    assert "has not been written" in str(reports.missing_archive())
 
 
 def test_every_table_is_read_when_they_are_all_there(tmp_path: Path) -> None:
@@ -111,9 +148,11 @@ def test_every_table_is_read_when_they_are_all_there(tmp_path: Path) -> None:
     scores_frame().to_parquet(directory / "backtest.parquet", index=False)
     forecasts_frame().to_parquet(directory / "forecasts.parquet", index=False)
     market_frame().to_parquet(directory / "market.parquet", index=False)
+    archive_frame().to_parquet(directory / "archive.parquet", index=False)
 
     reports = data.load_reports(tmp_path)
     assert reports.has_scores and reports.has_forecasts and reports.has_market
+    assert reports.has_archive and reports.missing_archive() is None
     assert reports.missing() == ()
 
 
@@ -130,6 +169,19 @@ def test_one_table_without_the_other_is_a_real_state(tmp_path: Path) -> None:
         f"{data.ENSEMBLE_SUBDIR}/forecasts.parquet (run `make card`)",
         f"{data.ENSEMBLE_SUBDIR}/market.parquet (run `make card`)",
     )
+
+
+def test_an_archive_that_holds_no_rows_says_the_log_is_empty(tmp_path: Path) -> None:
+    """`make archive` writes a file even when the log has nothing in it, and
+    "the report has not been written" and "the report is empty" are different
+    sentences to put in front of a reader."""
+    directory = tmp_path / data.ENSEMBLE_SUBDIR
+    directory.mkdir(parents=True)
+    archive_frame().head(0).to_parquet(directory / "archive.parquet", index=False)
+
+    reports = data.load_reports(tmp_path)
+    assert not reports.has_archive
+    assert reports.missing_archive() == "the prediction log is empty"
 
 
 def test_an_empty_table_counts_as_absent(tmp_path: Path) -> None:

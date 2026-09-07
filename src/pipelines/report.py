@@ -44,7 +44,12 @@ from src.models.ensemble import FORECAST_COLUMNS, MEMBERS, SHIPPED, ensemble
 from src.models.splits import DEFAULT_FOLDS
 from src.pipelines.backtest import COMMON, pooled_table
 from src.pipelines.derived import persist
-from src.pipelines.tables import FORECASTS_FILENAME, KEY_COLUMN, MARKET_FILENAME
+from src.pipelines.tables import (
+    ARCHIVE_FILENAME,
+    FORECASTS_FILENAME,
+    KEY_COLUMN,
+    MARKET_FILENAME,
+)
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -234,6 +239,26 @@ def write_market(table: pd.DataFrame, destination_dir: Path) -> Path:
             "kind": "market-disagreement",
             "bands": list(table["band"].astype(str)) if not table.empty else [],
             "rows": len(table),
+        },
+    )
+
+
+def write_archive(table: pd.DataFrame, destination_dir: Path) -> Path:
+    """Persist the drift report, with a manifest beside it.
+
+    Written by `make archive` rather than `make card`, and the manifest records
+    how many forecasts were behind it — a report that says "no drift" over
+    eleven scored rows and one that says it over eleven thousand are different
+    claims, and the file itself should carry which one it is.
+    """
+    return persist(
+        table,
+        destination_dir / ARCHIVE_FILENAME,
+        extra={
+            "kind": "prediction-archive",
+            "versions": list(table["model_version"].astype(str)) if not table.empty else [],
+            "logged": int(table["logged"].sum()) if not table.empty else 0,
+            "scored": int(table["n"].sum()) if not table.empty else 0,
         },
     )
 

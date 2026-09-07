@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 18 of 20 — the dashboard, with a live fixture feed, saved favourites, live tracking, the closing line beside every forecast, and both registered squads.**
+> **Status: Milestone 19 of 20 — the platform: a live fixture feed, saved favourites, live tracking, the closing line beside every forecast, both registered squads, and the served forecasts scored against what happened.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -538,6 +538,32 @@ sentence saying the lookup missed rather than a fuzzy match putting another
 club's squad on the page. Nothing on that panel reaches the model: no table
 here has ever held a player's name.
 
+**What the service actually served is scored too, and mostly it reports that
+it cannot answer yet.** Milestone 19 reads the prediction log back, joins the
+matches that have since been played, and puts the served log loss beside the
+walk-forward one for the same model. That comparison is the only definition of
+drift here — not a distance between feature distributions, which measures that
+an input moved rather than that the forecasts got worse.
+
+The finding is a number rather than a verdict. Per-match log loss has a
+**standard deviation of 0.3976** across the 62,036 walk-forward forecasts, so a
+mean over a handful of served ones is noise:
+
+| Shift in log loss | Scored forecasts needed to see it |
+|---|---:|
+| 0.05 | 243 |
+| **0.0163** — the gap to the closing line | **2,286** |
+| 0.01 | 6,073 |
+
+So the report never says "no drift". It says what shift the archive at its
+current size *could* have detected, and reports anything smaller as not
+evidence. Driven against the compose stack the honest answer today is starker
+still: 25 forecasts logged and **none of them scorable**, because the shipped
+artefact is fitted through the end of the match table and every fixture the
+service can be asked about is one it trained on. The archive starts scoring
+when the service is asked about matches *before* they are played — a property
+of how it is driven, not of this code.
+
 **The reliability diagram is the one figure this project draws.** Milestone 10
 recorded that matplotlib was left out because every figure it would have drawn
 was a five-row table. This is the exception and the reason is specific: the
@@ -634,6 +660,8 @@ src/
   evaluation/       how good a forecast is, three ways     [Milestone 7-10] ✅
     market.py         the closing line as a forecast, and the
                       disagreement measurement               [Milestone 17] ✅
+    archive.py        what was served, scored — and how much
+                      archive a verdict needs               [Milestone 19] ✅
     metrics.py        two proper scoring rules and one improper one
     reliability.py    does a stated probability happen at the rate it states
     model_card.py     the card, rendered from data it is handed
@@ -643,6 +671,7 @@ src/
     serving.py        the artefact: fit once, persist, load, look a fixture up
   models/artifact.py  the shipped blend, fitted — frames in, arrays out
   storage/predictions.py  served predictions, in PostgreSQL   [Milestone 11] ✅
+                      read back and scored by `make archive` [Milestone 19] ✅
 api/                the inference service                 [Milestone 11] ✅
   main.py             lifespan, middleware, error mapping, cache policy
   routes.py           seven endpoints, each a call and a return
@@ -801,7 +830,7 @@ imports is a supply-chain surface with no upside.
 | 16 | Deployment and operations — published images, Prometheus metrics, prediction cache | ✅ |
 | 17 | Odds and expected goals — the closing line on the match page, and what a gap from it measures | ✅ |
 | 18 | Availability — registered squads on the match page, and the two of those three words no reachable source answers | ✅ |
-| 19 | Prediction archive — served forecasts scored against what happened, and the drift that shows up in it | |
+| 19 | Prediction archive — served forecasts scored against what happened, and how much archive a drift figure would need | ✅ |
 | 20 | The platform | |
 
 Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best

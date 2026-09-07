@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card archive model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -100,6 +100,12 @@ explain: ## What each feature block is worth, by SHAP and by permutation (~2 min
 
 card: ## Regenerate docs/MODEL_CARD.md for the shipped model (~5 min)
 	$(BIN)/python scripts/model_card.py
+
+# Milestone 19. Its own target rather than part of `card`, because its input is
+# the prediction log rather than the ingested data: `make reproduce` rebuilds
+# every other report byte for byte and cannot rebuild this one.
+archive: ## Score what the service served against what happened (needs PREDICTION_LOG_DSN)
+	$(BIN)/python scripts/archive.py
 
 model: ## Fit the shipped model on the whole history and persist it (~1 min)
 	$(BIN)/python scripts/build_model.py

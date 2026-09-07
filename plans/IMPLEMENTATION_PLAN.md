@@ -1677,6 +1677,132 @@ different reasons, it captions the first with the second's. The reason is now
 read immediately after each lookup, and the test that pins it says which of the
 two orderings is wrong.
 
+## Milestone 19 — The prediction archive, and the number that makes it readable ✅
+
+The roadmap wrote this one as *"`src/storage/predictions.py` already logs every
+served forecast; Milestone 16 moved drift here, because it is measured from that
+log."* Both halves held. What the estimate did not contain is the half that
+turned out to matter: **how much archive a drift figure needs before it is a
+figure at all.**
+
+### Drift is scored, not inferred
+
+The conventional shape for this is a distance between feature distributions —
+PSI, KL, a Kolmogorov-Smirnov statistic per column — and it was not built.
+Those measure that an *input* moved, which is a hypothesis about performance.
+This project has the outcome: a served forecast can be joined to the result that
+arrived afterwards and scored with the same function the backtest uses. A proxy
+is what you reach for when you cannot score the thing itself, and here the thing
+itself is two joins away.
+
+So drift is one subtraction — served log loss minus the walk-forward figure for
+the same model — and the entire difficulty is in deciding when that subtraction
+means anything.
+
+### The sample size is the milestone
+
+Per-match log loss is heavy-tailed. Over this model's 62,036 walk-forward
+forecasts its **standard deviation is 0.3976** against a mean of 1.0165, so the
+mean of a handful of draws from it is noise with a decimal point on it:
+
+| Scored forecasts | Smallest shift distinguishable from noise |
+|---:|---:|
+| 8 | 0.2755 |
+| 100 | 0.0779 |
+| 1,000 | 0.0246 |
+| 10,000 | 0.0078 |
+| 62,036 | 0.0031 |
+
+Run backwards — which is the useful direction, because it turns "not yet" into
+a timetable:
+
+| Shift in log loss | Scored forecasts needed |
+|---|---:|
+| 0.10 | 61 |
+| 0.05 | 243 |
+| 0.02 | 1,519 |
+| **0.0163** — this project's own gap to the closing line | **2,286** |
+| 0.01 | 6,073 |
+
+`detectable` and `distinguishable` are therefore **columns of the report**, not
+sentences in a document somebody has to remember while reading a number. The
+command and the page both refuse to say "no drift detected": they say what the
+archive at its size could have detected, and report anything smaller as not
+evidence.
+
+The baseline and the spread come from **one** population — the fold forecasts,
+through a single `Reference` — because two numbers taken from two frames
+eventually describe two different things. The archive's own standard deviation
+is deliberately not used: an archive small enough to need this question answered
+is one whose own σ is as noisy as its mean.
+
+### Three exclusions, and all of them are counts on the row
+
+| | Why it is not scored | Why it is still reported |
+|---|---|---|
+| Repeats | A cached fixture priced three times is one piece of evidence | The log keeps them on purpose — `predicted_at` is what it is for |
+| In-sample | The artefact is fitted on the whole history; that match was trained on | It was really served, and how much of the traffic is in-sample is worth knowing |
+| Unresolved | No outcome yet — unplayed, or `make data` has not caught up | "We served plenty and none of it can be scored yet" is a Tuesday, not an outage |
+
+A mean over eleven matches printed beside one over sixty-two thousand invites
+them to be read as comparable, so `logged`, `in_sample`, `unresolved` and `n`
+are all on the row and the page renders them **before** the drift figure.
+
+### What the real archive says, and why that is the deployment
+
+Driven against the compose stack with the shipped artefact and the real
+303,517-row table: **35 rows in the log, 25 after repeats collapse, 25
+in-sample, 0 scorable.**
+
+That is not a gap in the report. The artefact is fitted through the end of the
+match table, so every fixture the service can be asked about today is one it
+trained on, and `in_sample` is `true` on all of it. **The archive begins
+scoring when the service is asked about matches before they are played** and the
+ingest catches up with the results afterwards — which is a property of how the
+service is driven rather than of this code, and Milestone 13's fixture feed is
+the thing that would drive it. Worth writing down because it is the answer to
+"why is the drift column empty", and it is not "the code is broken".
+
+### Verified by feeding the backtest back in
+
+The only out-of-sample forecasts this project has are the walk-forward ones, so
+they were handed to the archive as if they had been served, against the real
+match table:
+
+| Rows | Served | Drift | Detectable | Reported as |
+|---:|---:|---:|---:|---|
+| 100 | 1.1048 | +0.0883 | 0.0779 | distinguishable |
+| 3,000 | 1.0286 | +0.0122 | 0.0142 | **not** distinguishable |
+| 62,036 | 1.0165 | **+0.0000** | 0.0031 | not distinguishable |
+
+The last row is the correctness check — fed the same forecasts, the served path
+and the backtest path agree to four decimals.
+
+The first row is the honest caveat and it is in the documents rather than
+hidden: that is **not** a false positive of the test, it is a selection effect.
+The first hundred rows of that table are the first hundred matches of fold 0,
+not a random hundred, and a non-random hundred is exactly the shape a young
+archive has — one weekend, a few competitions, whatever the service was asked
+about. A threshold cannot rescue a sample that is not random, which is a second
+reason not to read a small archive as drift.
+
+### What it cost
+
+| | Estimated at Milestone 16 | Actual |
+|---|---|---|
+| The log | "Already logs every served forecast" | Unchanged. Not one line of `src/storage/predictions.py` moved |
+| The measurement | (not estimated) | `src/evaluation/archive.py`, and the sample-size arithmetic that turned out to be the point |
+| The command | (not estimated) | `scripts/archive.py` and `make archive` — its own target, because its input is not on disk |
+| The page | (not estimated) | A fourth tab on the Model page, reading a fourth report table |
+
+`make archive` is the **one report `make reproduce` cannot rebuild.** Every
+other table under `data/reports/` is derived from the ingested data and comes
+back byte for byte; this one is a record of things that happened, and if the log
+is lost it is gone. That is why it is not another table `make card` writes.
+
+No model, feature, split or reported number moved, so `docs/MODEL_CARD.md` was
+not regenerated.
+
 ## Milestones 16–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
@@ -1698,7 +1824,7 @@ cannot catch.
 | 16 ✅ | Deployment, monitoring, caching | Done — `api/metrics.py`, a prediction cache behind `PredictionService`, and a GHCR publish on a tag |
 | 17 ✅ | Bookmaker odds, expected goals, value detection | Done — `OddsProvider` behind `HistoricalOdds`, `src/evaluation/market.py`, and the measurement that says why there is no value detector |
 | 18 ✅ | Player availability, injuries, transfers | Done — `SquadProvider` behind `FootballDataOrgSquads`, and the measurement that says only one of those three words has a source |
-| 19 | Historical prediction archive, and drift | `src/storage/predictions.py` already logs every served forecast; Milestone 16 moved drift here, because it is measured from that log |
+| 19 ✅ | Historical prediction archive, and drift | Done — `src/evaluation/archive.py`, `make archive`, and the measurement that says how much archive a drift figure needs before it is one |
 | 20 | The platform | — |
 
 Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best

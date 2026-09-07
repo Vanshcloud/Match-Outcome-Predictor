@@ -44,7 +44,12 @@ from src.models.ensemble import SHIPPED
 from src.utils.config import load_settings
 from src.utils.paths import PROJECT_ROOT
 from tests.factories import league_frame, season_labels
-from tests.unit.test_dashboard_reports import forecasts_frame, market_frame, scores_frame
+from tests.unit.test_dashboard_reports import (
+    archive_frame,
+    forecasts_frame,
+    market_frame,
+    scores_frame,
+)
 
 APP = str(PROJECT_ROOT / "dashboard" / "app.py")
 
@@ -202,9 +207,20 @@ def ratings_frame(frame: pd.DataFrame = LEAGUE) -> pd.DataFrame:
 
 
 def write_data(
-    root: Path, *, matches: bool = True, reports: bool = True, ratings: bool = True
+    root: Path,
+    *,
+    matches: bool = True,
+    reports: bool = True,
+    ratings: bool = True,
+    archive: pd.DataFrame | None = None,
 ) -> None:
-    """A data directory holding whichever tables the test wants present."""
+    """A data directory holding whichever tables the test wants present.
+
+    ``archive`` is off unless a test asks for it, unlike the other three: no
+    drift report is the ordinary state — it needs a prediction log and a
+    service that has been called — and every other page test should meet that
+    state rather than a synthetic archive.
+    """
     if matches:
         (root / "processed").mkdir(parents=True, exist_ok=True)
         LEAGUE.to_parquet(root / "processed" / "matches.parquet", index=False)
@@ -217,6 +233,10 @@ def write_data(
         scores_frame().to_parquet(directory / "backtest.parquet", index=False)
         forecasts_frame().to_parquet(directory / "forecasts.parquet", index=False)
         market_frame().to_parquet(directory / "market.parquet", index=False)
+    if archive is not None:
+        directory = root / "reports" / "ensemble"
+        directory.mkdir(parents=True, exist_ok=True)
+        archive.to_parquet(directory / "archive.parquet", index=False)
 
 
 def _stub_context(
@@ -230,6 +250,7 @@ def _stub_context(
     matches: bool = True,
     reports: bool = True,
     ratings: bool = True,
+    archive: pd.DataFrame | None = None,
 ) -> None:
     """Point the dashboard at a temporary data directory and stub providers.
 
@@ -239,7 +260,7 @@ def _stub_context(
     the one place in the package that names a concrete one — which is the
     architecture being asserted as much as it is a convenience here.
     """
-    write_data(tmp_path, matches=matches, reports=reports, ratings=ratings)
+    write_data(tmp_path, matches=matches, reports=reports, ratings=ratings, archive=archive)
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
     def resolve() -> Context:
@@ -272,6 +293,7 @@ def run(
     matches: bool = True,
     reports: bool = True,
     ratings: bool = True,
+    archive: pd.DataFrame | None = None,
     query: dict[str, str] | None = None,
 ) -> AppTest:
     """Render one page against a temporary data directory and stub providers.
@@ -291,6 +313,7 @@ def run(
         matches=matches,
         reports=reports,
         ratings=ratings,
+        archive=archive,
     )
     prelude = "".join(
         f"import streamlit as st\nst.query_params['{key}'] = {value!r}\n"
@@ -1332,3 +1355,77 @@ def test_when_neither_club_is_found_the_reason_is_said_once_not_twice(
     )
     assert text_of(app).count(f"spelled like **{home}**") == 1
     assert [one.value for one in app.metric if one.label == "Registered"] == []
+
+
+# ---- Milestone 19: what the service actually served ---------------------------
+
+
+def test_with_no_prediction_log_the_drift_panel_names_the_three_things_it_needs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ordinary state, and it must not read as a missing command: this
+    report needs a log, a service that has been called, and matches that have
+    since been played."""
+    said = text_of(run("model", tmp_path, monkeypatch))
+    assert "What the service actually served" in said
+    assert "PREDICTION_LOG_DSN" in said
+    assert "make archive" in said
+
+
+def test_a_young_archive_is_reported_as_not_evidence_rather_than_as_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The finding this milestone is mostly about. A difference under the noise
+    floor at the archive's size is not a small drift — it is no measurement,
+    and the page has to say the second thing."""
+    app = run("model", tmp_path, monkeypatch, archive=archive_frame())
+    said = text_of(app)
+    assert "not evidence of drift" in said
+    assert app.warning == []
+    labels = {one.label: one.value for one in app.metric}
+    assert labels["Scored"] == "40"
+    assert labels["In sample"] == "8"
+    assert labels["No result yet"] == "4"
+
+
+def test_the_panel_prices_the_archive_that_is_still_needed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "Not yet" is only useful with "how long" beside it."""
+    app = run("model", tmp_path, monkeypatch, archive=archive_frame())
+    assert "told from noise" in text_of(app)
+    horizons = [frame for frame in app.dataframe if "forecasts needed" in list(frame.value.columns)]
+    assert horizons and list(horizons[0].value["forecasts needed"]) == [61, 243, 1519, 2286, 6073]
+
+
+def test_a_difference_larger_than_the_noise_floor_is_raised_rather_than_captioned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard is a threshold, not a refusal: a served model that has fallen
+    over has to be visible."""
+    app = run("model", tmp_path, monkeypatch, archive=archive_frame(distinguishable=True))
+    assert app.warning != []
+    assert "worth explaining" in text_of(app)
+
+
+def test_an_archive_with_nothing_scorable_still_says_what_it_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rows logged, none scored: the state of a deployment in its first week."""
+    empty = archive_frame(scored=0)
+    said = text_of(run("model", tmp_path, monkeypatch, archive=empty))
+    assert "Nothing to score yet" in said
+    assert "fitted on the whole history" in said
+
+
+def test_with_no_measured_spread_the_page_prices_nothing_rather_than_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`needed()` refuses an unknown spread, and refusing is right — but a page
+    is the wrong place for it to be right, so the table is simply absent."""
+    unmeasured = archive_frame(scored=0, spread=float("nan"))
+    app = run("model", tmp_path, monkeypatch, archive=unmeasured)
+    said = text_of(app)
+    assert "Nothing to score yet" in said
+    assert "told from noise" not in said
+    assert app.exception == []

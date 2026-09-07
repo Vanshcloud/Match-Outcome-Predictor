@@ -221,6 +221,16 @@ the reliability diagram filtered by competition and fold, and the
 per-competition breakdown. Moved onto their own page so the home page can be
 about football and this one about the forecaster.
 
+Milestone 19 adds a fourth, **What we served**, and it is the only panel on this
+dashboard whose subject is not the backtest: the forecasts the service actually
+answered, scored against the results that arrived afterwards. It renders the
+size of the archive before the drift figure and never the other way round — a
+mean log loss over eleven matches drawn from a distribution with a per-match
+spread of 0.4 is noise, and a page that led with it would be read headline
+first. A difference under the noise floor is captioned *not evidence of drift*,
+with the table saying how many more forecasts it would take. See
+[docs/DEPLOYMENT.md](DEPLOYMENT.md#drift-and-how-much-archive-it-takes).
+
 ## The market, and what a gap from it means
 
 Milestone 17. Two panels on the match page, and one of them is mostly a

@@ -318,6 +318,64 @@ reliable and the least useful, and the Argentine cup the least reliable of the
 
 ---
 
+## What the service actually served
+
+Milestone 19. Everything above is the *backtest* — a measurement of a model on
+folds cut out of history. This section is about the deployment: the forecasts
+the service really answered, scored against the results that arrived afterwards.
+
+`make archive` produces it, from the prediction log rather than from any table
+on disk, and the comparison it draws is the only definition of drift this
+project uses: served log loss against the walk-forward figure for the same
+model. Not a distance between feature distributions — that measures that an
+input moved, which is a hypothesis about performance rather than a measurement
+of one.
+
+### The sample size is the finding
+
+Per-match log loss over the 62,036 walk-forward forecasts has a mean of 1.0165
+and a **standard deviation of 0.3976**. That spread is what a served mean has to
+be read against:
+
+| Scored forecasts | Smallest shift distinguishable from noise |
+|---:|---:|
+| 8 | 0.2755 |
+| 100 | 0.0779 |
+| 1,000 | 0.0246 |
+| 10,000 | 0.0078 |
+| 62,036 | 0.0031 |
+
+Run backwards: **2,286** scored forecasts to see a shift the size of the 0.0163
+this project's whole argument is about, 243 to see 0.05, 6,073 to see 0.01.
+
+So "no drift detected" is almost always the wrong sentence. The right one is
+"this archive could not detect a shift smaller than X", and `detectable` is a
+column of the report rather than a caveat somebody has to remember.
+
+### Checked against the real tables
+
+The scoring path was driven with the walk-forward forecasts standing in for
+served ones — the only out-of-sample forecasts this project has:
+
+| Rows | Served | Drift | Detectable | Reported as |
+|---:|---:|---:|---:|---|
+| 100 | 1.1048 | +0.0883 | 0.0779 | distinguishable |
+| 3,000 | 1.0286 | +0.0122 | 0.0142 | **not** distinguishable |
+| 62,036 | 1.0165 | +0.0000 | 0.0031 | not distinguishable |
+
+The last row is the correctness check: fed the same forecasts, the served path
+and the backtest path agree to four decimals.
+
+The first row is worth reading carefully, because it is not a false positive of
+the test — it is a selection effect. The first hundred rows of that table are
+the first hundred matches of fold 0, not a random sample of it, and a
+non-random hundred matches is exactly the shape a young archive has: one
+weekend, a few competitions, whatever the service happened to be asked about.
+**A threshold cannot rescue a sample that is not random**, which is a second
+reason not to read a small archive as drift.
+
+---
+
 ## Re-running it
 
 ```bash
@@ -326,6 +384,7 @@ python scripts/backtest.py --folds 10 --horizon-days 182
 python scripts/backtest.py --competition ENG_1
 python scripts/backtest.py --markdown        # the tables above
 make card                          # also writes the disagreement table, ~5 min
+make archive                       # scores the prediction log; needs PREDICTION_LOG_DSN
 ```
 
 The finest grain — one row per fold, per competition, per forecaster, per

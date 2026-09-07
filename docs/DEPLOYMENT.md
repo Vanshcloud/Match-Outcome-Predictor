@@ -250,6 +250,84 @@ a patch release of numpy will not change a forecast and refusing to start would
 be the wrong call; a major one might, and never mentioning it would be the wrong
 call too.
 
+## Drift, and how much archive it takes
+
+Milestone 19. Every prediction the service answers with has been written to
+PostgreSQL since Milestone 11. `make archive` reads them back, joins the matches
+that have since been played, scores them with the same function the backtest
+uses, and puts the two numbers side by side.
+
+```bash
+export PREDICTION_LOG_DSN=postgresql://predictor:predictor@localhost:5432/predictions
+make archive                       # writes data/reports/ensemble/archive.parquet
+python scripts/archive.py --dry-run
+```
+
+**The one report `make reproduce` cannot rebuild.** Every other table under
+`data/reports/` is derived from the ingested data and comes back byte for byte.
+This one is a record of things that happened — requests, at times, from a
+process that was running — and if the log is lost it is gone.
+
+### Drift is scored, not inferred
+
+No feature-distribution distance and no population-stability index. Those
+measure that an *input* moved, which is a hypothesis about performance; here the
+outcome is known, so the question "is the served model worse than the backtest
+said" is asked directly. A proxy is what you use when you cannot score the thing
+itself.
+
+### Three exclusions, and why the counts are published
+
+| Column | What it holds |
+|---|---|
+| `logged` | Every forecast this version served, after repeats of one match collapse to the last one |
+| `in_sample` | Dropped: the artefact is fitted on the whole history, so a match inside it was trained on |
+| `unresolved` | Not scorable *yet*: the fixture has not been played, or `make data` has not caught up |
+| `n` | What is left, and the only number the log loss is a mean over |
+
+A cached fixture priced three times is three rows in the log — deliberately,
+`predicted_at` is what the log is for — but one piece of evidence about the
+model, and counting it three times would shrink every error bar by a factor the
+evidence does not support.
+
+### The number that makes the rest readable
+
+Per-match log loss has a standard deviation of **0.3976** over this model's
+62,036 walk-forward forecasts, against a mean of 1.0165. So a mean over a
+handful of served forecasts says nothing, and the report prints how many it
+would take:
+
+| Shift in log loss | Scored forecasts needed |
+|---|---:|
+| 0.10 | 61 |
+| 0.05 | 243 |
+| 0.02 | 1,519 |
+| **0.0163** — the gap to the closing line | **2,286** |
+| 0.01 | 6,073 |
+
+`detectable` is that arithmetic run forwards at the archive's actual size, and
+`distinguishable` is the comparison. A difference under the threshold is
+reported as *not evidence of drift* rather than as a small drift, on the Model
+page and in the command alike.
+
+### What a real archive says today
+
+Against the compose stack with the shipped artefact and the real 303,517-row
+table: 35 rows in the log, 25 after repeats collapse, **25 in-sample and 0
+scorable**. That is not a defect in the report — it is the deployment. The
+artefact is fitted through the end of the match table, so every fixture the
+service can be asked about today is one it trained on. **The archive starts
+scoring when the service is asked about matches before they are played** and
+`make data` then catches up with the results: that is a property of how the
+service is driven, not of this code, and Milestone 13's fixture feed is what
+would drive it.
+
+The scoring path itself was checked against the real tables by feeding the
+walk-forward forecasts back in as if they had been served: at 62,036 rows the
+report returns a drift of **+0.0000**, which is the two paths agreeing to four
+decimals. At 3,000 rows a +0.0122 difference is correctly reported as under the
+0.0142 that could be noise.
+
 ## What this is not
 
 - **No authentication and no rate limit.** Nothing here is behind a key. The
@@ -257,13 +335,14 @@ call too.
   unbounded work; it is not a defence against many requests. Put this behind
   something that has one.
 - **No TLS.** Terminate it in front.
-- **No automatic retraining and no drift detection.** Retraining is `make model`
-  and a restart, deliberately manual. Drift belongs to Milestone 19, and the
-  reason is that it needs data this project does not yet have: measuring drift
-  means scoring served forecasts against outcomes that arrived afterwards, which
-  is exactly what the prediction log is accumulating and exactly what that
-  milestone is for. A drift number computed today would be computed against the
-  backtest, which is the thing drift is supposed to be measured *away from*.
+- **No automatic retraining.** Retraining is `make model` and a restart,
+  deliberately manual. A scheduled job that promoted a model without a human
+  reading the comparison is a change to what this project serves made by a cron
+  entry.
+- **Drift is measured, not detected.** Milestone 19 ships `make archive`, below.
+  There is no alert and no threshold that fires: the archive is scored on
+  demand, and what it mostly reports is that it is not big enough to say
+  anything yet.
 - **No autoscaling policy.** `predictions_total` and the duration summary are
   the inputs one would need; what to do with them depends on a deployment this
   repository does not have.

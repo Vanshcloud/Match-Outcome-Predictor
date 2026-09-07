@@ -48,6 +48,19 @@ needs the same rows on every page load. So the card writes them down.
 """
 
 
+ARCHIVE_FILENAME = "archive.parquet"
+"""What the service actually served, scored against what happened.
+
+Milestone 19, written by `make archive` rather than by `make card`, because it
+is the one report in this project whose input is not on disk: it comes out of
+the prediction log, which is application state and which nothing regenerates.
+`make reproduce` cannot rebuild this file, and that is the difference between
+it and everything else in the reports directory.
+
+One row per served model version, so a log that spans a redeploy reports two.
+"""
+
+
 MARKET_FILENAME = "market.parquet"
 """What the model's disagreement with the closing line is worth, by size.
 
@@ -149,6 +162,17 @@ def read_market(path: Path) -> pd.DataFrame | None:
     Reads like the scores because it *is* a score table — five rows of two
     forecasters' log losses — and giving it its own loader would be a second
     implementation of "open a small Parquet report through the store".
+    """
+    return read_scores(path)
+
+
+def read_archive(path: Path) -> pd.DataFrame | None:
+    """The drift report, or ``None`` before `make archive` has written one.
+
+    Absent is the ordinary state and stays ordinary for longer than the other
+    reports: it needs a prediction log, a service that has been called, and
+    matches that have since been played. The dashboard says which of those is
+    missing rather than treating the file's absence as a fault.
     """
     return read_scores(path)
 

@@ -1282,22 +1282,179 @@ A branch no test can honestly reach is a branch that should not exist.
 
 ---
 
+## Milestone 16 — Deployment and operations ✅
+
+The first milestone since 12 that is not about football. Three things stood
+between *"it builds"* and *"it is running and somebody would know if it
+stopped"*: a published image, a scrape target, and a cache. The plan's own line
+for this milestone read **"the image and compose file that already exist"**, and
+that turned out to be the accurate estimate — nothing about the shape of the
+containers changed. What was missing was everything around them.
+
+### Monitoring, without a client library
+
+`GET /metrics`, Prometheus text exposition, 46 statements in `api/metrics.py`.
+`prometheus-client` renders this format and also brings a process-global
+registry, a multiprocess mode, a WSGI app and a set of platform collectors —
+none of which this service wants — to implement three rules: a `# HELP` line, a
+`# TYPE` line, and samples. Writing it is cheaper than justifying the
+dependency, and `api` gains no third-party import on the request path.
+
+Three decisions in it are the ones worth reading:
+
+- **The label is the route template, never the URL.** `/fixtures?team=Arsenal`
+  and `/fixtures?team=Everton` are one time series. A raw path would give every
+  distinct query string a series of its own, which is how a metrics endpoint
+  becomes the largest thing a service serves; a request that matched no route
+  is one series called `<unmatched>`, so a scanner walking a wordlist cannot
+  write the wordlist into this process's memory.
+- **The gauges are read, not tracked.** `service_ready` and
+  `service_component_ready` come off `PredictionService` at scrape time, so the
+  scraper and `/health` are two renderings of one object rather than two records
+  of it. Two records is how a dashboard ends up green while the endpoint says
+  degraded.
+- **A sum and a count, not a histogram.** Buckets are a claim about the latency
+  distribution a service has, and this one answers from a dictionary and a
+  fitted model. The mean is what today's evidence supports; a percentile can
+  wait until there is a distribution worth bucketing.
+
+`predictions_total` counts *fixtures* rather than requests, because a batch of
+fifty is one request and fifty forecasts and the two answer different questions
+— which is also the pair the "silently not logging" alert in
+`docs/DEPLOYMENT.md` is built from.
+
+### Caching, and the property it rests on
+
+The artefact and the feature table are loaded once in the lifespan and never
+reloaded. That is not a new decision — Milestone 11 made it, so that no handler
+would spend a second unpickling a model — but it is what makes a cache honest
+here: **a match id names one design row, which one fitted model turns into one
+triple of probabilities, for the life of the process.** A cache over a pure
+function of two immutable things cannot serve a stale answer; it can only serve
+the same answer sooner.
+
+Measured against the real 303,517-row table with the shipped blend:
+
+| | Cache off | Cache on |
+|---|---|---|
+| `POST /predict` | 7.51 ms | **1.71 ms** |
+| `POST /predict/batch`, 50 fixtures | 22.2 ms | **12.8 ms** |
+
+The batch improves less because fifty fixtures were already *one* pass through
+the estimators — that is what `/predict/batch` is for — so the cache removes a
+pass rather than forty-nine of them.
+
+**What is deliberately not cached is the timestamp.** `predicted_at` is
+re-stamped on every response, because it says when this service answered and
+not when it last did the multiplication. The prediction log would otherwise
+fill with rows claiming a forecast was made at a moment no request existed —
+and Milestone 19 scores that log, so an archive whose timestamps are a cache's
+eviction pattern is an archive answering the wrong question.
+
+One case is wrong in the obvious implementation: an entry stored while pricing
+a batch can be evicted by a **later entry in the same batch**, so the answers
+are read back out of a local mapping rather than back through the cache. A
+version that read through it raises `KeyError` on a fixture it has just priced,
+and only when the batch is larger than the cache — which is a bug that waits
+for a tuning change to appear.
+
+### One bug this milestone found in itself
+
+`Cache-Control` was applied by route, and `/fixtures` answers **503** until the
+tables are built. A proxy would have held that 503 for sixty seconds after the
+service came up. A non-2xx is now never cacheable whatever its route, which is
+the same rule as the `no-store` on `/health`: a cached readiness answer is a
+proxy answering a liveness question on behalf of a process it has not spoken
+to, and both are failures that *look like* health.
+
+There is no `ETag`. A conditional request still costs the round trip and these
+bodies are hundreds of bytes; `max-age` removes the round trip, which is the
+part worth having. An `ETag` with no revalidation saved is a header that looks
+like caching.
+
+### The publish, and the check that makes a tag mean something
+
+`.github/workflows/release.yml`, on a `v*` tag, to GHCR. No third-party
+actions — an action that moves under a release workflow moves the bytes of a
+published artefact with it, which is the same argument the pinned lint versions
+already make.
+
+It **refuses a tag that disagrees with `src/__init__.py`**. That version is
+what `/version` reports and what is stamped on every row of the prediction log,
+so a `v0.13.0` image built from a tree that says `0.12.0` writes the wrong
+answer into an archive for as long as it runs. It also starts both images and
+asserts against them before pushing, so the published bytes are the tested
+bytes rather than a rebuild of the same `Dockerfile`.
+
+`linux/amd64` only, and the reason is stated rather than hidden: a
+multi-platform build compiles what has no arm64 wheel under QEMU — an hour of
+emulated C++ per release, for a platform nothing here deploys to.
+
+### What was deferred, and why it is not a gap
+
+The README listed **retraining and drift** under this milestone. Both moved to
+Milestone 19, and the reason is data rather than effort: measuring drift means
+scoring served forecasts against outcomes that arrived afterwards, which is
+exactly what the prediction log has been accumulating since Milestone 11 and
+exactly what Milestone 19 exists to do. A drift number computed today would be
+computed against the backtest — which is the thing drift is supposed to be
+measured *away from*.
+
+Retraining stays `make model` and a restart. The artefact is mounted rather
+than baked, so that is a restart and not a rebuild, and a scheduled job that
+promotes a model without a human reading the comparison is a change to what
+this project serves made by a cron entry.
+
+### Verified against the compose stack, not only the suite
+
+`docker compose up api postgres`, with the real 303,517-row tables and the
+shipped artefact mounted. One fixture priced three times returned **identical
+probabilities and three different `predicted_at` values** — 811 ms, 824 ms and
+833 ms past the second. A batch of five then answered `"recorded": 5`, and the
+scrape read `predictions_total 8`, `predictions_logged_total 8`,
+`prediction_cache_hits_total 3`, `prediction_cache_entries 5`: three hits
+because two of the singles and one member of the batch were already priced,
+five entries because five distinct fixtures were.
+
+PostgreSQL holds **8 rows over 5 distinct fixtures, with `min(predicted_at) !=
+max(predicted_at)`** — which is the whole point of not caching the timestamp.
+Every served prediction is in the archive Milestone 19 will score, each with the
+moment it was actually served, and the cache is invisible in it.
+
+The image assertions in `ci.yml` were run against the built image before being
+committed. One of them was wrong on the first attempt: `curl -I` sends HEAD,
+these routes serve GET, and the 405 that comes back carries `Cache-Control` of
+its own — an assertion that passed without ever reading `/health`. It is
+`curl -D - -o /dev/null` now.
+
+### What this still is not
+
+No authentication, no rate limit, no TLS, no autoscaling policy, and the cache
+is per process — two replicas are two caches. There is deliberately no shared
+one: a network hop to avoid a six-millisecond arithmetic operation is not a
+cache, it is a slower cache. `docs/DEPLOYMENT.md` says all of this in the place
+somebody deploying it would look.
+
+---
+
 ## Milestones 16–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
 ones after it. These are the ones it was shaped for. Milestones 13, 14 and 15
 above are spent, and the shape held each time — a provider class, four
-accessors, and a service plus a transport.
+accessors, and a service plus a transport. Milestone 16 spent none of it and
+was not supposed to: it is the one operational milestone in this stretch, and
+it touched `api/` and the workflows rather than a layer of the dashboard.
 
 | | | Where it plugs in |
 |---|---|---|
 | 13 ✅ | Live fixture ingestion | Done — `dashboard/providers/football_data_org.py` behind `FixtureProvider` |
 | 14 ✅ | Accounts and saved favourites | Done — `dashboard/domain/{identity,store}.py` behind the same four accessors |
 | 15 ✅ | Real-time tracking and notifications | Done — `services/watch.py` diffs the feed; `providers/webhook.py` behind a `Notifier` |
-| 16 | Cloud deployment, monitoring, caching | The image and compose file that already exist |
+| 16 ✅ | Deployment, monitoring, caching | Done — `api/metrics.py`, a prediction cache behind `PredictionService`, and a GHCR publish on a tag |
 | 17 | Bookmaker odds, expected goals, value detection | A fourth provider protocol; the match page has the placeholder |
 | 18 | Player availability, injuries, transfers | A fifth; likewise |
-| 19 | Historical prediction archive | `src/storage/predictions.py` already logs every served forecast |
+| 19 | Historical prediction archive, and drift | `src/storage/predictions.py` already logs every served forecast; Milestone 16 moved drift here, because it is measured from that log |
 | 20 | The platform | — |
 
 Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best

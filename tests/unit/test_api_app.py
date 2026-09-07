@@ -215,6 +215,7 @@ def test_the_openapi_document_describes_every_endpoint(client: TestClient) -> No
     assert set(document["paths"]) == {
         "/health",
         "/version",
+        "/metrics",
         "/model-card/limitations",
         "/fixtures",
         "/predict",

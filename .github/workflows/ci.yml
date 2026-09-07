@@ -507,6 +507,21 @@ jobs:
           # The limitations have to be reachable from the service itself, not
           # only from a document in a repository nobody serving it has open.
           curl -fsS http://127.0.0.1:8000/model-card/limitations | grep -q 'Betting'
+          # Milestone 16. A scrape target that only works on a laptop is one
+          # discovered to be missing by the alert that was supposed to fire.
+          # `service_ready 0` is the assertion, not just the family name: a
+          # degraded process must say so to the scraper as well as to /health.
+          metrics=$(curl -fsS -o /dev/stdout -w '%{content_type}' http://127.0.0.1:8000/metrics)
+          echo "$metrics" | grep -q 'version=0.0.4'
+          echo "$metrics" | grep -qx 'service_ready 0'
+          # The one cache directive that is a correctness rule rather than a
+          # performance one: a proxy must never answer a liveness question on
+          # behalf of a process it has not spoken to.
+          # `-D - -o /dev/null` and not `-I`: `-I` is a HEAD request, these
+          # routes serve GET, and the 405 that comes back carries headers of
+          # its own — an assertion that passes without ever reading /health.
+          curl -fsS -D - -o /dev/null http://127.0.0.1:8000/health \
+            | grep -qi '^cache-control: no-store'
           test "$(docker inspect -f '{{.Config.User}}' match-outcome-predictor:ci)" = "app"
           docker rm -f api
 

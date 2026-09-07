@@ -32,10 +32,12 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from api.metrics import UNMATCHED, Metrics
 from api.routes import router
 from api.service import (
     BatchTooLargeError,
     FixtureNotFoundError,
+    PredictionCache,
     PredictionService,
     ServiceUnavailableError,
 )
@@ -68,6 +70,36 @@ the ones in the feature table; `/fixtures` is how you find them.
 
 REQUEST_ID_HEADER = "x-request-id"
 
+CACHE_CONTROL: dict[str, str] = {
+    "/version": "public, max-age=300",
+    "/model-card/limitations": "public, max-age=3600",
+    "/fixtures": "public, max-age=60",
+}
+"""How long an answer from each route may be reused, by route template.
+
+Three routes are cacheable and the reason is the same for all three: the
+artefact and the feature table are loaded once in the lifespan and never
+reloaded, so what these endpoints say cannot change while the process that says
+it is running. A deployment that replaces the model replaces the process, and a
+five-minute ``/version`` is five minutes of a client believing a version that
+was true when it asked.
+
+Everything not named here — ``/health``, ``/metrics`` and both predict routes —
+gets ``no-store``. That is the important half. A cached health check is a proxy
+answering a liveness question on behalf of a process it has not spoken to, and
+a cached ``/metrics`` is a counter that appears to stop; both are failures that
+look like health, which is the worst kind.
+
+**And only a 2xx is cacheable, whatever the route.** ``/fixtures`` answers 503
+until the tables are built, and that answer is the one thing about it which is
+*not* stable for the life of the process — it stops being true the moment a
+model is mounted and the service restarts. Caching it for a minute would leave
+a proxy telling callers the service is down after it came up, which is the same
+failure as a cached health check wearing a different status code.
+"""
+
+NO_STORE = "no-store"
+
 
 def build_service(settings: Settings) -> PredictionService:
     """Load the artefact, index the tables, open the log.
@@ -77,7 +109,10 @@ def build_service(settings: Settings) -> PredictionService:
     different fixes, and a single ``try`` around all three would report
     whichever failed first as the whole story.
     """
-    service = PredictionService(max_batch=settings.api.max_batch)
+    service = PredictionService(
+        max_batch=settings.api.max_batch,
+        cache=PredictionCache(maxsize=settings.api.prediction_cache_size),
+    )
 
     try:
         service.model = load_servable(settings.paths.model_dir)
@@ -118,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = resolved
+        app.state.metrics = Metrics()
         app.state.service = build_service(resolved)
         try:
             yield
@@ -154,12 +190,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def _install_middleware(app: FastAPI) -> None:
-    """One access log line per request, with how long it took.
+    """One access log line per request, one counter, and one cache directive.
 
-    Structured as fields rather than prose so it greps: a service whose log
-    lines are sentences is one where "which endpoint is slow" costs an
-    afternoon. The request id is echoed back, so a client can quote the line it
-    is asking about.
+    All three in one middleware because all three need the same two facts — how
+    long the request took and which route it matched — and a second middleware
+    would be a second stopwatch measuring a slightly different interval.
+
+    The log line is structured as fields rather than prose so it greps: a
+    service whose log lines are sentences is one where "which endpoint is slow"
+    costs an afternoon. The request id is echoed back, so a client can quote the
+    line it is asking about.
+
+    The metric is labelled with the route *template* off ``request.scope``, not
+    with the URL. ``/fixtures?team=Arsenal`` and ``/fixtures?team=Everton`` are
+    one series; a request that matched no route is one series called
+    :data:`~api.metrics.UNMATCHED`, so a scanner walking a wordlist cannot make
+    this process store the wordlist. The log line keeps the real path, because
+    that is what a person reading it is trying to find.
     """
 
     @app.middleware("http")
@@ -168,18 +215,31 @@ def _install_middleware(app: FastAPI) -> None:
     ) -> Response:
         started = time.perf_counter()
         response = await call_next(request)
-        elapsed_ms = (time.perf_counter() - started) * 1000
+        elapsed = time.perf_counter() - started
         request_id = request.headers.get(REQUEST_ID_HEADER)
         logger.info(
             "method=%s path=%s status=%d duration_ms=%.1f request_id=%s",
             request.method,
             request.url.path,
             response.status_code,
-            elapsed_ms,
+            elapsed * 1000,
             request_id or "-",
         )
         if request_id:
             response.headers[REQUEST_ID_HEADER] = request_id
+
+        route = getattr(request.scope.get("route"), "path", None) or UNMATCHED
+        cacheable = response.status_code < 300
+        response.headers.setdefault(
+            "cache-control", CACHE_CONTROL.get(route, NO_STORE) if cacheable else NO_STORE
+        )
+        metrics: Metrics = request.app.state.metrics
+        metrics.observe(
+            method=request.method,
+            route=route,
+            status=response.status_code,
+            seconds=elapsed,
+        )
         return response
 
 

@@ -53,6 +53,7 @@ numbers get quoted as if they were the backtest's.
 |---|---|---|
 | `GET` | `/health` | Liveness, plus a per-component readiness breakdown |
 | `GET` | `/version` | Project version, model provenance, library drift |
+| `GET` | `/metrics` | Prometheus exposition: what this process has served |
 | `GET` | `/model-card/limitations` | What this model must not be used for |
 | `GET` | `/fixtures` | Find matches that can be priced |
 | `POST` | `/predict` | One fixture, priced |
@@ -130,6 +131,49 @@ that *fitted* the artefact against the ones running now. It is **reported, not
 enforced**: a patch release of numpy will not change a forecast and refusing to
 start would be the wrong call, while a major one might and a service that never
 mentioned it would also be the wrong call.
+
+### `GET /metrics`
+
+Milestone 16. Prometheus text exposition, `text/plain; version=0.0.4`, and no
+client library — the format is a `# HELP` line, a `# TYPE` line and samples,
+which is cheaper to write than `prometheus-client`'s global registry,
+multiprocess mode and platform collectors are to justify on a service that
+wants none of them.
+
+```
+http_requests_total{method="POST",route="/predict",status="200"} 1412
+http_request_duration_seconds_sum{method="POST",route="/predict"} 3.104822
+http_request_duration_seconds_count{method="POST",route="/predict"} 1412
+service_ready 1
+service_component_ready{component="model"} 1
+service_component_ready{component="fixtures"} 1
+service_component_ready{component="prediction_log"} 1
+fixtures_indexed 303517
+predictions_total 1461
+predictions_logged_total 1461
+prediction_cache_hits_total 1183
+prediction_cache_entries 278
+```
+
+**The route label is the route template, never the URL.**
+`/fixtures?team=Arsenal` and `/fixtures?team=Everton` are one time series. A
+raw path would give every distinct query string a series of its own, which is
+how a metrics endpoint becomes the largest thing a service serves; a request
+that matched no route is labelled `<unmatched>`, so a scanner walking a
+wordlist cannot write the wordlist into this process's memory.
+
+**The gauges are read off the service at scrape time, not tracked.**
+`service_ready` here and `status` on `/health` are two renderings of one object
+rather than two records of it, so they cannot disagree.
+
+**A sum and a count, not a histogram.** Buckets are a claim about the latency
+distribution a service has. This one answers from a dictionary and a fitted
+model; the honest thing to publish today is the mean, and a percentile can wait
+until there is a distribution worth bucketing.
+
+`predictions_total` counts *fixtures*, not requests: a batch of fifty is one
+`http_requests_total` and fifty predictions, and the two answer different
+questions.
 
 ### `GET /fixtures`
 
@@ -243,7 +287,9 @@ GPU nothing here has ever asked for. `xgboost-cpu` publishes the importable
 
 `docker-compose.yml` is a **local reproduction of the deployment, not a
 deployment**. It ships a literal password, no TLS, and a published database
-port; see [SECURITY.md](../SECURITY.md).
+port; see [SECURITY.md](../SECURITY.md). What a real one changes is in
+[DEPLOYMENT.md](DEPLOYMENT.md), along with the published images and what to
+scrape.
 
 ---
 
@@ -253,6 +299,7 @@ port; see [SECURITY.md](../SECURITY.md).
 |---|---|---|
 | `API_PORT` | `8000` | The container binds and health-checks this |
 | `API_MAX_BATCH` | `50` | Fixtures per batch request |
+| `API_PREDICTION_CACHE` | `1024` | Priced fixtures held before the oldest is evicted; `0` switches it off |
 | `MODEL_DIR` | `models` | Where `servable.joblib` is read from |
 | `DATA_DIR` | `data` | The three tables the fixture index is built from |
 | `LOG_LEVEL` | `INFO` | |
@@ -268,6 +315,67 @@ check, so `-e API_PORT=9000` moves them together.
 `PREDICTION_LOG_DSN` is the one secret in this project and is **environment
 only**: `configs/config.yaml` is committed, and a setting with no line in that
 file is one nobody can commit by accident.
+
+## Caching
+
+Two kinds, and they rest on the same fact: **the artefact and the feature table
+are loaded once in the lifespan and never reloaded.** A match id therefore names
+one design row, which one fitted model turns into one triple of probabilities,
+for the life of the process. A cache over a pure function of two immutable
+things cannot serve a stale answer; it can only serve the same answer sooner.
+
+### The prediction cache
+
+Up to `API_PREDICTION_CACHE` priced fixtures, least-recently-used first. What it
+holds back from the model is measurable on this machine, against the real
+303,517-row table and the shipped blend:
+
+| | Cache off | Cache on |
+|---|---|---|
+| `POST /predict`, one fixture | 7.51 ms | **1.71 ms** |
+| `POST /predict/batch`, 50 fixtures | 22.2 ms | **12.8 ms** |
+
+The residual is FastAPI's own serialisation and the index lookup, neither of
+which is cached. The batch improves less because fifty fixtures were already
+*one* pass through the estimators — that is what `predict/batch` is for — so
+the cache removes the pass rather than forty-nine of them.
+
+**`predicted_at` is never cached.** It is re-stamped on every response, because
+it says when this service answered and not when it last did the multiplication.
+The prediction log would otherwise fill with rows claiming a forecast was made
+at a moment no request existed — and Milestone 19 scores that log, so an
+archive whose timestamps are a cache's eviction pattern answers the wrong
+question.
+
+**The cache is per process.** Two replicas are two caches, and the hit rate
+falls as replicas are added. There is deliberately no shared one: a Redis in
+front of a 1.7 ms answer is a network hop to avoid an arithmetic operation.
+
+`prediction_cache_hits_total` and `prediction_cache_entries` on `/metrics` are
+how a deployment sees whether the size is right. `API_PREDICTION_CACHE=0`
+switches it off, which is what a run measuring model latency wants.
+
+### HTTP cache directives
+
+Every response carries `Cache-Control`. Three routes are reusable:
+
+| Route | Directive | Because |
+|---|---|---|
+| `/version` | `public, max-age=300` | The process cannot change what it was fitted on |
+| `/model-card/limitations` | `public, max-age=3600` | The card's own constant |
+| `/fixtures` | `public, max-age=60` | The index is built once at startup |
+| everything else | `no-store` | |
+
+`no-store` is the important half. A cached `/health` is a proxy answering a
+liveness question on behalf of a process it has not spoken to, and a cached
+`/metrics` is a counter that appears to stop — both are failures that *look
+like* health. And a non-2xx is never cacheable whatever its route: `/fixtures`
+answers 503 until the tables are built, which is the one thing about it that is
+not stable for the life of the process.
+
+There is no `ETag`. A conditional request still costs the round trip, and these
+bodies are hundreds of bytes; `max-age` removes the round trip, which is the
+part worth having.
 
 ## Logging
 
@@ -329,9 +437,10 @@ PREDICTION_LOG_DSN=postgresql://predictor:predictor@127.0.0.1:5432/predictions \
 
 ```
 api/
-  main.py       the application: lifespan, middleware, error mapping
-  routes.py     six endpoints, each a call and a return
-  service.py    what answers a request: model, index, log
+  main.py       the application: lifespan, middleware, error mapping, cache policy
+  routes.py     seven endpoints, each a call and a return
+  service.py    what answers a request: model, index, log, prediction cache
+  metrics.py    the counters, and the exposition rendered from them
   schemas.py    the request and response models, which are also the OpenAPI doc
 src/models/artifact.py     the shipped blend, fitted once — frames in, arrays out
 src/pipelines/serving.py   persisting it, loading it, and finding a fixture

@@ -37,6 +37,11 @@ http:
 
 api:
   port: 8000
+  # How many priced fixtures are held before the oldest is evicted. The model
+  # and the feature table are both loaded once and never reloaded, so a match
+  # id names one design row that one fitted model turns into one triple of
+  # probabilities — the same answer, sooner. 0 switches it off.
+  prediction_cache_size: 1024
 
 dashboard:
   api_url: http://127.0.0.1:8000

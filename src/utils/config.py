@@ -45,6 +45,7 @@ ENV_OVERRIDES: dict[str, str] = {
     "MODEL_DIR": "paths.model_dir",
     "API_PORT": "api.port",
     "API_MAX_BATCH": "api.max_batch",
+    "API_PREDICTION_CACHE": "api.prediction_cache_size",
     "DASHBOARD_API_URL": "dashboard.api_url",
     "PREDICTION_LOG_DSN": "api.prediction_log_dsn",
     "LOG_LEVEL": "logging.level",
@@ -156,6 +157,19 @@ class ApiConfig(_Strict):
     same design matrix, so the cost is linear and unbounded, and an unbounded
     request is the cheapest denial of service there is. Fifty is a round of
     fixtures across the competitions this project covers.
+    """
+
+    prediction_cache_size: int = Field(default=1024, ge=0)
+    """How many priced fixtures the service holds before it evicts the oldest.
+
+    A cache over a pure function: the artefact and the feature table are both
+    loaded once and never reloaded, so a match id names one design row that one
+    fitted model turns into one triple of probabilities for the life of the
+    process. The bound exists because the table has three hundred thousand rows
+    and an unbounded cache is a memory leak with a justification.
+
+    ``0`` switches it off, which is a real thing to want — a deployment
+    measuring model latency wants every request to reach the estimators.
     """
 
     prediction_log_dsn: str | None = None

@@ -1,0 +1,139 @@
+name: Release
+
+# Publish the two images to GHCR, on a tag and never otherwise.
+#
+# `ci.yml` already builds both on every push and starts them to check they come
+# up. This workflow does that again rather than trusting it, and then pushes:
+# the thing being published has to be the thing that was tested, and an image
+# built in one job and pushed from another is two images with one name unless
+# something carries the digest between them.
+#
+# No third-party actions. Everything here is `docker` and `curl`, for the same
+# reason the pinned lint versions exist — an action that moves under a release
+# workflow moves the bytes of a published artefact with it.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to publish, without the leading v (e.g. 0.12.0)"
+        required: true
+
+# `packages: write` is the only privilege added over what ci.yml grants, and it
+# is what pushing to GHCR needs. `contents: read` is restated rather than
+# inherited, so this file says its whole permission set in one place.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # Lower-cased explicitly below. GHCR rejects an uppercase path component, and
+  # `github.repository` carries whatever case the account was registered with —
+  # which is a failure that only appears on the first publish.
+  IMAGE: ${{ github.repository }}
+
+jobs:
+  publish:
+    name: Build, verify and push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Work out the version, and refuse a tag that disagrees with the code
+        # A tag is a claim about which code this is. `src/__init__.py` is the
+        # single source of truth for the version the service reports at
+        # `/version` and stamps on every prediction, so a `v0.13.0` tag on a
+        # tree that says 0.12.0 would publish an image whose own answer
+        # contradicts its name — and the prediction log would carry the wrong
+        # one for as long as it ran.
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.tag }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          # sed rather than python. The runner has an interpreter today and
+          # this line does not need to depend on that staying true.
+          declared=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/__init__.py)
+          if [ "$version" != "$declared" ]; then
+            echo "tag says $version; src/__init__.py says $declared"; exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "REPO=$(echo '${{ env.IMAGE }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          echo "publishing $version"
+
+      - name: Build both images
+        # `linux/amd64` only, and deliberately. The runtime image installs
+        # scipy, lightgbm, xgboost and catboost; there is no arm64 wheel for
+        # every one of them, so a multi-platform build compiles them under
+        # QEMU — an hour of emulated C++ per release for a platform nothing
+        # this project deploys to runs on. A note here is worth more than a
+        # matrix nobody waits for; `docker build` on an arm64 host produces the
+        # arm64 image for anyone who needs one.
+        run: |
+          set -e
+          docker build --target runtime \
+            -t "$REGISTRY/$REPO:$VERSION" \
+            -t "$REGISTRY/$REPO:latest" .
+          docker build --target dashboard \
+            -t "$REGISTRY/$REPO-dashboard:$VERSION" \
+            -t "$REGISTRY/$REPO-dashboard:latest" .
+
+      - name: The API image starts, reports its version and serves its metrics
+        # The same assertions ci.yml makes, against the exact bytes about to be
+        # published rather than against a rebuild of the same Dockerfile.
+        # `/version` is checked against the tag because that is the claim being
+        # made: this image is that release.
+        run: |
+          set -e
+          docker run -d --name api -p 8000:8000 "$REGISTRY/$REPO:$VERSION"
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/health | grep -q '"status":"degraded"'
+          curl -fsS http://127.0.0.1:8000/version | grep -q "\"version\":\"$VERSION\""
+          curl -fsS http://127.0.0.1:8000/metrics | grep -q '^service_ready '
+          test "$(docker inspect -f '{{.Config.User}}' "$REGISTRY/$REPO:$VERSION")" = "app"
+          docker rm -f api
+
+      - name: The dashboard image starts and answers its health endpoint
+        run: |
+          set -e
+          docker run -d --name dash -p 8501:8501 "$REGISTRY/$REPO-dashboard:$VERSION"
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          test "$(curl -fsS http://127.0.0.1:8501/_stcore/health)" = "ok"
+          docker rm -f dash
+
+      - name: Push
+        # `GITHUB_TOKEN` and no stored secret. The token is scoped to this
+        # repository, expires with the job, and cannot be leaked out of a fork
+        # — a pull request from one never runs this workflow, because it is
+        # only triggered by a tag on this repository.
+        run: |
+          set -e
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker push "$REGISTRY/$REPO:$VERSION"
+          docker push "$REGISTRY/$REPO-dashboard:$VERSION"
+          # `latest` only for a plain version. A pre-release tag — v1.0.0-rc1 —
+          # is published under its own name and must not become what an
+          # unqualified `docker pull` returns.
+          case "$VERSION" in
+            *-*) echo "pre-release: not moving :latest" ;;
+            *)   docker push "$REGISTRY/$REPO:latest"
+                 docker push "$REGISTRY/$REPO-dashboard:latest" ;;
+          esac
+          docker logout "$REGISTRY"
+          echo "published $REGISTRY/$REPO:$VERSION and the dashboard beside it"

@@ -8,19 +8,20 @@ service rather than of a hand-assembled object that resembles it.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from api.main import create_app
-from api.service import PredictionService
+from api.main import CACHE_CONTROL, create_app
+from api.service import PredictionCache, PredictionService
 from src.models.artifact import fit_servable
 from src.models.dataset import DESIGN_COLUMNS
 from src.pipelines.features import FEATURES_FILENAME
 from src.pipelines.ingest import MATCHES_FILENAME
 from src.pipelines.ratings import RATINGS_FILENAME
-from src.pipelines.serving import build_index, save_servable
+from src.pipelines.serving import LoadedModel, build_index, save_servable
 from src.ratings.base import DIXON_COLES_COLUMNS, ELO_COLUMNS
 from src.storage.predictions import PostgresPredictionLog
 from src.utils.config import ApiConfig, LoggingConfig, PathsConfig, Settings
@@ -32,6 +33,9 @@ pytestmark = pytest.mark.filterwarnings("ignore::sklearn.exceptions.ConvergenceW
 LEAGUE = modelled_frame(seasons=season_labels(2012, 8), teams=12)
 MODEL = fit_servable(LEAGUE, members=("logistic_regression",))
 INDEX = build_index(LEAGUE)
+LOADED = LoadedModel(model=MODEL, manifest={}, path=Path("servable.joblib"))
+"""The artefact as the lifespan holds it, for the tests that build a service
+directly rather than through the application."""
 
 SOME = LEAGUE.iloc[100]
 RATING_COLUMNS = [*ELO_COLUMNS, *DIXON_COLES_COLUMNS]
@@ -275,3 +279,110 @@ def test_the_batch_response_says_how_many_were_logged(client: TestClient) -> Non
     zero with no log configured is the documented default."""
     body = client.post("/predict/batch", json={"fixtures": [by_id()]}).json()
     assert body["recorded"] == 0
+
+
+# ---- the prediction cache ----------------------------------------------------
+
+
+def other_ids(count: int) -> list[str]:
+    """``count`` match ids from the table, none of them :data:`SOME`."""
+    return [str(value) for value in LEAGUE["match_id"].iloc[200 : 200 + count]]
+
+
+def test_the_same_fixture_twice_is_the_same_answer_at_a_later_moment() -> None:
+    """What is cached is the arithmetic, never the timestamp. ``predicted_at``
+    says when this service answered, not when it last multiplied — and
+    Milestone 19 scores the log those timestamps land in."""
+    service = PredictionService(model=LOADED, index=INDEX)
+
+    first, _ = service.predict([{"match_id": str(SOME["match_id"])}])
+    second, _ = service.predict([{"match_id": str(SOME["match_id"])}])
+
+    assert first[0].probabilities == second[0].probabilities
+    assert second[0].predicted_at >= first[0].predicted_at
+    assert service.cache.hits == 1
+    assert service.served == 2
+
+
+def test_a_cached_answer_is_the_one_the_model_gives() -> None:
+    """The property the cache rests on: the artefact and the table are loaded
+    once and never reloaded, so a match id names one design row that one fitted
+    model turns into one triple, for the life of the process."""
+    service = PredictionService(model=LOADED, index=INDEX)
+    lookup = [{"match_id": str(SOME["match_id"])}]
+
+    cached, _ = service.predict(lookup)
+    service.predict(lookup)
+    direct = MODEL.predict(INDEX.resolve(match_id=str(SOME["match_id"])))
+
+    assert cached[0].probabilities["home"] == pytest.approx(direct[0][0])
+
+
+def test_a_batch_larger_than_the_cache_still_prices_every_fixture() -> None:
+    """The eviction-mid-batch case: an entry stored while pricing a batch can
+    be evicted by a later entry in the same batch, so the answers are read back
+    out of the local mapping rather than back through the cache."""
+    service = PredictionService(
+        model=LOADED, index=INDEX, max_batch=10, cache=PredictionCache(maxsize=1)
+    )
+    wanted = other_ids(5)
+
+    priced, missing = service.predict([{"match_id": one} for one in wanted])
+
+    assert missing == []
+    assert [one.fixture["match_id"] for one in priced] == wanted
+    assert len(service.cache) == 1
+
+
+def test_a_batch_naming_one_fixture_twice_prices_it_once() -> None:
+    """A duplicate is one call into the model and two identical answers, in the
+    positions the caller asked for them."""
+    service = PredictionService(model=LOADED, index=INDEX, max_batch=10)
+    match_id = str(SOME["match_id"])
+
+    priced, _ = service.predict([{"match_id": match_id}] * 3)
+
+    assert len(priced) == 3
+    assert {one.probabilities["home"] for one in priced} == {priced[0].probabilities["home"]}
+    assert service.cache.hits == 0
+    assert len(service.cache) == 1
+
+
+def test_switching_the_cache_off_prices_every_request() -> None:
+    service = PredictionService(model=LOADED, index=INDEX, cache=PredictionCache(maxsize=0))
+    lookup = [{"match_id": str(SOME["match_id"])}]
+
+    service.predict(lookup)
+    service.predict(lookup)
+
+    assert service.cache.hits == 0
+    assert len(service.cache) == 0
+
+
+def test_metrics_count_fixtures_priced_rather_than_requests_served(client: TestClient) -> None:
+    """A batch of three is one request and three forecasts, and the two answer
+    different questions."""
+    client.post("/predict/batch", json={"fixtures": [by_id(), by_key()]})
+    served = [
+        line
+        for line in client.get("/metrics").text.splitlines()
+        if line.startswith("predictions_total ")
+    ]
+    assert int(served[0].split()[1]) >= 2
+
+
+@pytest.mark.parametrize(("path", "directive"), sorted(CACHE_CONTROL.items()))
+def test_an_answer_that_cannot_change_says_how_long_it_may_be_reused(
+    client: TestClient, path: str, directive: str
+) -> None:
+    """Every cacheable route, from the table itself rather than a list beside
+    it — so a route added there without a test here fails this one.
+
+    The artefact and the feature table are loaded once in the lifespan and
+    never reloaded, which is what makes these three answers stable for as long
+    as the process giving them is running. Asserted against a *loaded* service
+    because ``/fixtures`` is 503 without one, and a failure is never cached.
+    """
+    response = client.get(path)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == directive

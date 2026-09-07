@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 15 of 20 — the dashboard, with a live fixture feed, saved favourites and live tracking.**
+> **Status: Milestone 16 of 20 — the dashboard, with a live fixture feed, saved favourites and live tracking, published and instrumented.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**
@@ -397,6 +397,7 @@ keeps them from being quoted as one.
 | `GET` | `/fixtures` | Which matches can be priced — there is no other way to find out |
 | `GET` | `/health`, `/version` | Readiness per component; the model's provenance and library drift |
 | `GET` | `/model-card/limitations` | What it must not be used for, served from the card's own text |
+| `GET` | `/metrics` | Prometheus exposition — requests, latency, readiness, cache |
 
 `/health` is **200 while the process is alive** and reports `degraded` when the
 artefact or the tables are missing, which is exactly what a clean checkout
@@ -407,8 +408,18 @@ made from — the first application state in this project, and the condition
 Milestone 3 set for adding a second store — and a log that refuses never fails
 a request.
 
+A priced fixture is cached, and the cache rests on one fact rather than a
+guess: the artefact and the feature table are both loaded once in the lifespan
+and never reloaded, so a match id names one design row that one fitted model
+turns into one triple of probabilities for the life of the process. It can only
+serve the same answer sooner — 7.51 ms to **1.71 ms** on the real table — and
+never a stale one. The timestamp is not cached, because `predicted_at` says
+when this service answered.
+
 **[docs/API.md](docs/API.md)** has the request shapes, the status codes, the
-configuration and what the service deliberately is not.
+caching and what the service deliberately is not.
+**[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** has the published images, the
+probes, what to scrape and three alerts worth having.
 
 ## The dashboard
 
@@ -581,9 +592,10 @@ src/
   models/artifact.py  the shipped blend, fitted — frames in, arrays out
   storage/predictions.py  served predictions, in PostgreSQL   [Milestone 11] ✅
 api/                the inference service                 [Milestone 11] ✅
-  main.py             lifespan, middleware, error mapping
-  routes.py           six endpoints, each a call and a return
-  service.py          the model, the fixture index and the log, held once
+  main.py             lifespan, middleware, error mapping, cache policy
+  routes.py           seven endpoints, each a call and a return
+  service.py          the model, the index, the log and the cache, held once
+  metrics.py          the counters, and the exposition   [Milestone 16] ✅
   schemas.py          the request and response models, and the OpenAPI document
 dashboard/          the presentation layer               [Milestone 12] ✅
   app.py              the shell: theme, sidebar, six declared pages
@@ -703,8 +715,9 @@ requirements file.
 | Tests | pytest, 100% coverage of `src`, `api` and `dashboard` | `make test-cov`, CI |
 | Deprecations | `-W error::DeprecationWarning` | pytest config |
 | Authorship | `scripts/hooks/commit-msg` | git hook + CI |
-| Serving image | `docker build`, then a live `/health` against it | CI |
+| Serving image | `docker build`, then a live `/health`, `/metrics` and cache directive against it | CI |
 | Dashboard image | `docker build`, then a live `/_stcore/health` against it | CI |
+| Published image | Both started and asserted against before the push; a tag that disagrees with `src/__init__.py` is refused | Release |
 
 Lint tooling is pinned **exactly**. Unpinned, a formatter release turns CI red
 with no code change and disagrees with every local run.
@@ -728,13 +741,13 @@ imports is a supply-chain surface with no upside.
 | 10 | Evaluation and explainability — SHAP, permutation importance, model card | ✅ |
 | 11 | API — FastAPI, Docker, PostgreSQL for served predictions | ✅ |
 | 12 | Dashboard — the presentation layer, four layers deep, six pages | ✅ |
-| 13 | Live fixture ingestion — a `FixtureProvider` against football-data.org or equivalent | |
-| 14 | Accounts — authentication, saved favourites and preferences | |
-| 15 | Real-time — in-play updates, notifications, favourite-team alerts | |
-| 16 | Cloud deployment — MLOps, monitoring, caching, retraining, drift | |
+| 13 | Live fixture ingestion — a `FixtureProvider` against football-data.org or equivalent | ✅ |
+| 14 | Accounts — authentication, saved favourites and preferences | ✅ |
+| 15 | Real-time — in-play updates, notifications, favourite-team alerts | ✅ |
+| 16 | Deployment and operations — published images, Prometheus metrics, prediction cache | ✅ |
 | 17 | Odds and expected goals — bookmaker comparison, value detection | |
 | 18 | Availability — injuries, suspensions, transfer impact | |
-| 19 | Prediction archive — served forecasts scored against what happened | |
+| 19 | Prediction archive — served forecasts scored against what happened, and the drift that shows up in it | |
 | 20 | The platform | |
 
 Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best

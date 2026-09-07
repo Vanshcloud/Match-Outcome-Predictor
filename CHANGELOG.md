@@ -12,6 +12,80 @@ extra steps.
 
 ### Added
 
+- **Milestone 16 — deployment and operations.** Three things stood between "it
+  builds" and "it is running and somebody would know if it stopped": a
+  published image, a scrape target, and a cache.
+
+  **`GET /metrics`**, Prometheus text exposition, and no client library.
+  `prometheus-client` renders this format and also brings a process-global
+  registry, a multiprocess mode, a WSGI app and platform collectors — none of
+  which this service wants — for a format that is a `# HELP` line, a `# TYPE`
+  line and samples. `api/metrics.py` is 46 statements and adds no third-party
+  import to the request path.
+
+  The label is the **route template**, off `request.scope`, never the URL.
+  `/fixtures?team=Arsenal` and `/fixtures?team=Everton` are one time series;
+  a request that matched no route is one series called `<unmatched>`, so a
+  scanner walking a wordlist cannot write the wordlist into this process's
+  memory. The gauges — `service_ready`, `service_component_ready` — are read
+  off the service at scrape time rather than tracked, so they cannot disagree
+  with what `/health` says: two renderings of one object rather than two
+  records of it. Latency is a sum and a count, not a histogram, because buckets
+  are a claim about a distribution and the honest thing to publish today is the
+  mean. `predictions_total` counts *fixtures*, not requests — a batch of fifty
+  is one request and fifty forecasts, and the two answer different questions.
+
+  **A prediction cache**, `API_PREDICTION_CACHE` entries, least-recently-used.
+  It rests on a property rather than a hope: the artefact and the feature table
+  are loaded once in the lifespan and never reloaded, so a match id names one
+  design row that one fitted model turns into one triple of probabilities for
+  the life of the process. A cache over a pure function of two immutable things
+  cannot serve a stale answer. Measured against the real 303,517-row table:
+  `POST /predict` 7.51 ms → **1.71 ms**, a batch of fifty 22.2 ms → **12.8 ms**.
+
+  **`predicted_at` is deliberately not cached** and is re-stamped on every
+  response, because it says when this service answered and not when it last did
+  the multiplication. The prediction log would otherwise fill with rows claiming
+  a forecast was made at a moment no request existed — and Milestone 19 scores
+  that log, so an archive whose timestamps are a cache's eviction pattern
+  answers the wrong question. The answers are also read back out of a local
+  mapping rather than back through the cache, because an entry stored while
+  pricing a batch can be evicted by a later entry in the *same* batch.
+
+  **Every response carries `Cache-Control`.** Three routes are reusable for the
+  reason above; everything else is `no-store`, which is the half that matters —
+  a cached `/health` is a proxy answering a liveness question on behalf of a
+  process it has not spoken to, and a cached `/metrics` is a counter that
+  appears to stop. Both are failures that look like health. A non-2xx is never
+  cacheable whatever its route: `/fixtures` answers 503 until the tables exist,
+  and a proxy holding that for a minute would report the service down after it
+  came up. No `ETag` — a conditional request still costs the round trip, and
+  `max-age` removes it.
+
+  **`.github/workflows/release.yml`** publishes both images to GHCR on a `v*`
+  tag, with no third-party actions: an action that moves under a release
+  workflow moves the bytes of a published artefact with it. It **refuses a tag
+  that disagrees with `src/__init__.py`** — that version is what `/version`
+  reports and what is stamped on every row of the prediction log, so a
+  mislabelled image puts the wrong answer in an archive for as long as it runs
+  — and it starts both images and asserts against them *before* pushing, so
+  what is published is what was tested rather than a rebuild of the same
+  Dockerfile. `linux/amd64` only: a multi-platform build compiles scipy and
+  xgboost under QEMU for a platform nothing here deploys to. `:latest` moves
+  only for a plain version, never a pre-release.
+
+  **Drift and retraining were deferred to Milestone 19 rather than built.** The
+  README listed them here. Measuring drift means scoring served forecasts
+  against outcomes that arrived afterwards, which is precisely what the
+  prediction log is accumulating and precisely what Milestone 19 is for; a
+  drift number computed today would be computed against the backtest, which is
+  the thing drift is supposed to be measured away from.
+
+  `docs/DEPLOYMENT.md` is new: the published images, what compose is not, the
+  probe table, a scrape config, three alerts worth having, and the list of what
+  this still is not — no authentication, no rate limit, no TLS, no autoscaling
+  policy.
+
 - **Milestone 15 — live tracking and alerts.** The live strip repaints itself
   every sixty seconds (`@st.fragment(run_every=…)`) and says what changed since
   it last looked: a kick-off, a goal, a final whistle. Each is a toast in the

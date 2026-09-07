@@ -19,7 +19,9 @@ with a stack trace instead of a sentence.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import OrderedDict
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 
 import pandas as pd
 
@@ -31,6 +33,7 @@ from api.schemas import (
 )
 from src import __version__
 from src.evaluation.model_card import LIMITATIONS
+from src.models.artifact import ServableModel
 from src.models.dataset import DESIGN_COLUMNS
 from src.pipelines.serving import (
     FixtureIndex,
@@ -39,8 +42,10 @@ from src.pipelines.serving import (
     ServingError,
     predict_fixtures,
 )
+from src.pipelines.tables import KEY_COLUMN
 from src.storage.base import PredictionLog, StorageError
 from src.storage.predictions import NullPredictionLog
+from src.utils.config import ApiConfig
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -68,6 +73,74 @@ class BatchTooLargeError(ValueError):
     """
 
 
+DEFAULT_CACHE_SIZE = ApiConfig().prediction_cache_size
+"""Fixtures the prediction cache holds before it starts evicting.
+
+Read off the config's own default rather than repeated here. The number is
+documented where it is configured, and a literal in this module would be a
+second copy that the first person to tune it would forget about.
+"""
+
+
+@dataclass
+class PredictionCache:
+    """Probabilities already computed, keyed by match id, least-recent first.
+
+    **Why this is safe to cache at all.** The model is unpickled once in the
+    lifespan and the feature table is indexed once beside it, and neither is
+    reloaded while the process runs. A match id therefore names exactly one
+    design row, which one fitted model turns into exactly one triple of
+    probabilities — the same inputs, the same arithmetic, for the life of the
+    process. A cache over a pure function of two immutable things cannot serve
+    a stale answer; it can only serve the same answer sooner.
+
+    **What is deliberately not cached is the timestamp.** ``predicted_at`` is
+    re-stamped on every response, because it says when this service answered
+    and not when it last did the multiplication. The prediction log would
+    otherwise fill with rows claiming a forecast was made at a moment no
+    request existed, and Milestone 19 scores that log — an archive whose
+    timestamps are a cache's eviction pattern is an archive that answers the
+    wrong question.
+
+    An ``OrderedDict`` rather than ``functools.lru_cache``: the decorator keys
+    on arguments, and the argument here is a ``DataFrame`` row, which is
+    unhashable. Six lines of eviction is less code than making a design row
+    hashable would be, and it leaves :attr:`hits` and ``len`` readable by
+    ``/metrics`` instead of behind a ``cache_info`` tuple.
+    """
+
+    maxsize: int = DEFAULT_CACHE_SIZE
+    hits: int = 0
+
+    entries: OrderedDict[str, Prediction] = field(default_factory=OrderedDict)
+
+    def __len__(self) -> int:
+        return len(self.entries)
+
+    def get(self, match_id: str) -> Prediction | None:
+        """The cached prediction for ``match_id``, counted as a hit if there is one."""
+        found = self.entries.get(match_id)
+        if found is None:
+            return None
+        self.entries.move_to_end(match_id)
+        self.hits += 1
+        return found
+
+    def put(self, match_id: str, prediction: Prediction) -> None:
+        """Hold ``prediction``, evicting the least recently used if that overflows.
+
+        ``maxsize=0`` turns the cache off rather than making it a one-entry
+        cache that thrashes: a deployment that sets the size to zero has said
+        it wants every request priced, and this is where that is honoured.
+        """
+        if self.maxsize <= 0:
+            return
+        self.entries[match_id] = prediction
+        self.entries.move_to_end(match_id)
+        while len(self.entries) > self.maxsize:
+            self.entries.popitem(last=False)
+
+
 @dataclass(frozen=True, slots=True)
 class Component:
     """One dependency and whether it came up."""
@@ -85,6 +158,18 @@ class PredictionService:
     index: FixtureIndex | None = None
     log: PredictionLog = field(default_factory=NullPredictionLog)
     max_batch: int = 50
+    cache: PredictionCache = field(default_factory=PredictionCache)
+
+    served: int = 0
+    """Fixtures priced since startup, cached and fresh alike.
+
+    Counted here rather than in the middleware because a batch of fifty is one
+    request and fifty forecasts, and the two numbers answer different
+    questions: ``http_requests_total`` says how busy the service is and this
+    says how much football it has priced.
+    """
+
+    logged: int = 0
 
     model_error: str | None = None
     index_error: str | None = None
@@ -206,7 +291,49 @@ class PredictionService:
         rows, missing = self.resolve(lookups)
         if rows.empty:
             raise FixtureNotFoundError("no fixture in the table matches this request")
-        return predict_fixtures(loaded.model, rows), missing
+        return self._priced(loaded.model, rows), missing
+
+    def _priced(self, model: ServableModel, rows: pd.DataFrame) -> list[Prediction]:
+        """``rows`` as predictions, calling the model only for what is not cached.
+
+        Three passes rather than one, and the order of them is the point:
+
+        1. Ask the cache for each distinct match id.
+        2. Price whatever it did not have — in **one** call, so a batch of
+           fifty misses costs one pass through the estimators rather than
+           fifty. This is the same reason :meth:`resolve` concatenates.
+        3. Read the answers back out of ``priced``, in the order the caller
+           asked, and re-stamp every one of them with a single ``now``.
+
+        Step 3 reads from the local mapping rather than from the cache, which
+        matters when a batch is larger than ``maxsize``: an entry put in step 2
+        can be evicted by a later entry in the same batch, and a version of
+        this that read back through the cache would raise a ``KeyError`` on a
+        fixture it had just priced.
+
+        The timestamp is taken once for the whole call, matching what
+        :func:`~src.pipelines.serving.predict_fixtures` does for a frame: two
+        fixtures answered in one response were answered at one moment, and
+        stamping them microseconds apart would invent a precision the service
+        does not have.
+        """
+        wanted = [str(value) for value in rows[KEY_COLUMN]]
+        priced: dict[str, Prediction] = {}
+        for match_id in dict.fromkeys(wanted):
+            found = self.cache.get(match_id)
+            if found is not None:
+                priced[match_id] = found
+
+        unpriced = rows[~rows[KEY_COLUMN].astype(str).isin(priced)]
+        if not unpriced.empty:
+            for prediction in predict_fixtures(model, unpriced):
+                match_id = str(prediction.fixture[KEY_COLUMN])
+                priced[match_id] = prediction
+                self.cache.put(match_id, prediction)
+
+        now = datetime.now(tz=UTC)
+        self.served += len(wanted)
+        return [replace(priced[match_id], predicted_at=now) for match_id in wanted]
 
     def record(self, predictions: list[Prediction]) -> int:
         """Write predictions to the log, and never fail a request because of it.
@@ -220,10 +347,12 @@ class PredictionService:
         if not predictions:
             return 0
         try:
-            return self.log.record([prediction.as_record() for prediction in predictions])
+            written = self.log.record([prediction.as_record() for prediction in predictions])
         except StorageError as error:
             logger.error("prediction log rejected %d row(s): %s", len(predictions), error)
             return 0
+        self.logged += written
+        return written
 
     def fixtures(
         self,
@@ -310,9 +439,11 @@ class PredictionService:
 
 
 __all__ = [
+    "DEFAULT_CACHE_SIZE",
     "BatchTooLargeError",
     "Component",
     "FixtureNotFoundError",
+    "PredictionCache",
     "PredictionService",
     "ServiceUnavailableError",
     "ServingError",

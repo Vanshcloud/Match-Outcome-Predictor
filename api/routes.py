@@ -16,7 +16,9 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import PlainTextResponse
 
+from api.metrics import CONTENT_TYPE, Metrics, render
 from api.schemas import (
     BatchRequest,
     BatchResponse,
@@ -58,6 +60,21 @@ def get_service(request: Request) -> PredictionService:
 
 
 Service = Annotated[PredictionService, Depends(get_service)]
+
+
+def get_metrics(request: Request) -> Metrics:
+    """The counters the middleware writes to, off the application state.
+
+    A dependency for the same reason :func:`get_service` is one: two
+    applications in one process — which is what the test suite builds — must
+    not share a counter, or a test's assertion about how many requests were
+    served depends on which tests ran before it.
+    """
+    metrics: Metrics = request.app.state.metrics
+    return metrics
+
+
+Counters = Annotated[Metrics, Depends(get_metrics)]
 
 
 def _as_response(prediction: Prediction) -> PredictionResponse:
@@ -119,6 +136,28 @@ def limitations(service: Service) -> LimitationsResponse:
     so the two cannot drift.
     """
     return service.limitations()
+
+
+@router.get(
+    "/metrics",
+    tags=["operations"],
+    summary="Prometheus exposition",
+    response_class=PlainTextResponse,
+    responses={200: {"content": {CONTENT_TYPE: {"schema": {"type": "string"}}}}},
+)
+def metrics(service: Service, counters: Counters) -> PlainTextResponse:
+    """What this process has served, in the format a scraper already understands.
+
+    Not a JSON document and deliberately not a pydantic model: the exposition
+    format is the interface, and describing it as a schema would invite a
+    second consumer that parses the JSON — at which point the thing everything
+    else scrapes has two shapes.
+
+    The gauges are read off the service at scrape time rather than tracked, so
+    ``service_ready`` here and ``status`` on ``/health`` cannot disagree: they
+    are two renderings of one object rather than two records of it.
+    """
+    return PlainTextResponse(render(counters, service), media_type=CONTENT_TYPE)
 
 
 # ---- fixtures ----------------------------------------------------------------

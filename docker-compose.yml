@@ -31,6 +31,12 @@ services:
       PREDICTION_LOG_DSN: postgresql://predictor:predictor@postgres:5432/predictions
       LOG_LEVEL: INFO
       API_MAX_BATCH: "50"
+      # Milestone 16. Priced fixtures held before the oldest is evicted. The
+      # artefact and the feature table are mounted read-only below and loaded
+      # once at startup, which is what makes this cache a pure function of two
+      # immutable things rather than a bet — it can only serve the same answer
+      # sooner. `0` switches it off; `/metrics` reports the hit count.
+      API_PREDICTION_CACHE: "1024"
     volumes:
       # Read-only, both of them. The service reads a feature table and an
       # artefact and writes neither, and a container that cannot corrupt its

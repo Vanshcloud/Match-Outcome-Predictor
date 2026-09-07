@@ -27,7 +27,7 @@ from dashboard import context
 from dashboard.charts import competition_bars, reliability_diagram, score_bars
 from dashboard.domain import competition as catalogue
 from dashboard.services import reports as report_service
-from src.evaluation import archive
+from src.evaluation.archive import horizon
 from src.models.ensemble import SHIPPED
 
 WORTH_SEEING: tuple[float, ...] = (0.10, 0.05, 0.02, 0.0163, 0.01)
@@ -257,7 +257,7 @@ def _horizon(spread: float) -> None:
         f"told from noise, at a per-match spread of {spread:.4f}:"
     )
     st.dataframe(
-        archive.horizon(spread, WORTH_SEEING).rename(
+        horizon(spread, WORTH_SEEING).rename(
             columns={"difference": "shift in log loss", "needed": "forecasts needed"}
         ),
         width="stretch",

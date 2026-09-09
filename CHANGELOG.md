@@ -12,6 +12,25 @@ extra steps.
 
 ### Added
 
+- **`make invariants` runs CI's boundary checks locally.** Eighteen greps hold
+  the dependency graph in the shape this repository's documents claim it has —
+  `src/utils` importing nothing else in `src`, the dashboard never reaching
+  past the reporting layer, no view naming a provider — and until now they
+  could only be *run* in CI. `make quality` covered lint, format and types, so
+  the first news of a violated boundary was a red job six minutes after a push.
+  Which is exactly how Milestone 19 shipped: `from src.evaluation import
+  archive` does not match the pattern that allows `src.evaluation.<module>.`,
+  and CI said so after the push rather than the working copy saying so before
+  it.
+
+  `scripts/invariants.py` **parses `.github/workflows/ci.yml`** rather than
+  restating it. A second copy of eighteen greps is a second copy that drifts,
+  and the half that drifts is the one nobody looked at again. A job that has
+  been renamed or emptied is an error rather than a clean run, because a gate
+  that silently checks nothing reports success in the one situation where it
+  should be shouting. `--job authorship` runs the commit-history checks the
+  same way. Two seconds for all eighteen; `make quality` now includes them.
+
 - **Milestone 19 — the prediction archive, and how much of it a verdict needs.**
   Every served forecast has been written to PostgreSQL since Milestone 11.
   `make archive` reads them back, joins the matches that have since been played,

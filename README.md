@@ -733,7 +733,9 @@ make dashboard # the reports and a live price at http://127.0.0.1:8501
 make docker-run # the API and its prediction log, via compose
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
-make quality   # ruff + black + mypy
+make archive   # score the served forecasts; needs PREDICTION_LOG_DSN
+make invariants # CI's architectural boundary checks, here rather than there
+make quality   # ruff + black + mypy + the invariants
 ```
 
 Requires Python 3.13. From Milestone 8, macOS also needs `brew install libomp`
@@ -795,6 +797,7 @@ requirements file.
 | Lint | ruff | `make lint`, CI |
 | Format | black | `make format-check`, CI |
 | Types | mypy, strict | `make typecheck`, CI |
+| Architecture | 18 greps holding the dependency graph in the shape this document claims | `make invariants`, CI |
 | Tests | pytest, 100% coverage of `src`, `api` and `dashboard` | `make test-cov`, CI |
 | Deprecations | `-W error::DeprecationWarning` | pytest config |
 | Authorship | `scripts/hooks/commit-msg` | git hook + CI |

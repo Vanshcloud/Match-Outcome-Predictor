@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card archive model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card archive model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck invariants quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -156,7 +156,13 @@ format-check: ## Check formatting without writing
 typecheck: ## Run mypy
 	$(BIN)/mypy src api dashboard
 
-quality: lint format-check typecheck ## Run every quality gate
+# The eighteen greps in ci.yml's `invariants` job, run here rather than read
+# about six minutes after a push. It parses the workflow instead of restating
+# it: two copies of eighteen greps is two copies that drift.
+invariants: ## Run CI's architectural boundary checks locally (~2 seconds)
+	$(BIN)/python scripts/invariants.py
+
+quality: lint format-check typecheck invariants ## Run every quality gate
 
 clean: ## Remove caches and build artefacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

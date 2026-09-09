@@ -137,6 +137,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Every grep below carries `--exclude-dir=__pycache__`. CI runs these on
+      # a fresh checkout that has none, so it is there for `make invariants`,
+      # which runs the same steps in a working copy that has just run the
+      # suite: a compiled docstring is not source, and a local gate that goes
+      # red on a stale .pyc is a local gate people stop running.
+
       - name: No removed or deprecated APIs
         # Each of these still *runs* and merely warns, which is why a grep is
         # worth more here than a code review. The list grows as milestones
@@ -151,7 +157,7 @@ jobs:
           patterns='^[[:space:]]*@(app\.on_event|validator|root_validator)\b'
           patterns="$patterns"'|[A-Za-z0-9_)][[:space:]]*\.(parse_obj|dict)\(\)'
           patterns="$patterns"'|^[[:space:]]*class Config:'
-          if grep -rEn "$patterns" src api tests scripts 2>/dev/null; then
+          if grep -rEn --exclude-dir=__pycache__ "$patterns" src api tests scripts 2>/dev/null; then
             echo "found a removed or deprecated API above"; exit 1
           fi
           echo "no removed APIs in use"
@@ -172,7 +178,7 @@ jobs:
         # import through — the first version of this check used `src\.` and
         # would have missed `from src import` entirely.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\b' src/utils \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\b' src/utils \
                       | grep -v 'src\.utils' \
                       | grep -v 'from src import __version__' || true)
           if [ -n "$offenders" ]; then
@@ -186,7 +192,7 @@ jobs:
         # features, models or the API is that abstraction quietly dissolving,
         # and it is far cheaper to catch here than to unpick later.
         run: |
-          leaked=$(grep -rEln 'football-data\.co\.uk|mmz4281' src api scripts \
+          leaked=$(grep -rEln --exclude-dir=__pycache__ 'football-data\.co\.uk|mmz4281' src api scripts \
                    | grep -v '^src/ingestion/' || true)
           if [ -n "$leaked" ]; then
             echo "provider details outside src/ingestion:"; echo "$leaked"; exit 1
@@ -200,7 +206,7 @@ jobs:
         # opened a path has to be rewritten. src/pipelines writes the file, so
         # it is the one package allowed to name the format.
         run: |
-          leaked=$(grep -rEln 'read_parquet' src api scripts \
+          leaked=$(grep -rEln --exclude-dir=__pycache__ 'read_parquet' src api scripts \
                    | grep -v '^src/storage/' || true)
           if [ -n "$leaked" ]; then
             echo "the canonical table is read outside src/storage:"; echo "$leaked"; exit 1
@@ -215,7 +221,7 @@ jobs:
         # model that went to disk for the rest would pass every probe while
         # reading the future.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/ratings \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' src/ratings \
                       | grep -vE 'src\.(ratings|utils)\.' || true)
           if [ -n "$offenders" ]; then
             echo "src/ratings depends on more than utils:"; echo "$offenders"; exit 1
@@ -230,7 +236,7 @@ jobs:
         # truncated frames and a builder that went elsewhere for the rest would
         # pass every probe while reading the future.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/feature_engineering \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' src/feature_engineering \
                       | grep -vE 'src\.(feature_engineering|utils)\.|src\.ingestion\.base' || true)
           if [ -n "$offenders" ]; then
             echo "src/feature_engineering reaches past the schema:"; echo "$offenders"; exit 1
@@ -243,7 +249,7 @@ jobs:
         # result labels would be one that could not score a forecast held in
         # memory, which is exactly how every caller here holds one.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/evaluation \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' src/evaluation \
                       | grep -vE 'src\.(evaluation|utils)\.|src\.ingestion\.base' || true)
           if [ -n "$offenders" ]; then
             echo "src/evaluation reaches past the schema:"; echo "$offenders"; exit 1
@@ -262,7 +268,7 @@ jobs:
         # written out again, so a feature added there is a column the zoo sees
         # without anyone editing a second list.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/models \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' src/models \
                       | grep -vE 'src\.(models|utils|evaluation|validation)\.|src\.(ingestion|ratings)\.base|src\.feature_engineering\.registry' || true)
           if [ -n "$offenders" ]; then
             echo "src/models reaches past the schema:"; echo "$offenders"; exit 1
@@ -278,7 +284,7 @@ jobs:
         # which is how every caller holds one — and it would put the reporting
         # layer underneath the layer that reports it.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' src/explainability \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' src/explainability \
                       | grep -vE 'src\.(explainability|models|evaluation|utils)\.|src\.ingestion\.base' || true)
           if [ -n "$offenders" ]; then
             echo "src/explainability reaches past the model layer:"; echo "$offenders"; exit 1
@@ -291,7 +297,7 @@ jobs:
         # every pipeline in this project needs FastAPI installed to import, and
         # the leakage suite starts walking a package full of route handlers.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) api\b' src scripts || true)
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) api\b' src scripts || true)
           if [ -n "$offenders" ]; then
             echo "src imports the api package:"; echo "$offenders"; exit 1
           fi
@@ -309,7 +315,7 @@ jobs:
         # excluded by name rather than by a loose pattern, for the same reason
         # the `src/utils` check excludes `from src import __version__`.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' api \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' api \
                       | grep -vE 'src\.(pipelines|models|storage|utils|evaluation)\.' || true)
           if [ -n "$offenders" ]; then
             echo "api reaches past the pipeline layer:"; echo "$offenders"; exit 1
@@ -324,7 +330,7 @@ jobs:
         # them. The same rule that keeps a design row off the request path
         # keeps the artefact out of the dashboard.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) api\b' dashboard || true)
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) api\b' dashboard || true)
           if [ -n "$offenders" ]; then
             echo "the dashboard imports the api package instead of calling it:"; echo "$offenders"; exit 1
           fi
@@ -335,7 +341,7 @@ jobs:
         # runs and `api` is the process that serves it; either importing a
         # Streamlit page would make the pipelines need Streamlit to start.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\b' src api scripts || true)
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) dashboard\b' src api scripts || true)
           if [ -n "$offenders" ]; then
             echo "src, api or scripts imports the dashboard:"; echo "$offenders"; exit 1
           fi
@@ -359,7 +365,7 @@ jobs:
         # own copy of the league names would be a second list, and the first
         # league added in a later milestone would be added to one of them.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) src\.' dashboard \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' dashboard \
                       | grep -vE 'src\.(pipelines|models|evaluation|utils)\.|src\.ingestion\.(base|registry)' || true)
           if [ -n "$offenders" ]; then
             echo "the dashboard reaches past the reporting layer:"; echo "$offenders"; exit 1
@@ -377,17 +383,17 @@ jobs:
         # Fixture. `providers` may not reach up into services or views.
         run: |
           set -e
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.(providers|services|views)\b' \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) dashboard\.(providers|services|views)\b' \
                       dashboard/domain || true)
           if [ -n "$offenders" ]; then
             echo "dashboard/domain imports a layer above it:"; echo "$offenders"; exit 1
           fi
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.(services|views)\b' \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) dashboard\.(services|views)\b' \
                       dashboard/providers || true)
           if [ -n "$offenders" ]; then
             echo "dashboard/providers imports a layer above it:"; echo "$offenders"; exit 1
           fi
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.views\b' dashboard/services || true)
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) dashboard\.views\b' dashboard/services || true)
           if [ -n "$offenders" ]; then
             echo "dashboard/services imports the views:"; echo "$offenders"; exit 1
           fi
@@ -408,7 +414,7 @@ jobs:
         # service may compose one — that is what a service is. A *view* may
         # not, and that is the line this checks.
         run: |
-          offenders=$(grep -rEn '^[[:space:]]*(from|import) dashboard\.providers\.(historical|api|null|football_data_org|webhook)\b' \
+          offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) dashboard\.providers\.(historical|api|null|football_data_org|webhook)\b' \
                       dashboard/views || true)
           if [ -n "$offenders" ]; then
             echo "a view imports a concrete provider:"; echo "$offenders"; exit 1
@@ -437,11 +443,11 @@ jobs:
         # macOS — rejects the pattern outright while GNU grep accepts it, which
         # is a check that silently passes on one machine and errors on another.
         run: |
-          in_views=$(grep -rEn --include='*.py' 'st\.session_state(\[|\.)' dashboard/views || true)
+          in_views=$(grep -rEn --exclude-dir=__pycache__ --include='*.py' 'st\.session_state(\[|\.)' dashboard/views || true)
           if [ -n "$in_views" ]; then
             echo "a view touches session state:"; echo "$in_views"; exit 1
           fi
-          elsewhere=$(grep -rEn --include='*.py' 'st\.session_state(\[|\.)' dashboard \
+          elsewhere=$(grep -rEn --exclude-dir=__pycache__ --include='*.py' 'st\.session_state(\[|\.)' dashboard \
                       | grep -vE '^dashboard/(domain/identity|services/watch)\.py' || true)
           if [ -n "$elsewhere" ]; then
             echo "session state is used outside identity.py and watch.py:"; echo "$elsewhere"; exit 1
@@ -462,12 +468,12 @@ jobs:
         # exception-only use are still banned outright by import.
         run: |
           set -e
-          calls=$(grep -rEn '\b(requests\.(get|post|put|patch|delete|head|request|Session)|urlopen)[[:space:]]*\(' \
+          calls=$(grep -rEn --exclude-dir=__pycache__ '\b(requests\.(get|post|put|patch|delete|head|request|Session)|urlopen)[[:space:]]*\(' \
                   src api dashboard | grep -v '^src/utils/http.py' || true)
           if [ -n "$calls" ]; then
             echo "an HTTP call is made outside src/utils/http:"; echo "$calls"; exit 1
           fi
-          transports=$(grep -rEn '^[[:space:]]*(import|from) (urllib|http\.client|socket)\b' \
+          transports=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(import|from) (urllib|http\.client|socket)\b' \
                        src api dashboard | grep -v '^src/utils/http.py' || true)
           if [ -n "$transports" ]; then
             echo "a raw transport is imported outside src/utils/http:"; echo "$transports"; exit 1

@@ -12,6 +12,7 @@ the configuration a reader gets by default.
 
 from __future__ import annotations
 
+import datetime as dt
 import time
 from collections.abc import Iterator
 
@@ -73,10 +74,19 @@ def test_it_indexed_the_whole_table(client: TestClient) -> None:
     assert body["library_mismatches"] == [], "the artefact was fitted by other library versions"
 
 
-def test_a_real_fixture_can_be_found_and_then_priced(client: TestClient) -> None:
-    """The two endpoints in the order a caller uses them: there is no fixture
-    list from the provider, so discovery is how a match gets named at all."""
-    found = client.get("/fixtures", params={"competition_id": "ENG_1", "limit": 1}).json()
+def test_a_real_match_can_be_found_and_then_priced(client: TestClient) -> None:
+    """The two endpoints in the order a caller uses them: discovery is how a
+    match gets named at all.
+
+    ``until`` is what makes this about a *played* match. Before Milestone 20
+    every row in the index was one, so the first row of ``/fixtures`` was
+    necessarily inside the artefact's training window; now the index also holds
+    matches that have not kicked off, and they sort first. Asking for a match
+    before the artefact's cut-off is asking the question this test is about.
+    """
+    found = client.get(
+        "/fixtures", params={"competition_id": "ENG_1", "until": "2026-01-01", "limit": 1}
+    ).json()
     assert found["count"] == 1
     fixture = found["fixtures"][0]
 
@@ -84,10 +94,28 @@ def test_a_real_fixture_can_be_found_and_then_priced(client: TestClient) -> None
     assert priced["fixture"]["match_id"] == fixture["match_id"]
     assert priced["model"] == "ensemble-calibrated"
     assert sum(priced["probabilities"].values()) == pytest.approx(1.0)
-    # Every fixture in the table is inside the artefact's training window, by
-    # construction: it was fitted on all of them. The flag exists so that stays
-    # visible rather than being something a reader has to work out.
+    # A match inside the training window: the artefact was fitted on it. The
+    # flag exists so that stays visible rather than being something a reader
+    # has to work out.
     assert priced["in_sample"] is True
+
+
+def test_an_upcoming_fixture_prices_out_of_sample(client: TestClient) -> None:
+    """Milestone 20's whole point, against the real tables.
+
+    Skipped where `make fixtures` has not run, which is a clean checkout and
+    every week the provider has nothing to publish. Where it has, the forecast
+    is for a match the artefact could not have trained on — and that is what
+    the archive needs before it can score anything.
+    """
+    today = dt.date.today().isoformat()
+    found = client.get("/fixtures", params={"since": today, "limit": 1}).json()
+    if not found["count"]:
+        pytest.skip("no upcoming fixtures indexed; run `make fixtures`")
+
+    priced = client.post("/predict", json={"match_id": found["fixtures"][0]["match_id"]}).json()
+    assert sum(priced["probabilities"].values()) == pytest.approx(1.0)
+    assert priced["in_sample"] is False
 
 
 def test_the_same_match_prices_identically_by_id_and_by_name(client: TestClient) -> None:

@@ -47,7 +47,7 @@ from src.ingestion.manifest import checksum, read_manifest, write_manifest
 from src.models.artifact import ArtifactError, ServableModel, fit_servable
 from src.models.dataset import DESIGN_COLUMNS
 from src.models.ensemble import MEMBERS
-from src.pipelines.tables import KEY_COLUMN, TablePaths, load_modelling_frame
+from src.pipelines.tables import KEY_COLUMN, TablePaths, load_modelling_frame, read_upcoming
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -407,10 +407,18 @@ same statement about the served process, where it costs one line.
 
 
 def load_index(paths: TablePaths) -> FixtureIndex | None:
-    """The joined modelling frame, projected and indexed.
+    """The joined modelling frame and the upcoming fixtures, projected and indexed.
+
+    Two sources, one index, and the service cannot tell them apart — which is
+    the whole point. A design row is a design row: the played ones come out of
+    the batch build and the unplayed ones out of `make fixtures`, both from the
+    same producers, and the request path stays a dictionary lookup either way.
+
+    The upcoming table is optional and its absence is silent. A checkout that
+    has never run `make fixtures` indexes what it always did.
 
     Returns:
-        The index, or ``None`` when a table is absent.
+        The index, or ``None`` when one of the three required tables is absent.
     """
     frame = load_modelling_frame(paths)
     if frame is None:
@@ -418,8 +426,34 @@ def load_index(paths: TablePaths) -> FixtureIndex | None:
     missing = [column for column in SERVED_COLUMNS if column not in frame.columns]
     if missing:
         raise ServingError(f"the tables are missing {len(missing)} served column(s): {missing[:5]}")
-    index = build_index(frame[list(SERVED_COLUMNS)].copy())
-    logger.info("indexed %d fixture(s) over %d column(s)", len(index), len(SERVED_COLUMNS))
+
+    played = frame[list(SERVED_COLUMNS)].copy()
+    upcoming = read_upcoming(paths.upcoming) if paths.upcoming is not None else None
+    if upcoming is None or upcoming.empty:
+        index = build_index(played)
+        logger.info("indexed %d fixture(s) over %d column(s)", len(index), len(SERVED_COLUMNS))
+        return index
+
+    absent = [column for column in SERVED_COLUMNS if column not in upcoming.columns]
+    if absent:
+        # Loudly, rather than quietly indexing the played matches alone. A
+        # fixture table written by a different version of the design is the one
+        # failure here that would otherwise look like "no football this week".
+        raise ServingError(f"the upcoming table is missing {len(absent)} column(s): {absent[:5]}")
+
+    # The played matches go first, and the order is load-bearing:
+    # `build_index` keeps the first of a duplicated natural key, so a match
+    # that is in both — kicked off since the fixture list was built, and
+    # ingested since — resolves to the row with a result behind it. That is the
+    # row the archive will join a forecast to.
+    combined = pd.concat([played, upcoming[list(SERVED_COLUMNS)]], ignore_index=True)
+    index = build_index(combined)
+    logger.info(
+        "indexed %d fixture(s) over %d column(s), %d of them not yet played",
+        len(index),
+        len(SERVED_COLUMNS),
+        len(upcoming),
+    )
     return index
 
 

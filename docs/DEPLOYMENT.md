@@ -313,20 +313,75 @@ page and in the command alike.
 ### What a real archive says today
 
 Against the compose stack with the shipped artefact and the real 303,517-row
-table: 35 rows in the log, 25 after repeats collapse, **25 in-sample and 0
-scorable**. That is not a defect in the report — it is the deployment. The
-artefact is fitted through the end of the match table, so every fixture the
-service can be asked about today is one it trained on. **The archive starts
-scoring when the service is asked about matches before they are played** and
-`make data` then catches up with the results: that is a property of how the
-service is driven, not of this code, and Milestone 13's fixture feed is what
-would drive it.
+table, Milestone 19 found 35 rows in the log, 25 after repeats collapse, **25
+in-sample and 0 scorable** — and said that this was a property of how the
+service was being driven rather than a defect in the report. Milestone 20 is
+the other half of that sentence, and it is the section below.
 
 The scoring path itself was checked against the real tables by feeding the
 walk-forward forecasts back in as if they had been served: at 62,036 rows the
 report returns a drift of **+0.0000**, which is the two paths agreeing to four
 decimals. At 3,000 rows a +0.0122 difference is correctly reported as under the
 0.0142 that could be noise.
+
+## Closing the loop: pricing matches before they are played
+
+The archive scores forecasts against outcomes that arrived afterwards, so it
+needs forecasts that were made *beforehand*. Nothing produced any: the service
+answers when something asks, and a deployment nobody browses on a Friday night
+serves nothing. Two commands, run in this order, are the loop:
+
+```bash
+make data                    # results, so the form windows are current
+make fixtures                # design rows for what is about to be played (~12 min)
+docker compose restart api   # the tables are indexed once, in the lifespan
+make price                   # ask the service about them; the log fills
+```
+
+Then, once the matches have been played and `make data` has caught up:
+
+```bash
+make archive                 # the same command, now with something to score
+```
+
+**Why the restart is in the middle.** The same reason it is in *Updating the
+model* above: the tables are read once on the way up and never reloaded, which
+is what makes the cache directives on `/fixtures` and `/version` honest. A
+service that reloaded them would be a service whose answers can change while it
+is telling a proxy they cannot.
+
+**Why `make fixtures` takes twelve minutes to price a few hundred matches.**
+It runs the whole ratings and feature build with the fixtures appended, because
+the alternative — a function that computes a form window for one fixture —
+would be a second implementation of the feature layer living outside every
+probe that guards the first. Elo is a fold over 303,517 matches and Dixon-Coles
+refits along it; 676 of those seconds are the ratings, 6 are the features. The
+thing to add if it ever matters is a cached rating *state*, not a second rater.
+
+**Driven against the real tables and a real log.** Eight fixtures over three
+competitions, built from the 303,517-row table and priced by a service holding
+the shipped artefact, writing to the compose PostgreSQL:
+
+| | Milestone 19 | After `make fixtures` and `make price` |
+|---|---:|---:|
+| Logged (repeats collapsed) | 25 | 58 |
+| In-sample | **25** | 50 |
+| Unresolved | 0 | **8** |
+| Scorable | 0 | 0 |
+
+Still nothing scored, and the difference is the whole milestone: the exclusion
+moved from `in_sample` to `unresolved`. The first is structural — those
+forecasts could never be scored, because the artefact trained on those matches
+— and the second resolves itself on Saturday, when the matches are played and
+`make data` catches up with the results.
+
+**What it is worth running on.** A cron entry per day is enough: the fixture
+list covers about a week and a half, the command re-prices what is still
+upcoming, and the archive collapses repeats to the last forecast before
+kick-off. At this project's own gap to the closing line a verdict needs 2,286
+scored forecasts, which a fixture list supplies in a season rather than in a
+week — `make archive` prints that horizon beside every figure so the wait is a
+number rather than a feeling.
 
 ## What this is not
 
@@ -335,6 +390,10 @@ decimals. At 3,000 rows a +0.0122 difference is correctly reported as under the
   unbounded work; it is not a defence against many requests. Put this behind
   something that has one.
 - **No TLS.** Terminate it in front.
+- **No scheduler.** `make fixtures` and `make price` close the loop and neither
+  runs itself. They are a cron entry, deliberately: a container whose job is to
+  sleep is a container to operate, and every deployment that would run this
+  already has something that runs a command on a timer.
 - **No automatic retraining.** Retraining is `make model` and a restart,
   deliberately manual. A scheduled job that promoted a model without a human
   reading the comparison is a change to what this project serves made by a cron

@@ -374,6 +374,36 @@ weekend, a few competitions, whatever the service happened to be asked about.
 **A threshold cannot rescue a sample that is not random**, which is a second
 reason not to read a small archive as drift.
 
+### Why the archive had nothing in it, and what changed
+
+Milestone 19 found 35 rows in the log, 25 after repeats collapsed, **25 of them
+in-sample and 0 scorable**, and concluded that this was a property of how the
+service was being driven rather than of the code. It was, and the property had
+a name: this project ingests results, so every fixture the service could be
+asked about was one the shipped artefact had trained on. `in_sample` was
+`true` on all of it because it could not have been anything else.
+
+Milestone 20 is the fix, and it is two commands rather than a change to any
+measurement on this page:
+
+```bash
+make fixtures   # design rows for matches that have not been played, ~12 min
+make price      # ask the service about them, so the log fills before kick-off
+```
+
+`make fixtures` appends the published fixture list to the canonical frame and
+runs the same ratings and feature builders over the whole thing — the design
+row a fixture gets is the one `make features` writes for it once it is played,
+checked by holding out the last day of the real table and rebuilding it as a
+fixture: **every one of the thirty columns agreed to zero.** `make price` then
+asks the running service for those fixtures, and because they are dated after
+the artefact's training window, the service stamps them `in_sample: false`.
+
+So the archive's exclusion counts are no longer structural. What is left is the
+sample size, which is the finding above and is a matter of weeks rather than of
+code: at this project's own gap to the closing line, a verdict needs **2,286
+scored forecasts**, and a fixture list is a few hundred a week.
+
 ---
 
 ## Re-running it

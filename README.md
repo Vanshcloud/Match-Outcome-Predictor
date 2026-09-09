@@ -375,14 +375,14 @@ Two things about it are worth stating before the endpoint list, because both
 are decisions rather than defaults.
 
 **It prices the fixtures in the feature table, and does not compute features on
-demand.** That reads like a limitation and is mostly a fact about the data: the
-provider publishes *results*, not a fixture list, so there is no feed of next
-Saturday's matches anywhere in this project and a "predict this upcoming match"
-endpoint would have nothing to be handed. Even with one, recomputing a design
-row inside a request handler would be a second implementation of the feature
-layer living outside every probe that guards the first — and the whole
-Milestone 6 argument is that a leak has no symptom, it simply makes the model
-look better. So the service reads the row the audited pipeline wrote.
+demand.** Recomputing a design row inside a request handler would be a second
+implementation of the feature layer living outside every probe that guards the
+first — and the whole Milestone 6 argument is that a leak has no symptom, it
+simply makes the model look better. So the service reads the row the audited
+pipeline wrote. Milestone 20 put *unplayed* matches in that table rather than
+making an exception to the rule: `make fixtures` runs the same builders over
+the history with next week's fixtures appended, and the request path is still a
+lookup.
 
 **Every response says whether the fixture was in the model's training window.**
 `make model` fits the blend on the whole history, because that is the model you
@@ -626,6 +626,8 @@ src/
     registry.py       the competition registry and season labels
     teams.py          canonical team ids
     football_data.py  the adapter
+    fixtures.py       the published fixture list, keyed to match
+                      the played row it becomes             [Milestone 20] ✅
     manifest.py       checksum-based dataset versioning
   storage/          DuckDB views over Parquet             [Milestone 3] ✅
     base.py           the MatchStore protocol
@@ -669,6 +671,8 @@ src/
     tables.py         the three tables, joined once for every command
     report.py         the breakdowns, and the card assembled from them
     serving.py        the artefact: fit once, persist, load, look a fixture up
+    fixtures.py       design rows for matches not yet played,
+                      by the same builders                 [Milestone 20] ✅
   models/artifact.py  the shipped blend, fitted — frames in, arrays out
   storage/predictions.py  served predictions, in PostgreSQL   [Milestone 11] ✅
                       read back and scored by `make archive` [Milestone 19] ✅
@@ -733,6 +737,8 @@ make dashboard # the reports and a live price at http://127.0.0.1:8501
 make docker-run # the API and its prediction log, via compose
 make test      # unit tests — no network, no data needed
 make test-int  # integration tests — needs `make data`
+make fixtures  # build design rows for what is about to be played (~12 min)
+make price     # ask the running service about them, so the log fills
 make archive   # score the served forecasts; needs PREDICTION_LOG_DSN
 make invariants # CI's architectural boundary checks, here rather than there
 make quality   # ruff + black + mypy + the invariants
@@ -834,7 +840,7 @@ imports is a supply-chain surface with no upside.
 | 17 | Odds and expected goals — the closing line on the match page, and what a gap from it measures | ✅ |
 | 18 | Availability — registered squads on the match page, and the two of those three words no reachable source answers | ✅ |
 | 19 | Prediction archive — served forecasts scored against what happened, and how much archive a drift figure would need | ✅ |
-| 20 | The platform | |
+| 20 | The loop closed — fixtures priced before kick-off, so the archive has out-of-sample forecasts to score | ✅ |
 
 Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best
 GBDT with a written verdict — is unscheduled rather than dropped: it changes

@@ -9,15 +9,23 @@ real-world case it would break.
 Free, keyless, static CSV over HTTPS. No account, no rate limit, no scraping,
 no browser automation. Two file layouts, both behind one adapter.
 
-| | Primary (`main`) | Secondary (`extra`) |
-|---|---|---|
-| URL | `/mmz4281/{season_code}/{div}.csv` | `/new/{country}.csv` |
-| Granularity | one competition-season | one country, every season |
-| Competitions | 22 | 17 (16 country files) |
-| History | 1993/94 onward | ~2012 onward |
-| Per-match detail | shots, shots on target, corners, fouls, cards, referee | none |
-| Odds | yes, many books | closing only |
-| Season encoding | in the URL, always split | a column, split *or* calendar |
+| | Primary (`main`) | Secondary (`extra`) | Fixtures |
+|---|---|---|---|
+| URL | `/mmz4281/{season_code}/{div}.csv` | `/new/{country}.csv` | `/fixtures.csv` |
+| Granularity | one competition-season | one country, every season | every primary division, about ten days ahead |
+| Competitions | 22 | 17 (16 country files) | the primary 22 |
+| History | 1993/94 onward | ~2012 onward | none — it is rewritten as matches are played |
+| Per-match detail | shots, shots on target, corners, fouls, cards, referee | none | none; there has been no match |
+| Odds | yes, many books | closing only | pre-match, and deliberately not read |
+| Season encoding | in the URL, always split | a column, split *or* calendar | **absent** — see quirk 17 |
+
+The third column is Milestone 20's, and it is the same provider on purpose.
+A fixture has to carry the `match_id` its played row will carry a week later,
+or the forecast made about it can never be joined to the result; every part of
+that key — the competition, the date, the club names *as this provider spells
+them* — is already shared, so there is no name matching between the two and no
+alias table to keep. `src/ingestion/fixtures.py` reads it, and nothing from it
+is ever written to the canonical table.
 
 ### Licence
 
@@ -217,6 +225,26 @@ for a common one.
 
 Found by asking whether a team ever plays twice on one date — the assumption
 every rolling feature rests on. It did, 2,444 times.
+
+### 17. The fixture file publishes no season
+
+Every other file says which season it is: the primary feed in its URL, the
+secondary in a column. `fixtures.csv` says neither, and the season is part of
+the natural key a `match_id` is built from — so a fixture filed under the wrong
+label gets an id the played match will never carry, and the forecast sits in
+the archive as permanently unresolved rather than failing.
+
+`season_for` therefore asks the data rather than the calendar: a competition
+that has played inside the last 30 days is mid-season, and the fixture belongs
+to the season those matches belong to. Only a competition that has been idle
+longer gets a label counted from the fixture's own date, with July as the
+boundary — Ligue 1 has opened in July since 1993.
+
+Measured over every ingested match by handing each one its predecessor: **19 of
+270,848 labels disagree**, all of them a competition resuming after a break of
+more than a month. The rule that counts months instead gets 2,175 wrong, and
+743 of those are the 2019-20 season running into July 2020 across fifteen
+competitions — which is exactly the case asking the data survives.
 
 ### A note on the Swiss "Challenge League"
 

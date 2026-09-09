@@ -1803,6 +1803,173 @@ is lost it is gone. That is why it is not another table `make card` writes.
 No model, feature, split or reported number moved, so `docs/MODEL_CARD.md` was
 not regenerated.
 
+---
+
+## Milestone 20 — the loop closed, and the identifier that had to survive ✅
+
+The roadmap left this one as two words — *"the platform"* — and the code
+decided what they meant. Milestone 19 had ended on a sentence that was really a
+specification: *"the archive begins scoring when the service is asked about
+matches before they are played."* Nothing in nineteen milestones did that, and
+the reason was not laziness. It was a rule, stated in `src/pipelines/serving.py`
+since Milestone 11:
+
+> this API prices fixtures that are in the feature table, and the provider
+> publishes results rather than a fixture list, so an unplayed match is not
+> something this project has the inputs to price at all.
+
+Every clause of that is true. Milestone 20 changes exactly one of them.
+
+### The rule that did not move
+
+The tempting version of this milestone is an endpoint that takes two club names
+and a date and builds a design row for them. It would be forty lines, it would
+work, and it would be a second implementation of Milestone 5 living on the
+request path — outside every probe `src/validation/leakage.py` runs by walking
+the packages. The whole Milestone 6 argument is that a leak has no symptom: it
+does not raise, it makes the model look *better*. A second feature layer that
+nothing compares to the first is the exact shape of a defect this project spent
+a milestone learning it cannot see.
+
+So the builders were not touched and the request path was not touched. The
+fixtures are appended to the canonical frame and the **audited producers run
+over the whole thing**, and what comes back for the fixture rows is what
+`make features` would write for them once they are played.
+
+That is a claim, so it was tested rather than argued. Hold out the last day of
+the real 303,517-row table, blank its scorelines, hand it back through the
+fixture path:
+
+| | Columns | Max absolute difference |
+|---|---:|---:|
+| Ratings | 10 | **0.000e+00** |
+| Features | 20 | **0.000e+00** |
+
+Not "close" — the same numbers. The same check runs on synthetic data in the
+suite, and beside it the causality claim that makes it possible: appending rows
+dated after the table changes no historical row.
+
+### The identifier is the milestone
+
+Everything above is arithmetic that could be checked by looking. The part that
+could have shipped broken and looked fine is the join.
+
+A forecast reaches the archive as a `match_id` and nothing else. The id built
+for a fixture on Friday has to be **byte-identical** to the one the ingest
+builds for the same match on Monday, and if it is not, there is no error
+anywhere: the forecast is served, logged, and sits unresolved forever, which is
+indistinguishable from a match that has not been played yet.
+
+The natural key is provider, competition, season, date and both club names.
+Choosing the *same provider that publishes the results* — rather than
+Milestone 13's live feed — settles four of those for free, and settles the one
+that cost Milestone 18 a whole matching function: this file spells clubs "Man
+United", because it is written by the same hand as the tables.
+
+Which leaves the season, and `fixtures.csv` does not publish one. Two rules were
+available:
+
+| | Wrong labels, over 270,848 ingested matches |
+|---|---:|
+| Count the months — season starts in July | 2,175 |
+| **Ask the data** — carry the season a competition is playing, if it played inside 30 days | **19** |
+
+743 of the month-counting failures are one event: the 2019-20 season running
+into July and August 2020 across fifteen competitions. A rule that reads a
+calendar cannot know a season was suspended; a rule that looks at what was
+played last week does not have to. The nineteen that remain are competitions
+resuming after a break longer than a month — Romania and Argentina, whose
+season structure this project already documents as unusual.
+
+Then the end-to-end check, offline and against real data: take the current
+season's real files, strip the result columns to make them the shape
+`fixtures.csv` has, and run them through. **606 of 606 ids joined the canonical
+table.**
+
+### One boundary moved, and it is a one-line rule
+
+`src/ratings/elo.py` walked every row calling `int(home_goals)`, which is
+correct for a table of results and raises on a fixture. The fix is not a
+special case: **a row with no scoreline is rated from the state both sides
+bring to it and contributes no update.** There is no result to learn from, and
+inventing a draw would move two clubs' ratings on the strength of a kick-off
+time. Every other producer was already indifferent — they read the rows before
+the one they emit, which is what Milestone 6 made them do.
+
+### What it costs, measured rather than estimated
+
+| | |
+|---|---:|
+| Ratings, over 303,517 matches + 8 fixtures | **676 s** |
+| Features, same frame | **6 s** |
+
+Eleven minutes to price eight matches, nearly all of it re-deriving rows that
+have not changed since yesterday. That is the price of not having a second
+rater, and it is the right price today: an incremental one resuming from
+persisted state is a second code path through the one arithmetic the leakage
+suite guards. If it ever matters, the thing to add is a cached rating *state*.
+
+### What the real log says now
+
+Driven end to end against the real 303,517-row table, the shipped artefact and
+the compose PostgreSQL — eight fixtures over three competitions, built,
+indexed, priced and read back:
+
+| | Milestone 19 | Milestone 20 |
+|---|---:|---:|
+| Logged, repeats collapsed | 25 | 58 |
+| In-sample | **25** | 50 |
+| Unresolved | 0 | **8** |
+| Scorable | 0 | 0 |
+
+The scorable column has not moved and it was never going to today. What moved
+is the *reason* it is zero. Milestone 19's zero was permanent: every forecast
+was about a match the artefact had trained on, and no amount of waiting fixes
+that. This zero is Saturday's — those eight are unresolved because the matches
+have not kicked off yet, which Milestone 19 wrote the `unresolved` column for:
+*"we served plenty and none of it can be scored yet" is a Tuesday, not an
+outage.*
+
+The forecasts themselves read like football rather than like plumbing — Man
+City at home 0.724 / 0.180 / 0.097, Nott'm Forest against Man United 0.290 /
+0.277 / **0.433** to the away side — and every one of them carries
+`in_sample: false`, which is a value this project's prediction log had never
+held before.
+
+**One caveat, stated because it is the kind that gets forgotten.** The provider
+was serving HTTP 503 across its whole site for the duration of this milestone —
+`/fixtures.csv` and `/mmz4281/2526/E0.csv` alike — so the live fetch is the one
+part that could not be driven against the real feed. The fixture *file* was
+hand-built in the published column vocabulary over real clubs. What that leaves
+unverified is one HTTP request; what it does not touch is the join, which was
+driven against the real files with their results stripped: 606 of 606 ids.
+
+### The restart is in the middle of the loop on purpose
+
+```
+make data → make fixtures → restart the service → make price → … → make archive
+```
+
+The service indexes its tables once, in the lifespan, and Milestone 16 built
+its cache directives on that: `/fixtures` and `/version` may be held for a
+minute and five minutes because *nothing this process says can change while it
+is running*. A reload endpoint would buy one convenience and make that sentence
+false. A restart is what a new model already costs, and this is the same kind
+of change.
+
+### What it deliberately is not
+
+No scheduler. `make fixtures` and `make price` are a cron entry: a container
+whose job is to sleep is a container to operate, and anything deploying this
+already runs commands on a timer.
+
+No drift figure to report yet, and that is now a matter of weeks rather than of
+code. The exclusion Milestone 19 measured was structural — 25 of 25 in-sample,
+because nothing else was possible — and it is not any more. What is left is the
+sample size, which is the number that milestone existed to publish: **2,286
+scored forecasts** for a shift the size of this project's own gap to the
+closing line. A fixture list is a few hundred a week.
+
 ## Milestones 16–20 — the platform
 
 The dashboard is the first milestone whose *shape* is a commitment about the
@@ -1816,6 +1983,14 @@ did Milestone 18's fifth — but the estimate named three subjects and only one
 of them turned out to have a source, which is a thing an estimate about *shape*
 cannot catch.
 
+Milestone 20 spent none of it, and that is the closing note on the stretch.
+It is the one milestone here that added nothing to `dashboard/` at all: the
+loop it closed runs through the *ingestion* layer and the *service*, and the
+shape the dashboard committed to in Milestone 12 was never load-bearing for it.
+Five of these eight were a provider behind a protocol, exactly as estimated;
+the other three were operational, and no estimate about the shape of a
+presentation layer could have said which was which in advance.
+
 | | | Where it plugs in |
 |---|---|---|
 | 13 ✅ | Live fixture ingestion | Done — `dashboard/providers/football_data_org.py` behind `FixtureProvider` |
@@ -1825,7 +2000,7 @@ cannot catch.
 | 17 ✅ | Bookmaker odds, expected goals, value detection | Done — `OddsProvider` behind `HistoricalOdds`, `src/evaluation/market.py`, and the measurement that says why there is no value detector |
 | 18 ✅ | Player availability, injuries, transfers | Done — `SquadProvider` behind `FootballDataOrgSquads`, and the measurement that says only one of those three words has a source |
 | 19 ✅ | Historical prediction archive, and drift | Done — `src/evaluation/archive.py`, `make archive`, and the measurement that says how much archive a drift figure needs before it is one |
-| 20 | The platform | — |
+| 20 ✅ | The loop closed | Done — `src/ingestion/fixtures.py`, `src/pipelines/fixtures.py`, `make fixtures` and `make price` |
 
 Research models — TabNet, FT-Transformer, AutoML, benchmarked against the best
 GBDT with a written verdict — is unscheduled rather than dropped. It changes

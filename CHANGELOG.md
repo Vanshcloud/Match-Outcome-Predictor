@@ -12,6 +12,84 @@ extra steps.
 
 ### Added
 
+- **Milestone 20 — the loop closed: fixtures priced before they are played.**
+  Milestone 19 read the prediction log back and found 35 forecasts, 25 of them
+  distinct, **25 in-sample and 0 scorable**, and said the reason was structural
+  rather than a bug: this project ingests results, the service prices what is
+  in the feature table, so every fixture it could be asked about was one the
+  shipped artefact had trained on. `in_sample` could not have been anything but
+  `true`. This is the other half of that sentence.
+
+  `make fixtures` fetches the fixture list the **same provider** publishes
+  beside the results, appends it to the canonical frame, runs the ratings and
+  the feature builders over the whole thing, and writes the served columns for
+  the fixtures alone. `make price` then asks the running service about them, so
+  the log fills with forecasts made *before* kick-off. Nothing about the
+  request path changed: a design row is a design row, and the service still
+  looks one up rather than computing one.
+
+  **The same builders, not a second implementation.** A function that computed
+  a team's form for one fixture would be a copy of Milestone 5 sitting outside
+  every probe Milestone 6 wrote to guard the first, and a leak has no symptom —
+  it just makes the model look better. So the fixtures are appended to the
+  history and the audited producers run over all 303,517 rows, which costs 676
+  seconds for the ratings and 6 for the features to price a few hundred
+  matches. Checked rather than argued: **hold out the last day of the real
+  table, blank its scorelines, hand it back as a fixture list, and all thirty
+  design columns come back identical to what `make features` wrote — a maximum
+  absolute difference of 0.**
+
+  **The identifier is the milestone's real risk, and it is measured.** A
+  forecast is joined to its outcome on `match_id` alone, so a fixture's id must
+  be the one the played match will carry next week. Every part of that key is
+  already shared with the ingest except the **season**, which `fixtures.csv`
+  does not publish. `season_for` asks the data rather than the calendar — a
+  competition that has played inside 30 days is mid-season and the fixture
+  takes that season — and over every ingested match it gets **270,829 of
+  270,848** right. Counting months instead gets 2,175 wrong, 743 of them the
+  2019-20 season running into July 2020. Driven against the real table with the
+  results stripped from the current season's files, **606 of 606 fixture ids
+  joined the canonical table.**
+
+  One boundary moved and it is stated rather than buried: `src/ratings/elo.py`
+  now emits a rating for a row with no scoreline and applies no update to it.
+  A fixture is rated from the state both sides bring to it; there is no result
+  to learn from, and inventing a draw would move two clubs' ratings on the
+  strength of a kick-off time.
+
+  The service still indexes its tables **once, in the lifespan**, so a new
+  fixture table reaches it the way a new model does — `make fixtures`, then a
+  restart. That is what keeps the cache directives on `/fixtures` and
+  `/version` honest, and it is why there is a restart in the middle of the
+  four-command loop in `docs/DEPLOYMENT.md` rather than a reload endpoint.
+
+  No scheduler ships with it. `make fixtures` and `make price` are a cron
+  entry: a container whose job is to sleep is a container to operate, and
+  anything deploying this already has something that runs a command on a timer.
+
+  Driven end to end against the real table, the shipped artefact and the
+  compose PostgreSQL: eight fixtures built, indexed, priced and read back. The
+  archive now reports **50 in-sample, 8 unresolved** where Milestone 19
+  reported 25 in-sample and 0 unresolved. Still nothing scored — and that is
+  the milestone: the exclusion moved from `in_sample`, which no amount of
+  waiting fixes, to `unresolved`, which Saturday fixes. Every one of the eight
+  carries `in_sample: false`, a value this prediction log had never held.
+
+  One caveat, stated rather than buried: the provider was answering HTTP 503
+  across its whole site while this was built, so the live fetch is the single
+  step that could not be driven against the real feed. The fixture file was
+  hand-built in the published column vocabulary. The join — the part that could
+  fail silently — was driven against the real season files with their results
+  stripped, which is the shape the published fixture list has.
+
+- **CI's source greps skip `__pycache__`.** They walk `src`, `api`, `scripts`
+  and `tests` looking for provider names and forbidden imports. CI runs them on
+  a fresh checkout that has no bytecode; `make invariants` runs the same steps
+  in a working copy that has just run the suite, where a compiled docstring
+  matches and a passing gate goes red. A compiled docstring is not source, and
+  a local gate that fails on a stale `.pyc` is a local gate people stop
+  running.
+
 - **`make invariants` runs CI's boundary checks locally.** Eighteen greps hold
   the dependency graph in the shape this repository's documents claim it has —
   `src/utils` importing nothing else in `src`, the dashboard never reaching

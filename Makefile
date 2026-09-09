@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card archive model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck invariants quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card archive fixtures price model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck invariants quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -106,6 +106,17 @@ card: ## Regenerate docs/MODEL_CARD.md for the shipped model (~5 min)
 # every other report byte for byte and cannot rebuild this one.
 archive: ## Score what the service served against what happened (needs PREDICTION_LOG_DSN)
 	$(BIN)/python scripts/archive.py
+
+# Milestone 20, and the two halves of the loop the archive needs. `fixtures`
+# builds design rows for matches that have not been played; `price` asks the
+# running service about them, so the prediction log fills with out-of-sample
+# forecasts instead of with whatever a browser happened to look at. The service
+# indexes its tables at startup, so a restart belongs between them.
+fixtures: ## Fetch what is about to be played and build design rows for it (~12 min)
+	$(BIN)/python scripts/fixtures.py
+
+price: ## Ask the running service to price every upcoming fixture
+	$(BIN)/python scripts/price.py
 
 model: ## Fit the shipped model on the whole history and persist it (~1 min)
 	$(BIN)/python scripts/build_model.py

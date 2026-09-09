@@ -21,6 +21,8 @@ import pytest
 
 from src.ingestion.cache import CACHE_FILENAME, FetchCache
 from src.ingestion.csv_reader import read_provider_csv
+from src.ingestion.fixtures import FIXTURES_FILENAME
+from src.ingestion.football_data import PROVIDER_NAME
 from src.ingestion.manifest import read_manifest, verify_manifest
 from src.ingestion.registry import load_registry
 from src.pipelines.ingest import MATCHES_FILENAME, RAW_MANIFEST_FILENAME
@@ -143,13 +145,23 @@ def test_every_cached_raw_file_still_parses() -> None:
 
 def test_the_raw_manifest_covers_every_cached_file() -> None:
     """A file present but unrecorded is a gap in the provenance chain: the
-    canonical table could have been built from bytes nothing checksummed."""
+    canonical table could have been built from bytes nothing checksummed.
+
+    The fixture list is the one exception, and it is excluded by name rather
+    than by a pattern. It is not an input to the canonical table — nothing in
+    it is ever written there, the *result* arrives through `make data` like
+    every other match — and it is rewritten by the provider as matches are
+    played. A manifest is a claim that these bytes produced that table; a file
+    that changes daily and produces nothing would make the claim weaker for
+    every file that does.
+    """
     if not RAW_MANIFEST.is_file():
         pytest.skip("no raw manifest; run scripts/fetch_data.py")
     manifest = read_manifest(RAW_MANIFEST)
     recorded = {entry["path"] for entry in manifest["files"]}  # type: ignore[index,union-attr]
     root = RAW_MANIFEST.parent
-    on_disk = {path.relative_to(root).as_posix() for path in root.rglob("*.csv")}
+    untracked = {f"{PROVIDER_NAME}/{FIXTURES_FILENAME}"}
+    on_disk = {path.relative_to(root).as_posix() for path in root.rglob("*.csv")} - untracked
     assert on_disk - recorded == set(), "cached files missing from the manifest"
 
 

@@ -221,6 +221,16 @@ class EloRatings:
             score = expected_score(home_rating, away_rating, settings)
             expected.append(score)
 
+            # A row with no scoreline is a fixture rather than a match —
+            # Milestone 20 appends the next week of them so that the same
+            # builders that rate the history can rate what has not happened
+            # yet. It is rated like any other row, from the state both sides
+            # bring to it, and it updates nothing: there is no result to learn
+            # from, and inventing a draw would move two teams' ratings on the
+            # strength of a kick-off time.
+            if pd.isna(home_goals) or pd.isna(away_goals):
+                continue
+
             margin = int(home_goals) - int(away_goals)
             actual = 1.0 if margin > 0 else (0.0 if margin < 0 else 0.5)
             edge = home_rating + settings.home_advantage - away_rating

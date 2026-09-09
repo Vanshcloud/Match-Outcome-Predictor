@@ -16,22 +16,27 @@ and does not mean, and what happens when the things it needs are not there.
 **The service prices fixtures that are in the feature table, and it does not
 compute features on demand.**
 
-That reads like a limitation and is mostly a fact about the data. The provider
-publishes *results*, not a fixture list — there is no feed of next Saturday's
-matches anywhere in this project — so the set of fixtures that exist is exactly
-the set the batch build wrote. A "predict this upcoming match" endpoint would
-have nothing to be given.
+Recomputing a design row inside a request handler would be the wrong move.
+Those thirty columns are produced by builders that `src/validation/leakage.py`
+finds by walking the packages and probes on every build; a second
+implementation living on the request path would sit outside every one of those
+probes. The whole Milestone 6 argument is that a leak is invisible in the
+output — it just makes the model look better — so the service reads the row the
+audited pipeline wrote.
 
-Even with a fixture list, recomputing a design row inside a request handler
-would be the wrong move. Those thirty columns are produced by builders that
-`src/validation/leakage.py` finds by walking the packages and probes on every
-build; a second implementation living on the request path would sit outside
-every one of those probes. The whole Milestone 6 argument is that a leak is
-invisible in the output — it just makes the model look better — so the service
-reads the row the audited pipeline wrote.
+**Milestone 20 changed which fixtures are in the table, not that rule.** Until
+it, the batch build wrote a row per *played* match and nothing else, so every
+fixture the service could price was one the shipped artefact had trained on and
+`in_sample` was `true` on every response. `make fixtures` now appends the
+published fixture list to the canonical frame, runs the same ratings and
+feature builders over the whole thing, and writes the served columns for the
+fixtures alone — so an unplayed match has a design row built by the audited
+producers, and the request path is still a dictionary lookup.
 
-What that costs is stated in the response: `in_sample` is `true` for any
-fixture inside the served model's training window, which today is all of them.
+The service indexes both tables **once, in the lifespan**. A new fixture table
+reaches it the way a new model does: `make fixtures`, then restart. That is
+what keeps the cache directives on `/fixtures` and `/version` honest — nothing
+this service says can change while the process saying it is running.
 
 ## What `in_sample` means, and why it is on every response
 

@@ -61,6 +61,22 @@ One row per served model version, so a log that spans a redeploy reports two.
 """
 
 
+UPCOMING_FILENAME = "upcoming.parquet"
+"""Design rows for fixtures that have not been played yet.
+
+Milestone 20, written by `make fixtures` beside the ratings and the features.
+Named here rather than in :mod:`src.pipelines.fixtures` for the same reason
+:data:`ARCHIVE_FILENAME` is: that module reads
+:data:`~src.pipelines.serving.SERVED_COLUMNS`, which is defined downstream of
+this one, and a filename imported the other way would close the loop.
+
+It is the second table `make reproduce` cannot rebuild, and it is unrebuildable
+for the opposite reason to the archive: that one is a record of what happened,
+and this one is true for about a week. Rebuilding it tomorrow produces
+tomorrow's fixtures, which is the point of it.
+"""
+
+
 MARKET_FILENAME = "market.parquet"
 """What the model's disagreement with the closing line is worth, by size.
 
@@ -79,6 +95,17 @@ class TablePaths:
     matches: Path
     ratings: Path
     features: Path
+
+    upcoming: Path | None = None
+    """Design rows for matches that have not been played, or ``None``.
+
+    Optional where the other three are required, because it is optional: a
+    checkout that has never run `make fixtures` prices the matches in the
+    feature table exactly as it did before Milestone 20, and
+    :meth:`missing` deliberately does not name it. A service that reported
+    itself degraded because there was no football on this week would be
+    reporting the calendar as a fault.
+    """
 
     def missing(self) -> tuple[str, ...]:
         """The labels of the tables that are not on disk. Empty when all three
@@ -100,6 +127,7 @@ def resolve_tables(
     matches: Path | None = None,
     ratings: Path | None = None,
     features: Path | None = None,
+    upcoming: Path | None = None,
 ) -> TablePaths:
     """Where the three tables live, with any of them overridden by a caller.
 
@@ -112,6 +140,7 @@ def resolve_tables(
         matches=matches or paths.processed_dir / MATCHES_FILENAME,
         ratings=ratings or paths.features_dir / RATINGS_FILENAME,
         features=features or paths.features_dir / FEATURES_FILENAME,
+        upcoming=upcoming or paths.features_dir / UPCOMING_FILENAME,
     )
 
 
@@ -173,6 +202,17 @@ def read_archive(path: Path) -> pd.DataFrame | None:
     reports: it needs a prediction log, a service that has been called, and
     matches that have since been played. The dashboard says which of those is
     missing rather than treating the file's absence as a fault.
+    """
+    return read_scores(path)
+
+
+def read_upcoming(path: Path) -> pd.DataFrame | None:
+    """Design rows for fixtures that have not been played, or ``None``.
+
+    Milestone 20, and absent is the ordinary state: a checkout that has not run
+    `make fixtures`, and a fixture file that has aged out. Delegates like every
+    other single-file report read — the store is the only package that knows
+    the format.
     """
     return read_scores(path)
 

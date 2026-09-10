@@ -8,7 +8,7 @@ football competitions, from ingestion through to a served API and dashboard.
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status: Milestone 19 of 20 — the platform: a live fixture feed, saved favourites, live tracking, the closing line beside every forecast, both registered squads, and the served forecasts scored against what happened.**
+> **Status: Milestone 20 of 20 — the platform: a live fixture feed, saved favourites, live tracking, the closing line beside every forecast, both registered squads, the served forecasts scored against what happened, and fixtures priced before kick-off so that score has out-of-sample matches in it.**
 > **303,517 matches** across 39 competitions, 27 countries and 33 years reduce
 > to one canonical schema, queryable through a storage interface and checked by
 > **24 validation rules** on every ingest. Two ratings and **twenty features**

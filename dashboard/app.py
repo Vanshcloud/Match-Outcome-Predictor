@@ -1,4 +1,4 @@
-"""The shell: the theme, the sidebar, and the six pages the reader moves between.
+"""The shell: the theme, the sidebar, and the pages the reader moves between.
 
 ``streamlit run dashboard/app.py``
 
@@ -40,7 +40,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import streamlit as st  # noqa: E402
 
 from dashboard import context, theme  # noqa: E402
-from dashboard.domain import competition as catalogue  # noqa: E402
 from dashboard.domain import favourites, identity, store  # noqa: E402
 from dashboard.services import history, matchday  # noqa: E402
 from dashboard.views import competitions, home, match, performance, search  # noqa: E402
@@ -49,9 +48,9 @@ TITLE = "Match Outcome Predictor"
 ICON = "⚽"
 
 # Every page, in the order the sidebar lists them. The first is the default and
-# owns `/`. `match` and `competitions` are reached by a card or a link carrying a
-# query parameter far more often than by the sidebar, and they are listed anyway:
-# a page nobody can navigate to directly is unreachable the moment a link is wrong.
+# owns `/`. `match` is routed but hidden from the sidebar: it is where a card leads,
+# and opened bare it is only a grid of the cards Home already shows. A wrong link
+# still lands somewhere — the match page falls back to that picker.
 #
 # A comment rather than the attribute docstring every other module uses: this
 # file is the script Streamlit runs, and its "magic" writes any bare string
@@ -77,33 +76,35 @@ def sidebar(ctx: context.Context) -> None:
         st.markdown(f"### {ICON} {TITLE}")
         st.caption("Calibrated home / draw / away probabilities for football.")
 
-        _reader()
+        # Panels keyed so `theme` can draw them like the page menu above them.
+        with st.container(key="mop-panel-you"):
+            _reader()
 
-        followed = st.multiselect(
-            "Competitions you follow",
-            options=[one.id for one in catalogue.competitions()],
-            default=favourites.leagues(),
-            format_func=catalogue.short_label,
-            placeholder="All competitions",
-        )
-        if followed != favourites.leagues():
-            favourites.remember_leagues(followed)
-            st.rerun()
+            followed = st.multiselect(
+                "Competitions you follow",
+                options=list(matchday.FOLLOWABLE),
+                default=[one for one in favourites.leagues() if one in matchday.FOLLOWABLE],
+                format_func=matchday.short_label,
+                placeholder=f"All {len(matchday.FOLLOWABLE)} competitions",
+            )
+            if followed != favourites.leagues():
+                favourites.remember_leagues(followed)
+                st.rerun()
 
-        clubs = favourites.teams()
-        if clubs:
-            st.markdown("**Clubs you follow**")
-            for club in clubs:
-                if st.button(f"✕  {club}", key=f"unfollow-{club}", width="stretch"):
-                    favourites.toggle_team(club)
-                    st.rerun()
-        else:
-            st.caption("Follow a club from Search to see it first everywhere.")
+            clubs = favourites.teams()
+            if clubs:
+                st.markdown("**Clubs you follow**")
+                for club in clubs:
+                    if st.button(f"✕  {club}", key=f"unfollow-{club}", width="stretch"):
+                        favourites.toggle_team(club)
+                        st.rerun()
+            else:
+                st.caption("Follow a club from Search to see it first everywhere.")
 
-        st.divider()
-        _status(ctx)
-        if store.last_error is not None:
-            st.caption(f"⚠ {store.last_error}")
+        with st.container(key="mop-panel-status", gap=None):
+            _status(ctx)
+            if store.last_error is not None:
+                st.caption(f"⚠ {store.last_error}")
 
 
 def _reader() -> None:
@@ -187,7 +188,14 @@ def main() -> None:
     sidebar(context.resolve())
     st.navigation(
         [
-            st.Page(render, title=title, icon=icon, url_path=path or None, default=not path)
+            st.Page(
+                render,
+                title=title,
+                icon=icon,
+                url_path=path or None,
+                default=not path,
+                visibility="hidden" if path == "match" else "visible",
+            )
             for render, title, icon, path in PAGES
         ]
     ).run()

@@ -1,8 +1,8 @@
 """The home page, and the live centre beside it.
 
 What is happening in the football this reader follows, in the order they ask:
-what is on now, what is on next, what just finished, and what the model can
-price.
+what is on now, what is on next, and what the model can price. Every section
+looks forward; past results live on the competition and match pages.
 
 **Two of those four sections have no data source today and say so.** The
 provider behind this project publishes results, so a match that has not been
@@ -19,7 +19,7 @@ import streamlit as st
 from dashboard import context, ui
 from dashboard.domain import competition, favourites
 from dashboard.domain.match import EventKind
-from dashboard.services import history, matchday, watch
+from dashboard.services import matchday, watch
 from dashboard.services.matchday import Section
 
 LIVE_COLUMNS = 4
@@ -37,25 +37,13 @@ def render() -> None:
     """The home dashboard."""
     ctx = context.resolve()
     st.title("Match centre")
-    _headline(ctx)
-    st.markdown(
-        f"Pre-match home / draw / away probabilities for "
-        f"{len(competition.competitions())} competitions, from a model evaluated "
-        "walk-forward against the bookmaker's closing line. Open a played or "
-        "priced match for the forecast, how often forecasts of that size came true, "
-        "and what the market said; cards from the live feed show kick-offs and "
-        "scores. The **Model** page has the evaluation; the **Live centre** follows "
-        "matches in play, polled about once a minute."
-    )
 
     live_now(ctx)
 
     page = matchday.home_page(
         fixtures=ctx.fixtures,
-        results=ctx.results,
         predictions=ctx.predictions,
-        competitions=favourites.league_filter(),
-        teams=favourites.teams(),
+        competitions=_followed(),
     )
     for section in page.sections:
         # Live is drawn above, by a fragment that repaints on its own clock.
@@ -84,10 +72,10 @@ def render_live() -> None:
     st.markdown(
         "- **Scores and minutes** are the feed's, on the same `Fixture` these "
         "cards already rendered when there was no feed at all.\n"
-        "- **These matches are not in the match table**, which holds results "
-        "this project ingested. A card here opens a page with no history and "
-        "no forecast until the match has been played and `make data` has run "
-        "— the shipped model is fitted on finished matches.\n"
+        "- **A card opens the model's pre-match forecast** when `make fixtures` "
+        "has priced that fixture; the feed's club names are matched to the "
+        "table's. A fixture it has not priced yet, or a competition with no "
+        "match history (the Champions League), says so instead.\n"
         "- **In-play probabilities** are a different model from the one this "
         "repository measures, and are not a rendering change. The model card "
         "is explicit that nothing here is fitted on in-play state."
@@ -111,7 +99,7 @@ def live_now(ctx: context.Context, *, columns: int = 3) -> None:
     """
     fixtures, events = watch.since_last_look(
         ctx.fixtures,
-        competitions=favourites.league_filter(),
+        competitions=_followed(),
         teams=favourites.teams(),
     )
     for event in events:
@@ -137,7 +125,16 @@ def render_section(section: Section, *, columns: int = 3) -> None:
         return
     ui.card_grid(
         [
-            ui.match_card(one, competition_label=competition.short_label(one.competition_id))
+            ui.match_card(
+                one,
+                probabilities=section.probabilities.get(one.match_id),
+                # None for a feed-only competition, so the card shows the feed's own name.
+                competition_label=(
+                    competition.short_label(one.competition_id)
+                    if one.competition_id in competition.by_id()
+                    else None
+                ),
+            )
             for one in section.fixtures
         ],
         columns=columns,
@@ -145,14 +142,6 @@ def render_section(section: Section, *, columns: int = 3) -> None:
     )
 
 
-def _headline(ctx: context.Context) -> None:
-    """One line saying what the reader is looking at, and how fresh it is."""
-    followed = favourites.leagues()
-    scope = (
-        f"{len(followed)} competition{'s' if len(followed) != 1 else ''} you follow"
-        if followed
-        else f"all {len(competition.competitions())} competitions"
-    )
-    latest = history.latest_date(ctx.matches_path) if ctx.has_matches else None
-    freshness = f" · results through {latest:%d %b %Y}" if latest else ""
-    st.caption(f"{scope}{freshness}")
+def _followed() -> list[str]:
+    """What the reader follows, or every league the feed and the model both cover."""
+    return favourites.league_filter() or list(matchday.FOLLOWABLE)

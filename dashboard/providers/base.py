@@ -5,7 +5,7 @@ package does not depend on any of them. A view asks a provider
 for matches; it never asks *which* provider, and it never learns whether the
 answer came from a Parquet file, an HTTP feed or a websocket.
 
-**Five protocols, and a transport, because they are genuinely different
+**Four protocols, one of them a transport, because they are genuinely different
 questions.** Each was added without a view moving to take it.
 
 :class:`ResultProvider`
@@ -34,25 +34,6 @@ questions.** Each was added without a view moving to take it.
     :class:`~dashboard.providers.api.ApiPredictions`, over HTTP, because there
     must be exactly one process in this system that holds the model.
 
-:class:`OddsProvider`
-    What the *market* says. Answered by
-    :class:`~dashboard.providers.historical.HistoricalOdds`, out of the same
-    canonical table the results come from — the closing price is a column of
-    it, and adding it cost one protocol.
-
-    Its own protocol rather than three more fields on :class:`ResultProvider`,
-    because the two answer different questions about different moments: a
-    result is what happened and a price is what was believed beforehand, and
-    the source that has tomorrow's prices is emphatically not the source that
-    has last season's scorelines.
-
-:class:`SquadProvider`
-    Who is *registered* for a club. Answered by
-    :class:`~dashboard.providers.football_data_org.FootballDataOrgSquads`,
-    which reads the same feed the fixtures come from — squads are on the free
-    tier, team sheets and injuries are not, and the protocol is named after
-    what can be answered rather than after what was asked for.
-
 They are separate because a source that has one rarely has the others: the feed
 that knows tonight's kick-off times has no forecast, and the service that has
 the forecast does not know what kicked off. A single provider interface would
@@ -68,10 +49,10 @@ put on a screen and the reason this attribute exists at all.
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
-from dashboard.domain.match import Fixture, MarketPrice, MatchEvent, Prediction, Squad
+from dashboard.domain.match import Fixture, MatchEvent, Prediction
 
 
 @runtime_checkable
@@ -138,70 +119,26 @@ class FixtureProvider(Provider, Protocol):
     def live(self, *, competitions: Sequence[str] | None = None) -> list[Fixture]:
         """Matches in play, with the minute where the provider gives one."""
 
+    def crests(self, competition_id: str) -> Mapping[str, str]:
+        """Club crest URLs in a competition, keyed by normalised club name; empty when none."""
+
 
 @runtime_checkable
 class PredictionProvider(Provider, Protocol):
     """What the model says about a fixture, and which fixtures it can say it about."""
 
     def priceable(
-        self, *, competitions: Sequence[str] | None = None, limit: int = 20
+        self,
+        *,
+        competitions: Sequence[str] | None = None,
+        limit: int = 20,
+        since: dt.date | None = None,
+        until: dt.date | None = None,
     ) -> list[Fixture]:
         """Fixtures this model has the inputs to price."""
 
     def predict(self, match_id: str) -> Prediction | None:
         """One fixture, priced. ``None`` when the provider could not answer."""
-
-
-@runtime_checkable
-class OddsProvider(Provider, Protocol):
-    """The bookmaker's closing price for a fixture, and what it implies."""
-
-    def price(self, match_id: str) -> MarketPrice | None:
-        """One fixture's closing line, or ``None`` when there is no price for it.
-
-        ``None`` is ordinary rather than exceptional and covers two different
-        ordinary things: a match the feed carried no odds for — about 19% of
-        this table, nearly all of it before 2003 — and a match that has not
-        been played, which this project has no price for at all because it
-        ingests results.
-        """
-
-
-@runtime_checkable
-class SquadProvider(Provider, Protocol):
-    """Who is registered to play for a club — which is not who is fit to.
-
-    The name is the finding. The original scope was "player availability,
-    injuries, transfers" and the protocol is
-    not called ``AvailabilityProvider``, because that would be a protocol named
-    after the question rather than after the answer any reachable source gives.
-
-    **Measured against the live feed rather than assumed.**
-    football-data.org's free tier answers ``/v4/competitions/{code}/teams``
-    with all twenty clubs *and* their squads in one request — that is real, and
-    it is what this protocol serves. It answers ``/v4/matches/{id}`` with
-    ``lineup`` and ``bench`` **empty**, on a finished match, so there is no team
-    sheet at this tier. And it has no injury endpoint at any tier: there is no
-    URL to be refused. Two of the three things the roadmap named have no source,
-    and a protocol shaped for them would be three methods returning ``None``.
-
-    So one method, answering the one question. A squad is an upper bound on
-    availability, and every consumer of it has to say so.
-    """
-
-    def squad(self, team: str, *, competition_id: str | None = None) -> Squad | None:
-        """One club's registered players, or ``None`` when there is no answer.
-
-        ``None`` covers three ordinary things and the caller cannot tell them
-        apart from the return value alone — it reads ``error`` for that: a
-        competition the source does not cover, a club whose name in this
-        project's tables matches nothing in the source's vocabulary, and a
-        source that did not answer.
-
-        ``competition_id`` is this project's own id, not the source's code.
-        It is a hint rather than a filter: a source that indexes squads by
-        competition needs it, and one that indexes by club may ignore it.
-        """
 
 
 @runtime_checkable

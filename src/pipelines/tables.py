@@ -217,28 +217,6 @@ def read_upcoming(path: Path) -> pd.DataFrame | None:
     return read_scores(path)
 
 
-def read_ratings(path: Path) -> pd.DataFrame | None:
-    """The Elo and Dixon-Coles columns, or ``None`` when there is no table.
-
-    A narrow read of the ratings table for the readers that want the rating
-    itself rather than a design matrix — the match page's expected goals are
-    ``dc_home_lambda`` and ``dc_away_lambda``, and
-    :func:`load_modelling_frame` would join three hundred thousand rows across
-    three tables to reach two of them.
-
-    Delegates like :func:`read_forecasts` above, because it is the same read:
-    attach one Parquet file through the store and select it whole. The store's
-    own :meth:`~src.storage.duckdb_store.DuckDBStore.read_ratings` is for a
-    catalogue that already has the three tables attached; this is for a caller
-    holding one path.
-
-    Returns:
-        The rating rows, or ``None`` when the file is not there — the
-        clean-checkout state, and a caller's to report.
-    """
-    return read_scores(path)
-
-
 def read_scores(path: Path) -> pd.DataFrame | None:
     """A persisted score table, read through the store like everything else.
 

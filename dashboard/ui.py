@@ -329,23 +329,37 @@ def _int(value: int | None) -> int:
     return 0 if value is None else value
 
 
-def competition_card(name: str, competition_id: str, tier: int | None, href: str) -> str:
-    """One competition, as the link that opens its page.
+FLAG_URL: Final = "https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/flags/4x3/{code}.svg"
+"""Flat SVG flags, loaded by the browser the way the feed's crests are."""
 
-    The same anchor a match card is, minus the two team rows — so the
-    competition browser lays thirty-nine of these out on the grid the rest of
-    the dashboard uses, rather than as a stack of loose headings whose height
-    depends on how many leagues a country happens to have.
+FLAG_CODES: Final[dict[str, str]] = {
+    "Argentina": "ar", "Austria": "at", "Belgium": "be", "Brazil": "br", "China": "cn",
+    "Denmark": "dk", "England": "gb-eng", "Europe": "eu", "Finland": "fi", "France": "fr",
+    "Germany": "de", "Greece": "gr", "Ireland": "ie", "Italy": "it", "Japan": "jp",
+    "Mexico": "mx", "Netherlands": "nl", "Norway": "no", "Poland": "pl", "Portugal": "pt",
+    "Romania": "ro", "Russia": "ru", "Scotland": "gb-sct", "Spain": "es", "Sweden": "se",
+    "Switzerland": "ch", "Turkey": "tr", "USA": "us",
+}  # fmt: skip
+"""The flag-icons file name for every country in the registry."""
+
+
+def competition_row(name: str, href: str, *, country: str) -> str:
+    """One competition, as a flag and a name that open its page.
+
+    The flag carries the country, which is what tells Italy's Serie A from
+    Brazil's in a list where both names read the same. A country with no flag
+    gets an empty frame of the same size, so names stay aligned.
     """
-    label = f"tier {tier}" if tier else "cup"
-    top = (
-        f'<span class="mop-card-top">{pill(label)}<span class="spacer"></span>'
-        f"<span>{html.escape(competition_id)}</span></span>"
+    label = html.escape(country, quote=True)
+    code = FLAG_CODES.get(country)
+    flag = (
+        f'<img class="mop-flag" src="{FLAG_URL.format(code=code)}" alt="{label}">'
+        if code
+        else f'<span class="mop-flag" role="img" aria-label="{label}"></span>'
     )
-    title = f'<span class="mop-title">{html.escape(name)}</span>'
     return (
-        f'<a class="mop-card" href="{html.escape(href, quote=True)}" target="_self">'
-        f"{top}{title}</a>"
+        f'<a class="mop-league" href="{html.escape(href, quote=True)}" target="_self">'
+        f"{flag}{html.escape(name)}</a>"
     )
 
 

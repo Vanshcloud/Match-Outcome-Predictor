@@ -22,9 +22,9 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 
-from dashboard.providers.base import FixtureProvider, Notifier, SquadProvider
-from dashboard.providers.football_data_org import FootballDataOrgFixtures, FootballDataOrgSquads
-from dashboard.providers.null import NullFixtures, NullNotifier, NullSquads
+from dashboard.providers.base import FixtureProvider, Notifier
+from dashboard.providers.football_data_org import FootballDataOrgFixtures
+from dashboard.providers.null import NullFixtures, NullNotifier
 from dashboard.providers.webhook import WebhookNotifier
 from src.utils.logging import get_logger
 
@@ -36,8 +36,6 @@ DEFAULT_FIXTURE_PROVIDER = "none"
 NOTIFIER_ENV = "DASHBOARD_NOTIFIER"
 DEFAULT_NOTIFIER = "none"
 
-SQUAD_PROVIDER_ENV = "DASHBOARD_SQUAD_PROVIDER"
-DEFAULT_SQUAD_PROVIDER = "none"
 
 FIXTURE_PROVIDERS: dict[str, Callable[[], FixtureProvider]] = {
     "none": NullFixtures,
@@ -103,34 +101,4 @@ def notifier(name: str | None = None) -> Notifier:
     if build is None:
         logger.warning("unknown notifier %r; known: %s", chosen, ", ".join(sorted(NOTIFIERS)))
         return NullNotifier()
-    return build()
-
-
-SQUAD_PROVIDERS: dict[str, Callable[[], SquadProvider]] = {
-    "none": NullSquads,
-    "football-data.org": FootballDataOrgSquads,
-}
-"""Where a club's registered players come from, by the name that selects it.
-
-The third registry, the same shape as the two above, and the squad panel's
-whole wiring. Its own variable rather than riding on
-:data:`FIXTURE_PROVIDERS`, even though the shipped implementation of both is
-the same feed and the same key: a reader who wants live scores and no squad
-panel — or the reverse — sets one and not the other, and one variable
-selecting two unrelated sections would make that impossible.
-"""
-
-
-def squads(name: str | None = None) -> SquadProvider:
-    """The configured squad source, or the one that has no players.
-
-    Falls back rather than failing, for the reason the two registries above do.
-    """
-    chosen = name or os.environ.get(SQUAD_PROVIDER_ENV) or DEFAULT_SQUAD_PROVIDER
-    build = SQUAD_PROVIDERS.get(chosen)
-    if build is None:
-        logger.warning(
-            "unknown squad provider %r; known: %s", chosen, ", ".join(sorted(SQUAD_PROVIDERS))
-        )
-        return NullSquads()
     return build()

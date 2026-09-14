@@ -79,7 +79,12 @@ class ApiPredictions:
         return True
 
     def priceable(
-        self, *, competitions: Sequence[str] | None = None, limit: int = 20
+        self,
+        *,
+        competitions: Sequence[str] | None = None,
+        limit: int = 20,
+        since: dt.date | None = None,
+        until: dt.date | None = None,
     ) -> list[Fixture]:
         """Fixtures the model has the inputs to price, most recent first.
 
@@ -94,7 +99,12 @@ class ApiPredictions:
         found: list[Fixture] = []
         for competition_id in wanted:
             try:
-                rows = self.client.fixtures(competition_id=competition_id, limit=limit)
+                rows = self.client.fixtures(
+                    competition_id=competition_id,
+                    limit=limit,
+                    since=since.isoformat() if since else None,
+                    until=until.isoformat() if until else None,
+                )
             except ServiceError as failure:
                 self.error = f"{failure}"
                 return []

@@ -15,6 +15,7 @@ import re
 import pytest
 
 from dashboard import theme, ui
+from dashboard.domain import competition as catalogue
 from dashboard.domain.match import Fixture, MatchStatus
 
 WIDTH = re.compile(r"width:([0-9.]+)%")
@@ -267,7 +268,7 @@ def test_the_card_grid_carries_its_column_limit_and_minimum_width(
 def test_a_competition_name_wraps_rather_than_being_cut_off() -> None:
     assert (
         "text-overflow: ellipsis"
-        not in theme.STYLESHEET.split(".mop-title {", 1)[1].split("}", 1)[0]
+        not in theme.STYLESHEET.split("a.mop-league {", 1)[1].split("}", 1)[0]
     )
 
 
@@ -280,26 +281,27 @@ def test_an_anchor_pill_is_styled_or_the_browser_draws_it_blue_and_underlined() 
     assert "a.mop-pill {" in theme.STYLESHEET
 
 
-# ---- the competition tile ----------------------------------------------------
+# ---- the competition row -----------------------------------------------------
 
 
-def test_a_competition_tile_is_one_link_to_that_competitions_page() -> None:
-    card = ui.competition_card("Premier League", "ENG_1", 1, "competitions?competition=ENG_1")
-    assert card.count("<a ") == 1
-    assert 'href="competitions?competition=ENG_1"' in card
-    assert 'target="_self"' in card
+def test_a_competition_row_is_one_link_with_its_countrys_flag() -> None:
+    row = ui.competition_row("Serie A", "competitions?competition=ITA_1", country="Italy")
+    assert row.count("<a ") == 1
+    assert 'href="competitions?competition=ITA_1"' in row
+    assert 'target="_self"' in row
+    assert "/flags/4x3/it.svg" in row and 'alt="Italy"' in row
+    assert not re.search(r"<(div|p|h[1-6]|ul|ol|li|table|section)\b", row)
 
 
-def test_a_competition_tile_holds_only_inline_elements_like_every_other_card() -> None:
-    card = ui.competition_card("Premier League", "ENG_1", 1, "competitions?competition=ENG_1")
-    assert not re.search(r"<(div|p|h[1-6]|ul|ol|li|table|section)\b", card)
+def test_a_country_with_no_flag_keeps_the_frame_so_names_stay_aligned() -> None:
+    row = ui.competition_row("League", "#", country="Atlantis")
+    assert "<img" not in row and 'class="mop-flag"' in row
 
 
-def test_a_competition_tile_names_its_tier_and_says_cup_when_there_is_none() -> None:
-    assert "tier 2" in ui.competition_card("Championship", "ENG_2", 2, "#")
-    assert "cup" in ui.competition_card("Copa de la Liga", "ARG_CUP", None, "#")
+def test_every_registry_country_has_a_flag() -> None:
+    assert {one.country for one in catalogue.competitions()} <= set(ui.FLAG_CODES)
 
 
 def test_a_competition_name_is_escaped_before_it_reaches_the_markup() -> None:
-    card = ui.competition_card("<script>x</script>", "X_1", 1, "#")
-    assert "<script>" not in card
+    row = ui.competition_row("<script>x</script>", "#", country="Italy")
+    assert "<script>" not in row

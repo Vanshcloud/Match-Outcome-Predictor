@@ -68,6 +68,8 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     _fixture_file(raw / "football-data" / "fixtures.csv", when=TODAY + pd.Timedelta(2, "D"))
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    # No test reaches the live feed: without a key the command skips it.
+    monkeypatch.delenv(FIXTURES.fixture_feed.API_KEY_ENV, raising=False)
     return tmp_path
 
 
@@ -118,6 +120,57 @@ class TestFixturesCommand:
         written = pd.read_parquet(workspace / "features" / "upcoming.parquet")
         assert written.loc[0, "home_team"] == "Team 02"
 
+    def test_the_live_feed_adds_the_fixtures_the_published_list_does_not_have_yet(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The published list is a few days long; the feed has the week. A row
+        both carry is built once, from the published list."""
+        when = (TODAY + pd.Timedelta(3, "D")).strftime("%Y-%m-%dT14:00:00Z")
+        listed = (TODAY + pd.Timedelta(2, "D")).strftime("%Y-%m-%dT14:00:00Z")
+
+        def match(home: str, away: str, utc: str) -> dict[str, Any]:
+            return {
+                "status": "SCHEDULED",
+                "utcDate": utc,
+                "competition": {"code": "PL"},
+                "homeTeam": {"shortName": home, "name": home},
+                "awayTeam": {"shortName": away, "name": away},
+            }
+
+        monkeypatch.setenv(FIXTURES.fixture_feed.API_KEY_ENV, "key")
+        monkeypatch.setattr(
+            FIXTURES.fixture_feed,
+            "fetch",
+            lambda *_, **__: [
+                match("Team 02", "Team 03", when),
+                match("Team 00", "Team 01", listed),
+            ],
+        )
+        monkeypatch.setattr(
+            FIXTURES.feed,
+            "download",
+            lambda *_, **__: workspace / "raw" / "football-data" / "fixtures.csv",
+        )
+        assert FIXTURES.main([]) == 0
+        written = pd.read_parquet(workspace / "features" / "upcoming.parquet")
+        assert sorted(written["home_team"]) == ["Team 00", "Team 02"]
+
+    def test_a_live_feed_that_does_not_answer_leaves_the_published_list_alone(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def refuse(*_: object, **__: object) -> list[Any]:
+            raise RuntimeError("429")
+
+        monkeypatch.setenv(FIXTURES.fixture_feed.API_KEY_ENV, "key")
+        monkeypatch.setattr(FIXTURES.fixture_feed, "fetch", refuse)
+        monkeypatch.setattr(
+            FIXTURES.feed,
+            "download",
+            lambda *_, **__: workspace / "raw" / "football-data" / "fixtures.csv",
+        )
+        assert FIXTURES.main([]) == 0
+        assert len(pd.read_parquet(workspace / "features" / "upcoming.parquet")) == 1
+
     def test_fixtures_past_the_window_are_not_priced(self, workspace: Path) -> None:
         """A fixture three weeks out will be priced again with another round of
         results behind it, and today's row would be the one the archive scored."""
@@ -165,7 +218,7 @@ class TestFixturesCommand:
         self, workspace: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         lines = "\n".join(
-            f"E0,{(TODAY + pd.Timedelta(1, "D")):%d/%m/%Y},15:00,Team {index:02d},Team 19,,,"
+            f"E0,{(TODAY + pd.Timedelta(1, 'D')):%d/%m/%Y},15:00,Team {index:02d},Team 19,,,"
             for index in range(12)
         )
         (workspace / "raw" / "football-data" / "fixtures.csv").write_text(

@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from dashboard.domain.match import EventKind, Fixture, MatchStatus
+from dashboard.domain.match import EventKind, Fixture, MatchStatus, Prediction
 from dashboard.providers.null import NullFixtures
 from dashboard.services import history, matchday, watch
 from tests.factories import league_frame, season_labels
@@ -161,24 +161,6 @@ def test_following_nobody_narrows_nothing(table: str) -> None:
 # ---- the home page -----------------------------------------------------------
 
 
-class StubResults:
-    """A results provider that answers from a list."""
-
-    name = "stub-results"
-
-    def __init__(self, fixtures: list[Fixture] | None = None, *, available: bool = True) -> None:
-        self._fixtures = fixtures if fixtures is not None else [played()]
-        self.available = available
-        self.asked: dict[str, object] = {}
-
-    def results(self, **filters: object) -> list[Fixture]:
-        self.asked = filters
-        return list(self._fixtures)
-
-    def latest(self) -> dt.date | None:
-        return dt.date(2026, 8, 31)
-
-
 class StubPredictions:
     """A prediction provider that answers from a list, or refuses."""
 
@@ -207,13 +189,15 @@ class StubFixtures:
     def live(self, **_filters: object) -> list[Fixture]:
         return [played(status=MatchStatus.LIVE, minute=63)]
 
+    def crests(self, _competition_id: str) -> dict[str, str]:
+        return {}
+
 
 def test_with_no_fixture_feed_the_two_forward_sections_carry_its_reason() -> None:
     """The distinction the whole type exists for: this is not "no matches
     tonight", it is "nothing here can tell you"."""
     page = matchday.home_page(
         fixtures=NullFixtures(),
-        results=StubResults(),
         predictions=StubPredictions(),
     )
     assert page.live.unavailable is not None
@@ -225,7 +209,6 @@ def test_with_no_fixture_feed_the_two_forward_sections_carry_its_reason() -> Non
 def test_with_a_feed_connected_the_same_sections_fill_up_and_nothing_else_changes() -> None:
     page = matchday.home_page(
         fixtures=StubFixtures(),
-        results=StubResults(),
         predictions=StubPredictions(),
     )
     assert page.live.unavailable is None
@@ -234,47 +217,23 @@ def test_with_a_feed_connected_the_same_sections_fill_up_and_nothing_else_change
     assert page.upcoming.has_fixtures
 
 
-def test_the_four_sections_come_back_in_reading_order() -> None:
+def test_the_sections_come_back_in_reading_order() -> None:
+    page = matchday.home_page(fixtures=NullFixtures(), predictions=StubPredictions())
+    assert [one.title for one in page.sections] == ["Live now", "Today and next"]
+
+
+def test_upcoming_cards_lose_their_bars_not_themselves_when_the_service_is_down() -> None:
     page = matchday.home_page(
-        fixtures=NullFixtures(), results=StubResults(), predictions=StubPredictions()
+        fixtures=StubFixtures(),
+        predictions=StubPredictions(available=False, error="the service could not be reached"),
     )
-    assert [one.title for one in page.sections] == [
-        "Live now",
-        "Today and next",
-        "Just finished",
-        "The model can price these",
-    ]
-
-
-def test_a_missing_match_table_names_the_command_that_builds_one() -> None:
-    section = matchday.finished_section(StubResults(available=False), None, None)
-    assert section.unavailable is not None
-    assert "make data" in section.unavailable
-
-
-def test_results_are_narrowed_to_the_clubs_a_reader_follows() -> None:
-    provider = StubResults([played(), played(home_team="Other", away_team="Else")])
-    kept = matchday.finished_section(provider, None, [CLUB])
-    assert len(kept.fixtures) == 1
-    assert kept.fixtures[0].home_team == CLUB
-
-
-def test_the_window_is_measured_from_the_latest_match_the_provider_holds() -> None:
-    provider = StubResults()
-    matchday.finished_section(provider, None, None, days=14)
-    assert provider.asked["since"] == dt.date(2026, 8, 31) - dt.timedelta(days=14)
-
-
-def test_a_service_that_is_not_answering_is_a_caption_not_a_failure() -> None:
-    section = matchday.priceable_section(
-        StubPredictions(available=False, error="the service could not be reached"), None
-    )
-    assert section.unavailable == "the service could not be reached"
+    assert page.upcoming.has_fixtures
+    assert page.upcoming.probabilities == {}
+    assert "no forecasts: the service could not be reached" in page.upcoming.note
 
 
 def test_a_provider_with_no_stated_reason_still_gets_a_sentence() -> None:
-    section = matchday.priceable_section(StubPredictions(available=False), None)
-    assert section.unavailable == "No provider is configured for this."
+    assert matchday.reason(object()) == "No provider is configured for this."
 
 
 def test_the_upcoming_window_is_taken_from_the_date_it_is_given() -> None:
@@ -291,6 +250,182 @@ def test_the_upcoming_window_is_taken_from_the_date_it_is_given() -> None:
     matchday.upcoming_section(Recording(), None, today=dt.date(2026, 9, 5), days=3)
     assert Recording.asked["since"] == dt.date(2026, 9, 5)
     assert Recording.asked["until"] == dt.date(2026, 9, 8)
+
+
+def test_a_feed_card_is_matched_to_the_table_fixture_across_two_spellings() -> None:
+    day = dt.date(2026, 9, 14)
+    card = played(match_id="fdorg-1", home_team="Como 1907", away_team="Parma", date=day)
+    candidates = [
+        played(match_id="t-1", home_team="Torino", away_team="Roma", date=day),
+        played(match_id="t-2", home_team="Como", away_team="Parma", date=day),
+        played(match_id="t-3", home_team="Como", away_team="Lecce", date=day - dt.timedelta(1)),
+    ]
+    assert matchday.same_match(card, candidates) is candidates[1]
+    # One side is enough when it is the only fixture that side is in.
+    renamed = played(home_team="Rio Ave", away_team="Amadora", date=day)
+    estrela = played(match_id="t-4", home_team="Rio Ave", away_team="Estrela", date=day)
+    assert matchday.same_match(renamed, [estrela]) is estrela
+    # An abbreviated word still starts the table's word.
+    viseu = played(match_id="t-5", home_team="Estrela", away_team="Academico Viseu", date=day)
+    abbreviated = played(home_team="Amadora", away_team="Acad. Viseu", date=day)
+    assert matchday.same_match(abbreviated, [viseu]) is viseu
+    # A tie, or no side matching, is no answer rather than a guess.
+    assert matchday.same_match(card, [candidates[1], candidates[1]]) is None
+    assert matchday.same_match(card, [candidates[0]]) is None
+    assert matchday.same_match(card, []) is None
+
+
+def test_table_fixtures_wear_the_crests_the_feed_lists_for_their_clubs() -> None:
+    """One club list per competition; a club the feed does not list keeps its initials."""
+    asked: list[str] = []
+
+    class Crested(StubFixtures):
+        def crests(self, competition_id: str) -> dict[str, str]:
+            asked.append(competition_id)
+            return {"team 00": "https://c/0.png"} if competition_id == "ENG_1" else {}
+
+    kept = played(match_id="kept", home_crest_url="https://c/own.png")
+    first, second, elsewhere = matchday.with_crests(
+        [kept, played(), played(match_id="other", competition_id="ESP_1")], Crested()
+    )
+    assert first.home_crest_url == "https://c/own.png"
+    assert second.home_crest_url == "https://c/0.png" and second.away_crest_url is None
+    assert elsewhere.home_crest_url is None
+    assert asked == ["ENG_2", "ENG_1", "ESP_1"]  # one list per competition, and its neighbour
+
+
+def test_a_crest_is_found_by_abbreviation_or_alias_and_never_guessed() -> None:
+    crests = {
+        "manchester city": "https://c/city.png",
+        "manchester united": "https://c/united.png",
+        "wolverhampton": "https://c/wolves.png",
+    }
+    assert matchday.crest_for("Man City", crests) == "https://c/city.png"
+    assert matchday.crest_for("Wolves", crests) == "https://c/wolves.png"
+    assert matchday.crest_for("Manchester", crests) is None  # two clubs answer
+    assert matchday.crest_for("Arsenal Tula", crests) is None
+
+
+def test_a_clubs_fixtures_are_read_through_their_table_twins() -> None:
+    """The feed's "Bayern" is the table's "Bayern Munich" through the twin; a
+    card with no twin needs the exact name, so "Inter" is not "Internacional"."""
+    day = dt.date(2026, 9, 15)
+
+    class Week(StubFixtures):
+        def scheduled(self, **_filters: object) -> list[Fixture]:
+            return [
+                played(match_id="a", competition_id="GER_1", home_team="Bayern", away_team="Mainz 05", date=day),
+                played(match_id="b", competition_id="GER_1", home_team="Wolfsburg", away_team="Freiburg", date=day),
+                played(match_id="c", competition_id="BRA_1", home_team="Internacional", away_team="Gremio", date=day),
+                played(match_id="d", competition_id="ITA_1", home_team="Inter", away_team="Roma", date=day),
+            ]  # fmt: skip
+
+    class Table(StubPredictions):
+        def priceable(self, **_filters: object) -> list[Fixture]:
+            return [
+                played(match_id="t1", competition_id="GER_1", home_team="Bayern Munich", away_team="Mainz", date=day)
+            ]  # fmt: skip
+
+    section = matchday.club_fixtures(Week(), Table(), ["Bayern Munich", "Inter"])
+    assert section.title == "Live and upcoming"
+    assert [one.match_id for one in section.fixtures] == ["a", "d"]
+    assert "these clubs" in section.empty
+    assert "this club" in matchday.club_fixtures(Week(), Table(), ["Nobody"]).empty
+    assert matchday.club_fixtures(NullFixtures(), Table(), ["Bayern"]).unavailable is not None
+
+
+def test_a_club_that_changed_division_finds_its_crest_next_door() -> None:
+    class Divisions(StubFixtures):
+        def crests(self, competition_id: str) -> dict[str, str]:
+            return {
+                "ENG_1": {"arsenal": "https://c/top.png", "shared": "https://c/own.png"},
+                "ENG_2": {"burnley": "https://c/burnley.png", "shared": "https://c/next.png"},
+                "GER_1": {"bayern": "https://c/bayern.png"},
+            }.get(competition_id, {})
+
+    around = matchday.crests_around(Divisions(), "ENG_1")
+    assert around["burnley"] == "https://c/burnley.png"
+    assert around["shared"] == "https://c/own.png"  # its own division wins
+    assert "bayern" not in around
+    assert matchday.crests_around(Divisions(), "UEFA_CL") == {}
+
+
+def test_a_feed_card_the_feed_no_longer_has_or_off_the_table_has_no_twin() -> None:
+    today = dt.date(2026, 9, 14)
+
+    class OneCard(StubFixtures):
+        def scheduled(self, **_filters: object) -> list[Fixture]:
+            return [
+                played(match_id="fdorg-1", date=today),
+                played(match_id="fdorg-2", competition_id="UEFA_CL", date=today),
+            ]
+
+    class Table(StubPredictions):
+        def priceable(self, **_filters: object) -> list[Fixture]:
+            return [played(match_id="t-1", date=today)]
+
+    def twin(match_id: str) -> str | None:
+        return matchday.priced_twin(match_id, fixtures=OneCard(), predictions=Table(), today=today)
+
+    assert twin("fdorg-1") == "t-1"
+    assert twin("fdorg-2") is None
+    assert twin("fdorg-gone") is None
+
+
+def test_the_champions_league_is_followable_and_named_without_a_registry_row() -> None:
+    assert "UEFA_CL" in matchday.FOLLOWABLE and "UEFA_CL" not in matchday.COVERED
+    assert matchday.label("UEFA_CL") == "Europe · UEFA Champions League"
+    assert matchday.short_label("UEFA_CL") == "UEFA Champions League"
+    assert matchday.label("ENG_1") == "England · Premier League"
+    assert matchday.short_label("ENG_1").startswith("Premier League")
+
+
+def test_feed_cards_get_the_forecast_of_the_fixture_they_are() -> None:
+    """One priceable call for the section; a card with no fixture within a day,
+    or in another competition, or that the service will not price, has no bar."""
+    day = dt.date(2026, 9, 15)
+    cards = (
+        played(match_id="fdorg-1", home_team="Como 1907", away_team="Parma", date=day),
+        played(match_id="fdorg-2", home_team="Nobody", away_team="Else", date=day),
+        played(match_id="fdorg-3", competition_id="ITA_1", home_team="Inter", date=day),
+        played(match_id="fdorg-4", home_team="Unpriced", away_team="Side", date=day),
+    )
+    asked: list[dict[str, object]] = []
+
+    class Table(StubPredictions):
+        def priceable(self, **filters: object) -> list[Fixture]:
+            asked.append(filters)
+            return [
+                played(match_id="t-1", home_team="Como", away_team="Parma", date=day),
+                played(
+                    match_id="t-9", home_team="Como", away_team="Parma", date=day + dt.timedelta(5)
+                ),
+                played(match_id="t-4", home_team="Unpriced", away_team="Side", date=day),
+            ]
+
+        def predict(self, match_id: str) -> Prediction | None:  # type: ignore[override]
+            if match_id != "t-1":
+                return None
+            return Prediction(
+                match_id=match_id,
+                probabilities={"home": 0.6, "draw": 0.25, "away": 0.15},
+                model="m",
+                model_version="1",
+                in_sample=False,
+            )
+
+    section = matchday.with_forecasts(matchday.Section("Today and next", fixtures=cards), Table())
+    assert dict(section.probabilities) == {"fdorg-1": {"home": 0.6, "draw": 0.25, "away": 0.15}}
+    assert len(asked) == 1
+    assert asked[0]["competitions"] == ["ENG_1", "ITA_1"]
+    assert (asked[0]["since"], asked[0]["until"]) == (day - dt.timedelta(1), day + dt.timedelta(1))
+
+
+def test_a_section_with_no_cards_or_no_service_is_left_as_it_is() -> None:
+    empty = matchday.Section("Today and next")
+    assert matchday.with_forecasts(empty, StubPredictions()) is empty
+    full = matchday.Section("Today and next", fixtures=(played(),))
+    assert matchday.with_forecasts(full, StubPredictions(available=False)) is full
 
 
 def test_filtering_an_empty_frame_by_club_gives_an_empty_frame(table: str) -> None:

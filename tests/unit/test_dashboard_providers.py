@@ -25,7 +25,7 @@ import requests
 
 from dashboard import providers
 from dashboard.client import ServiceError
-from dashboard.domain.match import UNRECORDED, EventKind, Fixture, MatchEvent, MatchStatus
+from dashboard.domain.match import EventKind, Fixture, MatchEvent, MatchStatus
 from dashboard.providers import football_data_org, webhook
 from dashboard.providers.api import ApiPredictions, as_prediction, to_fixtures
 from dashboard.providers.base import (
@@ -33,12 +33,11 @@ from dashboard.providers.base import (
     Notifier,
     PredictionProvider,
     ResultProvider,
-    SquadProvider,
 )
 from dashboard.providers.football_data_org import FootballDataOrgFixtures
-from dashboard.providers.historical import HistoricalOdds, HistoricalResults, expected_goals
+from dashboard.providers.historical import HistoricalResults
 from dashboard.providers.historical import to_fixtures as results_to_fixtures
-from dashboard.providers.null import NullFixtures, NullNotifier, NullSquads
+from dashboard.providers.null import NullFixtures, NullNotifier
 from tests.factories import league_frame, season_labels
 
 LEAGUE = league_frame(seasons=season_labels(2024, 2), teams=8)
@@ -114,6 +113,7 @@ def test_every_shipped_provider_satisfies_the_interface_it_claims(table: Path) -
     assert isinstance(HistoricalResults(table), ResultProvider)
     assert isinstance(NullFixtures(), FixtureProvider)
     assert isinstance(predictions(), PredictionProvider)
+    assert NullFixtures().crests("ENG_1") == {}
 
 
 # ---- results, from the canonical table ---------------------------------------
@@ -252,7 +252,14 @@ def test_priceable_fixtures_are_asked_for_once_per_followed_competition() -> Non
 def test_priceable_with_no_filter_asks_once_for_everything() -> None:
     client = StubClient()
     ApiPredictions(client=client).priceable()  # type: ignore[arg-type]
-    assert client.asked == [{"competition_id": None, "limit": 20}]
+    assert client.asked == [{"competition_id": None, "limit": 20, "since": None, "until": None}]
+
+
+def test_priceable_sends_a_date_window_as_iso_days() -> None:
+    client = StubClient()
+    day = dt.date(2026, 9, 14)
+    ApiPredictions(client=client).priceable(since=day, until=day)  # type: ignore[arg-type]
+    assert client.asked[0]["since"] == client.asked[0]["until"] == "2026-09-14"
 
 
 def test_fixtures_from_the_service_carry_no_status_they_were_not_told() -> None:
@@ -417,8 +424,10 @@ def _no_memo_between_cases() -> Any:
     """The memo is module-level on purpose — the context builds a fresh provider
     on every Streamlit rerun — so it has to be cleared between cases."""
     football_data_org._fetch.cache_clear()
+    football_data_org._fetch_crests.cache_clear()
     yield
     football_data_org._fetch.cache_clear()
+    football_data_org._fetch_crests.cache_clear()
 
 
 def test_the_connected_feed_satisfies_the_interface_the_views_are_written_against() -> None:
@@ -589,6 +598,17 @@ def test_scheduled_returns_what_is_still_to_come_earliest_first() -> None:
     assert [one.match_id for one in found] == ["fdorg-2", "fdorg-3"]
 
 
+def test_a_misreported_status_on_an_unscored_match_is_a_scheduled_card() -> None:
+    """The feed intermittently puts a kick-off time where Brazil's "TIMED" goes;
+    a postponed match, or a scored one, is still not a card."""
+    garbled = football_data_org.to_fixtures([fd_row(status="2026-09-06 14:00:00Z")])
+    assert garbled[0].status is MatchStatus.SCHEDULED
+    scored = fd_row(status="2026-09-06 14:00:00Z", score={"fullTime": {"home": 1, "away": 0}})
+    assert football_data_org.to_fixtures([scored])[0].status is MatchStatus.UNKNOWN
+    postponed = football_data_org.to_fixtures([fd_row(status="POSTPONED")])
+    assert postponed[0].status is MatchStatus.UNKNOWN
+
+
 def test_live_is_only_what_is_being_played() -> None:
     provider, _ = feed({"matches": [fd_row(), fd_row(id=9, status="PAUSED")]})
     assert [one.match_id for one in provider.live()] == ["fdorg-9"]
@@ -612,6 +632,18 @@ def test_a_competition_outside_the_plan_is_dropped_from_the_filter_not_sent() ->
     assert http.calls[0]["params"]["competitions"] == "PL"
 
 
+def test_the_champions_league_is_asked_for_only_when_it_is_followed() -> None:
+    provider, http = feed()
+    provider.live(competitions=["UEFA_CL"])
+    assert http.calls[0]["params"]["competitions"] == "CL"
+
+
+def test_the_champions_league_is_a_feed_only_card_with_the_feeds_own_name() -> None:
+    row = fd_row(competition={"code": "CL", "name": "UEFA Champions League"})
+    (one,) = football_data_org.to_fixtures([row])
+    assert (one.competition_id, one.competition) == ("UEFA_CL", "UEFA Champions League")
+
+
 def test_following_only_competitions_this_feed_lacks_says_so_and_asks_nothing() -> None:
     provider, http = feed()
     assert provider.live(competitions=["SCO_2", "RUS_1"]) == []
@@ -629,7 +661,7 @@ def test_a_row_this_application_cannot_place_is_dropped_rather_than_shown() -> N
     """A competition with no id here, an unparseable kick-off, an undrawn tie
     with no teams, and something that is not a row at all."""
     rows = [
-        fd_row(competition={"code": "CL", "name": "UEFA Champions League"}),
+        fd_row(competition={"code": "WC", "name": "FIFA World Cup"}),
         fd_row(utcDate="whenever"),
         fd_row(homeTeam={"name": None}),
         "not a row",
@@ -946,338 +978,47 @@ def test_every_shipped_transport_satisfies_the_interface() -> None:
     assert isinstance(webhook.WebhookNotifier(url="https://hooks.test/abc"), Notifier)
 
 
-# ---- the closing line, and the goal model's rates --------------------------
+# ---- club names -----------------------------------------------------------------
 
 
-@pytest.fixture
-def priced(tmp_path: Path) -> Path:
-    """A match table where one fixture has no closing price.
-
-    The feed carries odds for about 81% of the real table — effectively
-    everything from 2003 and nothing before it — so "played, and no price" is
-    an ordinary row rather than a corrupt one, and the provider has to answer
-    ``None`` for it rather than a forecast that sums to something.
-    """
-    frame = LEAGUE.copy()
-    frame.loc[frame.index[0], ["odds_home", "odds_draw", "odds_away"]] = None
-    path = tmp_path / "matches.parquet"
-    frame.to_parquet(path, index=False)
-    return path
+def test_club_words_folds_accents_closes_apostrophes_and_drops_club_suffixes() -> None:
+    """The one normaliser the card matching compares both feeds' names with."""
+    assert football_data_org.club_words("Grêmio") == "gremio"
+    assert football_data_org.club_words("Nott'm Forest") == "nottm forest"
+    assert football_data_org.club_words("Brighton & Hove Albion FC") == "brighton hove albion"
+    assert football_data_org.club_words("AFC") == ""
 
 
-def test_a_closing_price_is_read_and_de_vigged(priced: Path) -> None:
-    """The percentages a reader sees are the percentages the model was scored
-    against: one implementation, in `src/evaluation/market.py`."""
-    match_id = str(LEAGUE.iloc[1]["match_id"])
-    quoted = HistoricalOdds(priced).price(match_id)
-
-    assert quoted is not None
-    assert set(quoted.probabilities) == {"home", "draw", "away"}
-    assert sum(quoted.probabilities.values()) == pytest.approx(1.0)
-    assert quoted.overround > 0
-    assert quoted.odds["home"] == pytest.approx(float(LEAGUE.iloc[1]["odds_home"]))
+# ---- crests ------------------------------------------------------------------
 
 
-def test_a_played_match_with_no_price_is_not_a_forecast(priced: Path) -> None:
-    assert HistoricalOdds(priced).price(str(LEAGUE.iloc[0]["match_id"])) is None
-
-
-def test_a_fixture_the_table_does_not_hold_has_no_price(priced: Path) -> None:
-    assert HistoricalOdds(priced).price("no-such-match") is None
-
-
-def test_no_table_means_unavailable_and_no_price(tmp_path: Path) -> None:
-    absent = HistoricalOdds(tmp_path / "nothing.parquet")
-    assert not absent.available
-    assert absent.price("abc") is None
-
-
-def test_the_goal_rates_are_read_from_the_ratings_table() -> None:
-    """The Dixon-Coles model fits these; the match page shows them. They are
-    a goal model's expectation, not xG off a shot map."""
-    ratings = pd.DataFrame(
-        {"match_id": ["a", "b"], "dc_home_lambda": [1.42, None], "dc_away_lambda": [1.03, None]}
+def test_a_competitions_crests_are_keyed_by_both_of_the_feeds_names_for_a_club() -> None:
+    provider, http = feed(
+        {
+            "teams": [
+                {
+                    "name": "Manchester City FC",
+                    "shortName": "Man City",
+                    "crest": "https://c/65.png",
+                },
+                {"name": "No Badge FC", "crest": None},
+                "not a team",
+            ]
+        }
     )
-    rates = expected_goals(ratings, "a")
-
-    assert rates is not None
-    assert (rates.home, rates.away) == (1.42, 1.03)
-    assert rates.total == pytest.approx(2.45)
-    assert rates.supremacy == pytest.approx(0.39)
-
-
-def test_a_match_the_goal_model_never_rated_has_no_rates() -> None:
-    """Dixon-Coles refits on a rolling window and says nothing before its first
-    fit. A null there means exactly that, not a zero."""
-    ratings = pd.DataFrame(
-        {"match_id": ["a", "b"], "dc_home_lambda": [1.42, None], "dc_away_lambda": [1.03, None]}
-    )
-    assert expected_goals(ratings, "b") is None
-    assert expected_goals(ratings, "missing") is None
+    crests = provider.crests("ENG_1")
+    assert crests == {"manchester city": "https://c/65.png", "man city": "https://c/65.png"}
+    assert http.calls[0]["url"].endswith("/competitions/PL/teams")
+    provider.crests("ENG_1")
+    assert len(http.calls) == 1  # a day's memo, not a request per rerun
 
 
-def test_no_ratings_table_means_no_rates() -> None:
-    assert expected_goals(pd.DataFrame(), "a") is None
-    assert expected_goals(pd.DataFrame({"match_id": ["a"]}), "a") is None
-
-
-# ---- squads --------------------------------------------------------------------
-#
-# The fifth protocol. What is worth testing is the join — this feed spells a
-# club differently from the table this project ingests, and the squad panel is
-# the one place that has to reconcile the two — and the three different
-# nothings a lookup can answer with.
-
-
-def fd_team(**overrides: Any) -> dict[str, Any]:
-    """One ``/v4/competitions/{code}/teams`` row, as the feed shapes it."""
-    row: dict[str, Any] = {
-        "id": 66,
-        "name": "Manchester United FC",
-        "shortName": "Man United",
-        "tla": "MUN",
-        "lastUpdated": "2026-08-30T12:00:00Z",
-        "squad": [
-            {
-                "id": 7913,
-                "name": "Karl Darlow",
-                "position": "Goalkeeper",
-                "dateOfBirth": "1990-10-08",
-                "nationality": "Wales",
-            },
-            {
-                "id": 8035,
-                "name": "Bruno Fernandes",
-                "position": "Midfield",
-                "dateOfBirth": "1994-09-08",
-                "nationality": "Portugal",
-            },
-            {"id": 9, "name": "A Trialist"},
-        ],
-    }
-    row.update(overrides)
-    return row
-
-
-def squad_feed(
-    payload: Any = None, fails: Exception | None = None, key: str = "k"
-) -> tuple[football_data_org.FootballDataOrgSquads, StubHttp]:
-    http = StubHttp({"teams": [fd_team()]} if payload is None else payload, fails)
-    return football_data_org.FootballDataOrgSquads(api_key=key, http=http), http  # type: ignore[arg-type]
-
-
-@pytest.fixture(autouse=True)
-def _no_squad_memo_between_cases() -> Any:
-    football_data_org._squads.cache_clear()
-    yield
-    football_data_org._squads.cache_clear()
-
-
-def test_the_squad_source_satisfies_the_fifth_protocol_and_is_in_the_registry() -> None:
-    """The squad provider's claim, in the same form the fixture feed's is checked in."""
-    assert isinstance(football_data_org.FootballDataOrgSquads(api_key="k"), SquadProvider)
-    assert isinstance(NullSquads(), SquadProvider)
-    assert providers.SQUAD_PROVIDERS["football-data.org"] is football_data_org.FootballDataOrgSquads
-
-
-def test_the_squad_source_is_chosen_by_its_own_variable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Its own, not the fixture feed's: a reader can want live scores and no
-    squad panel, and one variable for both would make that impossible."""
-    monkeypatch.setenv(providers.SQUAD_PROVIDER_ENV, "football-data.org")
-    monkeypatch.setenv(football_data_org.API_KEY_ENV, "from-the-environment")
-    monkeypatch.setenv(providers.FIXTURE_PROVIDER_ENV, "none")
-    chosen = providers.squads()
-    assert isinstance(chosen, football_data_org.FootballDataOrgSquads)
-    assert isinstance(providers.fixtures(), NullFixtures)
-
-
-def test_the_default_squad_source_has_no_players_and_says_why(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv(providers.SQUAD_PROVIDER_ENV, raising=False)
-    source = providers.squads()
-    assert isinstance(source, NullSquads)
-    assert not source.available
-    assert source.squad("Arsenal", competition_id="ENG_1") is None
-    assert "DASHBOARD_SQUAD_PROVIDER" in source.reason
-
-
-def test_an_unknown_squad_source_falls_back_rather_than_refusing_to_start(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(providers.SQUAD_PROVIDER_ENV, "transfermarkt")
-    assert isinstance(providers.squads(), NullSquads)
-
-
-def test_no_key_names_the_variable_rather_than_reporting_an_empty_squad(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv(football_data_org.API_KEY_ENV, raising=False)
-    source = football_data_org.FootballDataOrgSquads()
-    assert not source.available
-    assert source.squad("Man United", competition_id="ENG_1") is None
-    assert football_data_org.API_KEY_ENV in str(source.error)
-
-
-def test_a_squad_is_asked_of_the_competition_endpoint_and_carries_the_players() -> None:
-    """One request for a whole competition, not one per club — the endpoint
-    answers with every club and every squad, so a fixture costs one call."""
-    source, http = squad_feed()
-    found = source.squad("Man United", competition_id="ENG_1")
-    assert found is not None
-    assert found.team == "Man United"
-    assert found.size == 3
-    assert found.competition_id == "ENG_1"
-    (call,) = http.calls
-    assert call["url"].endswith("/v4/competitions/PL/teams")
-    assert call["headers"] == {"X-Auth-Token": "k"}
-
-
-def test_both_clubs_of_a_fixture_are_one_request_not_two() -> None:
-    """The memo is what makes the panel affordable against ten calls a minute."""
-    source, http = squad_feed()
-    assert source.squad("Man United", competition_id="ENG_1") is not None
-    assert source.squad("Man United", competition_id="ENG_1") is not None
-    assert len(http.calls) == 1
-
-
-def test_the_squad_memo_is_an_hour_not_a_minute(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A squad moves on a transfer deadline and a score moves on a goal, and
-    the same ten requests a minute pay for both."""
-    source, http = squad_feed()
-    clock = [1_000.0]
-    monkeypatch.setattr(football_data_org.time, "monotonic", lambda: clock[0])
-    assert source.squad("Man United", competition_id="ENG_1") is not None
-    clock[0] += football_data_org.CACHE_SECONDS * 5
-    assert source.squad("Man United", competition_id="ENG_1") is not None
-    assert len(http.calls) == 1
-    clock[0] += football_data_org.SQUAD_CACHE_SECONDS
-    assert source.squad("Man United", competition_id="ENG_1") is not None
-    assert len(http.calls) == 2
-
-
-def test_a_competition_this_plan_does_not_cover_asks_nothing_and_says_so() -> None:
-    source, http = squad_feed()
-    assert source.squad("Fortuna Sittard", competition_id="SCO_1") is None
-    assert "does not cover" in str(source.error)
+def test_crests_are_empty_off_the_plan_without_a_key_or_when_the_feed_fails() -> None:
+    provider, http = feed()
+    assert provider.crests("ARG_1") == {}
     assert http.calls == []
-
-
-def test_a_fixture_with_no_competition_is_not_guessed_at() -> None:
-    source, _ = squad_feed()
-    assert source.squad("Man United") is None
-    assert "does not cover" in str(source.error)
-
-
-def test_a_feed_that_refuses_the_key_is_a_sentence_about_the_key() -> None:
-    response = requests.Response()
-    response.status_code = 403
-    response.reason = "Forbidden"
-    source, _ = squad_feed(fails=requests.HTTPError(response=response))
-    assert source.squad("Man United", competition_id="ENG_1") is None
-    assert "403" in str(source.error)
-
-
-def test_a_body_that_is_not_the_document_the_feed_promises_is_no_squads() -> None:
-    source, _ = squad_feed(["not", "a", "document"])
-    assert source.squad("Man United", competition_id="ENG_1") is None
-
-
-def test_a_club_the_feed_listed_with_no_players_is_not_a_club_with_nobody() -> None:
-    """An empty squad rendered as a panel reads as "this club has nobody"
-    rather than as "this feed did not say"."""
-    source, _ = squad_feed({"teams": [fd_team(squad=[])]})
-    assert source.squad("Man United", competition_id="ENG_1") is None
-
-
-def test_a_player_with_no_position_or_birthday_is_counted_rather_than_dropped() -> None:
-    """A squad of 30 that renders as 29 is a number a reader takes as the
-    club's."""
-    source, _ = squad_feed()
-    found = source.squad("Man United", competition_id="ENG_1")
-    assert found is not None
-    assert found.positions["Goalkeeper"] == 1
-    assert found.positions[UNRECORDED] == 1
-    assert [one.age(dt.date(2026, 9, 8)) for one in found.players] == [35, 32, None]
-    assert found.median_age(dt.date(2026, 9, 8)) == 33.5
-
-
-def test_the_two_vocabularies_are_reconciled_by_name_not_by_an_alias_table() -> None:
-    """The join the squad panel needs. This project's tables say
-    "Hull" and "Brighton"; the feed says "Hull City AFC" and "Brighton & Hove
-    Albion FC", and neither list is going to change to suit the other."""
-    source, _ = squad_feed(
-        {
-            "teams": [
-                fd_team(name="Hull City AFC", shortName="Hull City"),
-                fd_team(name="Brighton & Hove Albion FC", shortName="Brighton Hove"),
-                fd_team(name="Nottingham Forest FC", shortName="Nottingham"),
-                fd_team(name="Grêmio FBPA", shortName="Grêmio"),
-            ]
-        }
-    )
-    for asked, expected in (
-        ("Hull", "Hull City"),
-        ("Brighton", "Brighton Hove"),
-        # A word of the long form and not of the short one, which is why both
-        # are searched.
-        ("Forest", "Nottingham"),
-        # Two spellings of one letter is an encoding convention, not a name.
-        ("Gremio", "Grêmio"),
-    ):
-        found = source.squad(asked, competition_id="ENG_1")
-        assert found is not None and found.team == expected, asked
-
-
-def test_a_club_the_feed_abbreviates_differently_is_a_miss_not_a_guess() -> None:
-    """ "Nott'm Forest" against "Nottingham Forest" is the case that fails, and
-    it has to fail visibly: another club's squad on this page is worse than a
-    sentence saying the lookup missed."""
-    source, _ = squad_feed(
-        {"teams": [fd_team(name="Nottingham Forest FC", shortName="Nottingham")]}
-    )
-    assert source.squad("Nott'm Forest", competition_id="ENG_1") is None
-    assert "vocabularies" in str(source.error)
-
-
-def test_two_clubs_that_both_match_are_no_answer_rather_than_a_coin_toss() -> None:
-    source, _ = squad_feed(
-        {
-            "teams": [
-                fd_team(name="Sporting Clube de Portugal", shortName="Sporting CP"),
-                fd_team(name="Sporting Clube de Braga", shortName="Sporting Braga"),
-            ]
-        }
-    )
-    assert source.squad("Sporting", competition_id="POR_1") is None
-
-
-def test_a_squad_row_with_no_club_name_is_dropped() -> None:
-    source, _ = squad_feed({"teams": [fd_team(name="", shortName=""), fd_team()]})
-    found = source.squad("Man United", competition_id="ENG_1")
-    assert found is not None
-
-
-def test_a_birthday_the_feed_did_not_give_is_none_rather_than_today() -> None:
-    assert football_data_org._day("not a date") is None
-    assert football_data_org._day(None) is None
-    assert football_data_org._day("1990-10-08") == dt.date(1990, 10, 8)
-
-
-def test_a_squad_with_no_recorded_birthdays_has_no_median_age() -> None:
-    source, _ = squad_feed({"teams": [fd_team(squad=[{"name": "A Trialist"}])]})
-    found = source.squad("Man United", competition_id="ENG_1")
-    assert found is not None and found.median_age() is None
-
-
-def test_a_club_name_that_is_all_suffix_matches_nothing_rather_than_everything() -> None:
-    """ "FC" normalises to no words at all, and a name with no words must not
-    become a subset of every club in the competition."""
-    source, _ = squad_feed()
-    assert source.squad("FC", competition_id="ENG_1") is None
-
-
-def test_a_squad_entry_with_no_name_is_not_a_player() -> None:
-    source, _ = squad_feed({"teams": [fd_team(squad=[{"position": "Midfield"}, {"name": "Real"}])]})
-    found = source.squad("Man United", competition_id="ENG_1")
-    assert found is not None and [one.name for one in found.players] == ["Real"]
+    assert feed(key="")[0].crests("ENG_1") == {}
+    failing, _ = feed(fails=requests.ConnectionError("down"))
+    assert failing.crests("ENG_1") == {}
+    assert failing.error is None  # missing crests are not a feed that is down
+    assert feed({"teams": "garbled"})[0].crests("GER_1") == {}

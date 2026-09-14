@@ -26,10 +26,9 @@ from pathlib import Path
 from dashboard import providers
 from dashboard.client import PredictionClient
 from dashboard.providers.api import ApiPredictions
-from dashboard.providers.base import FixtureProvider, Notifier, SquadProvider
-from dashboard.providers.historical import HistoricalOdds, HistoricalResults
+from dashboard.providers.base import FixtureProvider, Notifier
+from dashboard.providers.historical import HistoricalResults
 from src.ingestion.base import MATCHES_FILENAME
-from src.pipelines.ratings import RATINGS_FILENAME
 from src.utils.config import Settings, load_settings
 
 
@@ -41,24 +40,11 @@ class Context:
     results: HistoricalResults
     predictions: ApiPredictions
     fixtures: FixtureProvider
-    odds: HistoricalOdds
-    squads: SquadProvider
     notifier: Notifier
 
     @property
     def reports_dir(self) -> Path:
         return self.settings.paths.reports_dir
-
-    @property
-    def ratings_path(self) -> str:
-        """Where the ratings table is, as the string its cache is keyed on.
-
-        The match page reads two columns of it — Dixon-Coles' goal rates — and
-        nothing else in this application reads it at all. A property rather
-        than a provider because it is *this project's own fitted model*, in the
-        same category as the report tables, not somebody else's football.
-        """
-        return str(self.settings.paths.features_dir / RATINGS_FILENAME)
 
     @property
     def matches_path(self) -> str:
@@ -93,7 +79,5 @@ def resolve() -> Context:
         # columns of the canonical table — and a separate provider because a
         # result and a price answer different questions about different
         # moments. See dashboard/providers/base.py.
-        odds=HistoricalOdds(settings.paths.processed_dir / MATCHES_FILENAME),
-        squads=providers.squads(),
         notifier=providers.notifier(),
     )

@@ -35,13 +35,12 @@ from dashboard import ui
 from dashboard.context import Context
 from dashboard.domain import competition as catalogue
 from dashboard.domain import identity, store
-from dashboard.domain.match import Fixture, MatchEvent, MatchStatus, Player, Prediction, Squad
+from dashboard.domain.match import Fixture, MatchEvent, MatchStatus, Prediction
 from dashboard.providers import football_data_org
-from dashboard.providers.historical import HistoricalOdds, HistoricalResults
-from dashboard.providers.null import NullFixtures, NullNotifier, NullSquads
-from dashboard.services import watch
+from dashboard.providers.historical import HistoricalResults
+from dashboard.providers.null import NullFixtures, NullNotifier
+from dashboard.services import matchday, watch
 from dashboard.views import home as dashboard_home
-from dashboard.views import match as match_page
 from src.models.ensemble import SHIPPED
 from src.utils.config import load_settings
 from src.utils.paths import PROJECT_ROOT
@@ -181,6 +180,9 @@ class ConnectedFeed:
     def live(self, **_filters: object) -> list[Fixture]:
         return [_fixture(status=MatchStatus.LIVE, minute=63)]
 
+    def crests(self, competition_id: str) -> dict[str, str]:
+        return {"team 00": "https://crests.example/00.png"} if competition_id == "ENG_1" else {}
+
 
 def _fixture(**overrides: object) -> Fixture:
     fields: dict[str, object] = {
@@ -254,7 +256,6 @@ def _stub_context(
     predictions: object | None = None,
     feed: object | None = None,
     notifier: object | None = None,
-    squads: object | None = None,
     matches: bool = True,
     reports: bool = True,
     ratings: bool = True,
@@ -281,8 +282,6 @@ def _stub_context(
             results=HistoricalResults(settings.paths.processed_dir / "matches.parquet"),
             predictions=predictions if predictions is not None else StubPredictions(),  # type: ignore[arg-type]
             fixtures=feed if feed is not None else NullFixtures(),  # type: ignore[arg-type]
-            odds=HistoricalOdds(settings.paths.processed_dir / "matches.parquet"),
-            squads=squads if squads is not None else NullSquads(),  # type: ignore[arg-type]
             notifier=notifier if notifier is not None else NullNotifier(),  # type: ignore[arg-type]
         )
 
@@ -300,7 +299,6 @@ def run(
     predictions: object | None = None,
     feed: object | None = None,
     notifier: object | None = None,
-    squads: object | None = None,
     matches: bool = True,
     reports: bool = True,
     ratings: bool = True,
@@ -321,7 +319,6 @@ def run(
         predictions=predictions,
         feed=feed,
         notifier=notifier,
-        squads=squads,
         matches=matches,
         reports=reports,
         ratings=ratings,
@@ -474,6 +471,15 @@ def test_following_a_league_from_the_sidebar_is_remembered(
     assert favourites_now()["leagues"] == ["ENG_1"]
 
 
+def test_the_sidebar_offers_the_feeds_leagues_and_the_champions_league_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    box = run_shell(tmp_path, monkeypatch).sidebar.multiselect[0]
+    assert list(box.options) == [matchday.short_label(one) for one in matchday.FOLLOWABLE]
+    assert "UEFA Champions League" in box.options
+    assert box.placeholder == "All 10 competitions"
+
+
 # ---- home --------------------------------------------------------------------
 
 
@@ -488,29 +494,30 @@ def test_home_says_why_there_are_no_live_matches_rather_than_showing_none(
     assert "Live now" in said
 
 
-def test_home_says_what_the_dashboard_is_before_anything_else(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A first-time reader lands here. It has to say what these cards are and
-    that the live centre polls rather than streams."""
-    said = text_of(run("home", tmp_path, monkeypatch))
-    assert "walk-forward against the bookmaker's closing line" in said
-    assert "polled about once a minute" in said
-
-
-def test_home_shows_finished_matches_from_the_table(
+def test_home_opens_on_the_matches_without_an_introduction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     said = text_of(run("home", tmp_path, monkeypatch))
-    assert "Just finished" in said
-    assert "mop-card" in said
+    assert "Match centre" in said
+    assert "walk-forward against the bookmaker's closing line" not in said
+    assert "results through" not in said
 
 
-def test_home_names_the_command_that_builds_a_missing_match_table(
+def test_home_looks_forward_and_shows_no_past_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    said = text_of(run("home", tmp_path, monkeypatch, matches=False))
-    assert "make data" in said
+    said = text_of(
+        run(
+            "home",
+            tmp_path,
+            monkeypatch,
+            feed=ConnectedFeed(),
+            predictions=StubPredictions(fixtures=[_fixture(match_id="table-1")]),
+        )
+    )
+    assert "Just finished" not in said
+    assert "The model can price these" not in said
+    assert "mop-bar" in said  # the feed's card carries the forecast of its table twin
 
 
 def test_a_connected_feed_fills_the_two_forward_sections(
@@ -530,13 +537,13 @@ def test_home_reports_a_service_that_is_not_answering_without_losing_the_page(
         "home",
         tmp_path,
         monkeypatch,
+        feed=ConnectedFeed(),
         predictions=StubPredictions(available=False, error="the service could not be reached"),
     )
     said = text_of(app)
     assert app.exception == []
     assert "could not be reached" in said
-    # The three sections that do not leave the process are unaffected. That is
-    # why the one that does is last.
+    # The feed's cards are unaffected; only their bars are missing.
     assert "mop-card" in said
 
 
@@ -556,24 +563,55 @@ def test_the_browser_lists_every_registered_competition(
     said = text_of(run("competitions", tmp_path, monkeypatch))
     assert "Premier League" in said
     assert "La Liga" in said
+    assert "League One" not in said  # registered, but not on the live feed
+    assert "competitions?competition=UEFA_CL" in said  # its own tile, beside the leagues
+    # A country's top flight leads it.
+    assert said.index("competition=ENG_1") < said.index("competition=ENG_2")
 
 
-def test_a_competition_page_shows_that_leagues_own_results(
+def test_the_champions_league_page_shows_its_fixtures_and_says_why_there_is_no_forecast(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    app = run("competitions", tmp_path, monkeypatch, query={"competition": "ENG_1"})
+    app = run("competitions", tmp_path, monkeypatch, query={"competition": "UEFA_CL"})
     said = text_of(app)
     assert app.exception == []
-    assert "Standings" in said
-    assert "mop-card" in said
-    assert "Season 2025-26" in said
+    assert "UEFA Champions League" in said
+    assert "without a forecast" in said
+    assert "Today and next" in said
+    app.button[0].click().run()
+    assert favourites_now()["leagues"] == ["UEFA_CL"]
 
 
-def test_a_competition_with_no_ingested_matches_says_so(
+def test_a_competition_page_looks_forward_and_shows_no_past_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    said = text_of(run("competitions", tmp_path, monkeypatch, query={"competition": "BRA_1"}))
-    assert "No matches ingested" in said
+    app = run(
+        "competitions", tmp_path, monkeypatch, feed=ConnectedFeed(), query={"competition": "ENG_1"}
+    )
+    said = text_of(app)
+    assert app.exception == []
+    assert "Today and next" in said
+    assert "mop-card" in said
+    assert "Results" not in said
+    assert "Season 2025-26" not in said
+    assert "Standings" not in said
+
+
+def test_a_competition_pages_cards_carry_the_models_forecast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    twin = _fixture(match_id="table-1")
+    said = text_of(
+        run(
+            "competitions",
+            tmp_path,
+            monkeypatch,
+            feed=ConnectedFeed(),
+            predictions=StubPredictions(fixtures=[twin]),
+            query={"competition": "ENG_1"},
+        )
+    )
+    assert "mop-bar" in said
 
 
 def test_an_unknown_competition_falls_back_to_the_browser(
@@ -581,15 +619,6 @@ def test_an_unknown_competition_falls_back_to_the_browser(
 ) -> None:
     said = text_of(run("competitions", tmp_path, monkeypatch, query={"competition": "XXX_9"}))
     assert "Competitions" in said
-
-
-def test_a_competition_page_with_no_match_table_names_the_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    said = text_of(
-        run("competitions", tmp_path, monkeypatch, matches=False, query={"competition": "ENG_1"})
-    )
-    assert "make data" in said
 
 
 # ---- the match page ----------------------------------------------------------
@@ -611,7 +640,7 @@ def test_without_a_fixture_the_match_page_offers_a_picker(
     app = run("match", tmp_path, monkeypatch)
     assert app.exception == []
     assert "Pick a match" in text_of(app)
-    assert app.selectbox
+    assert "mop-card" in text_of(app)
 
 
 def test_the_picker_reports_a_service_that_cannot_list_fixtures(
@@ -804,21 +833,75 @@ def test_a_fixture_the_service_can_price_but_the_table_lacks_still_renders(
 # ---- search ------------------------------------------------------------------
 
 
-def test_search_shows_suggestions_before_anything_is_typed(
+def test_search_shows_nothing_but_the_box_before_anything_is_typed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     said = text_of(run("search", tmp_path, monkeypatch))
-    assert "Start here" in said
+    assert "Start here" not in said
+    assert "No club by that name" not in said and "mop-card" not in said
 
 
-def test_search_finds_a_competition_by_country_or_by_name(
+def test_search_no_longer_answers_with_competitions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = run("search", tmp_path, monkeypatch)
     app.text_input[0].set_value("bundesliga").run()
     assert app.exception == []
     said = text_of(app)
-    assert "Bundesliga" in said
+    assert "No competition by that name" not in said
+    assert "competitions?competition=GER_1" not in said
+
+
+def test_search_shows_each_clubs_crest_where_the_feed_has_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = run("search", tmp_path, monkeypatch, feed=ConnectedFeed())
+    app.text_input[0].set_value(CLUB).run()
+    assert app.exception == []
+    said = text_of(app)
+    assert said.count('src="https://crests.example/00.png"') >= 2  # the club, and its match cards
+
+
+def test_search_shows_a_clubs_live_and_upcoming_fixtures_above_its_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = run(
+        "search",
+        tmp_path,
+        monkeypatch,
+        feed=ConnectedFeed(),
+        predictions=StubPredictions(fixtures=[_fixture(match_id="table-1")]),
+    )
+    app.text_input[0].set_value(CLUB).run()
+    assert app.exception == []
+    said = text_of(app)
+    assert said.index("Live and upcoming") < said.index("Results")
+    assert "20:00" in said  # the feed's kick-off
+    assert "mop-bar" in said  # with the model's forecast
+
+
+def test_search_leaves_out_clubs_the_feed_does_not_cover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another country's league is not on the feed, and a club missing from its
+    league's list is not either; a league the feed has no list for keeps its clubs."""
+    abroad = league_frame(
+        competition_id="ARG_1", country="Argentina", name="Liga", seasons=SEASONS, teams=4,
+        team_prefix="Team Abroad",
+    )  # fmt: skip
+    app = run(
+        "search",
+        tmp_path,
+        monkeypatch,
+        feed=ConnectedFeed(),
+        league=pd.concat([LEAGUE, abroad], ignore_index=True),
+    )
+    app.text_input[0].set_value("team").run()
+    assert app.exception == []
+    names = [one.value for one in app.markdown if one.value.startswith('<span class="mop-side">')]
+    assert len(names) == 1 and CLUB in names[0]  # not Team 01, not Team Abroad
+    app.text_input[0].set_value("klub").run()
+    assert "Klub 00" in text_of(app)
 
 
 def test_search_finds_a_club_and_its_recent_matches(
@@ -832,13 +915,12 @@ def test_search_finds_a_club_and_its_recent_matches(
     assert app.button
 
 
-def test_a_query_that_finds_nothing_says_so_in_each_section(
+def test_a_query_that_finds_nothing_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = run("search", tmp_path, monkeypatch)
     app.text_input[0].set_value("zzzz").run()
     said = text_of(app)
-    assert "No competition by that name" in said
     assert "No club by that name" in said
 
 
@@ -1015,26 +1097,6 @@ def test_a_club_the_reader_follows_can_be_dropped_from_the_sidebar(
     assert favourites_now()["teams"] == []
 
 
-def test_following_a_league_from_the_competitions_browser_is_remembered(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    app = run("competitions", tmp_path, monkeypatch)
-    app.multiselect[0].select("ESP_1").run()
-    assert app.exception == []
-    assert favourites_now()["leagues"] == ["ESP_1"]
-
-
-def test_the_browsers_filter_hides_the_countries_that_do_not_match(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    app = run("competitions", tmp_path, monkeypatch)
-    app.text_input[0].set_value("bundesliga").run()
-    said = text_of(app)
-    assert app.exception == []
-    assert "Bundesliga" in said
-    assert "Premier League" not in said
-
-
 def test_a_competition_page_can_be_followed_and_unfollowed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1048,12 +1110,11 @@ def test_a_competition_page_can_be_followed_and_unfollowed(
 def test_the_picker_opens_the_fixture_it_was_given(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The picker writes the query parameter every card links with, so the
+    """The picker's cards link with the query parameter every card uses, so the
     page a reader lands on is the same page either way in."""
     app = run("match", tmp_path, monkeypatch)
-    app.button[0].click().run()
     assert app.exception == []
-    assert app.query_params["match"] == ["priceable"]
+    assert "?match=priceable" in text_of(app)
 
 
 def test_a_fixture_in_a_competition_the_backtest_never_covered_says_so(
@@ -1099,11 +1160,15 @@ def test_more_clubs_than_the_page_lists_is_capped_and_said(
 def test_a_section_with_no_cards_says_so_rather_than_rendering_a_blank_strip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A reader who follows a club that has not played recently gets a
-    sentence, not an empty column they will read as a bug."""
-    followed(teams=["Nobody FC"])
-    app = run("home", tmp_path, monkeypatch)
-    assert "Nothing finished recently" in text_of(app)
+    """A feed with nothing scheduled gets a sentence, not an empty column a
+    reader will read as a bug."""
+
+    class QuietWeek(ConnectedFeed):
+        def scheduled(self, **_filters: object) -> list[Fixture]:
+            return []
+
+    app = run("home", tmp_path, monkeypatch, feed=QuietWeek())
+    assert "No fixtures scheduled in the next week" in text_of(app)
 
 
 # ---- the context itself ------------------------------------------------------
@@ -1344,27 +1409,6 @@ def test_with_no_transport_configured_a_goal_is_still_a_toast(
 # ---- the market, and what a gap from it means ------------------------------
 
 
-def test_the_match_page_shows_the_closing_line_beside_the_forecast(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Showing both prices bare invites the comparison to be made without the
-    folds. The page makes the comparison *with* the folds and shows the
-    answer instead."""
-    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
-    assert "What the market said" in said
-    assert "overround" in said
-
-
-def test_a_gap_from_the_market_is_reported_as_the_model_s_likely_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The finding, on the page: a gap is not an edge. A page that presented
-    it as one would contradict the measurement three directories away."""
-    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
-    assert "A gap is not an edge" in said
-    assert "more likely to be wrong about this match" in said
-
-
 def test_without_the_measurement_the_page_says_which_command_makes_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1376,153 +1420,20 @@ def test_without_the_measurement_the_page_says_which_command_makes_it(
     assert "A gap is not an edge" not in said
 
 
-def test_the_match_page_shows_the_goal_model_s_expectation(
+def test_an_upcoming_match_shows_the_forecast_and_what_it_is_worth_and_nothing_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Labelled as a goal-rate model's expectation, not as xG. Nothing in this
-    project has ever seen a shot map, and the label is the whole point."""
-    app = run("match", tmp_path, monkeypatch, query={"match": match_id()})
-    said = text_of(app)
-    assert "not shot-quality xG" in said
-    labels = {one.label: one.value for one in app.metric}
-    assert labels["Total"] == "2.45"
-    assert labels["Supremacy"] == "+0.39"
-
-
-def test_a_fixture_the_goal_model_never_rated_says_so(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Dixon-Coles refits on a rolling window and has nothing to say before its
-    first fit. A null there means exactly that."""
-    first = str(LEAGUE.sort_values("date").iloc[0]["match_id"])
-    said = text_of(run("match", tmp_path, monkeypatch, query={"match": first}))
-    assert "before its first fit" in said
-
-
-def test_with_no_ratings_table_the_page_names_the_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    said = text_of(run("match", tmp_path, monkeypatch, ratings=False, query={"match": match_id()}))
-    assert "make ratings" in said
-
-
-# ---- who is registered -------------------------------------------------------
-
-
-class StubSquads:
-    """A squad source, without a source. Answers for whichever clubs it was
-    given and sets the error the real one would for the rest."""
-
-    name = "stub"
-    available = True
-
-    def __init__(self, *, known: dict[str, int] | None = None) -> None:
-        self._known = known or {}
-        self.error: str | None = None
-        self.asked: list[tuple[str, str | None]] = []
-
-    def squad(self, team: str, *, competition_id: str | None = None) -> Squad | None:
-        self.asked.append((team, competition_id))
-        size = self._known.get(team)
-        if size is None:
-            self.error = f"No club in this feed's squad list is spelled like **{team}**."
-            return None
-        self.error = None
-        return Squad(
-            team=team,
-            full_name=f"{team} FC",
-            players=tuple(
-                Player(
-                    name=f"Player {index}",
-                    position="Goalkeeper" if index == 0 else "Midfield",
-                    date_of_birth=dt.date(1996, 1, 1),
-                )
-                for index in range(size)
-            ),
-            source="stub",
-            competition_id=competition_id,
-        )
-
-
-def teams_of(match: str) -> tuple[str, str]:
-    """The two clubs of a fixture, as the match table spells them."""
-    row = LEAGUE[LEAGUE["match_id"] == match].iloc[0]
-    return str(row["home_team"]), str(row["away_team"])
-
-
-def test_the_match_page_shows_both_registered_squads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The caption is as much of it as the numbers: a squad
-    is who is registered, which is an upper bound on who is available."""
-    home, away = teams_of(match_id())
-    source = StubSquads(known={home: 3, away: 4})
-    app = run("match", tmp_path, monkeypatch, squads=source, query={"match": match_id()})
-    said = text_of(app)
-    assert "Who is registered" in said
-    assert "Registered is not available" in said
-    assert "Registered squads from stub" in said
-    assert [one.value for one in app.metric if one.label == "Registered"] == ["3", "4"]
-    assert source.asked == [(home, "ENG_1"), (away, "ENG_1")]
-    assert app.exception == []
-
-
-def test_a_club_the_source_could_not_match_says_so_beside_the_one_it_did(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The reason has to be read per lookup: a provider carries the *last*
-    failure it had, so a shared read would caption the missing club with why
-    the other one failed — or, since the other succeeded, with nothing."""
-    home, away = teams_of(match_id())
-    app = run(
-        "match",
-        tmp_path,
-        monkeypatch,
-        squads=StubSquads(known={home: 3}),
-        query={"match": match_id()},
-    )
-    said = text_of(app)
-    assert f"spelled like **{away}**" in said
-    assert [one.value for one in app.metric if one.label == "Registered"] == ["3"]
-    assert app.exception == []
-
-
-def test_with_no_squad_source_the_section_says_what_would_configure_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The default, and it must read as a boundary rather than as an outage."""
-    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
-    assert "Who is registered" in said
-    assert "DASHBOARD_SQUAD_PROVIDER" in said
-
-
-def test_injuries_are_named_as_having_no_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The squad is shown and the rest has nowhere to come from — no injury endpoint at any tier, and an empty lineup on this plan."""
-    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
-    assert "no injury endpoint at any tier" in said
-    # The heading says so too, rather than promising future work.
-    assert "no source" in {status for _, status, _ in match_page.FUTURE_SECTIONS}
-
-
-def test_a_fixture_outside_the_match_table_has_no_competition_to_look_up_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A card from the live feed opens a page with no table row. The squad
-    lookup needs the competition that row carries, and says so rather than
-    asking the feed about a competition it guessed."""
-    said = text_of(
-        run(
-            "match",
-            tmp_path,
-            monkeypatch,
-            squads=StubSquads(known={CLUB: 3}),
-            query={"match": "fdorg-497821"},
-        )
-    )
-    assert "no competition to look a squad up in" in said
-    assert "which holds matches in the match table, and this one is not in it yet" in said
+    """The closing line, goal rates, squads and the not-yet list read played
+    matches only, so an upcoming match's page does not carry them."""
+    said = text_of(run("match", tmp_path, monkeypatch, query={"match": "not-in-the-table"}))
+    assert "What that probability is worth" in said
+    for gone in (
+        "What the market said",
+        "Expected goals",
+        "Who is registered",
+        "Not on this page yet",
+    ):
+        assert gone not in said
 
 
 def test_a_live_feed_card_explains_why_it_has_no_forecast_rather_than_erroring(
@@ -1539,21 +1450,33 @@ def test_a_live_feed_card_explains_why_it_has_no_forecast_rather_than_erroring(
         query={"match": "fdorg-497821"},
     )
     assert app.error == []
-    assert "not joined to this project's match table" in text_of(app)
+    assert "no fixture the model has priced matches it" in text_of(app)
 
 
-def test_when_neither_club_is_found_the_reason_is_said_once_not_twice(
+def test_a_live_feed_card_opens_the_forecast_for_the_same_fixture_in_the_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A competition the source does not cover fails both lookups with the
-    same sentence, and printing it under two empty columns reads as two
-    problems."""
-    home, _ = teams_of(match_id())
-    app = run(
-        "match", tmp_path, monkeypatch, squads=StubSquads(known={}), query={"match": match_id()}
+    """The feed says "Leeds United", the table says "Leeds": the card is the
+    table's fixture, so the page becomes that fixture's forecast."""
+    card = _fixture(
+        match_id="fdorg-1", home_team=f"{CLUB} United", date=dt.date.today(), kickoff="20:00"
     )
-    assert text_of(app).count(f"spelled like **{home}**") == 1
-    assert [one.value for one in app.metric if one.label == "Registered"] == []
+    twin = _fixture(match_id="table-1", date=dt.date.today())
+
+    class OneCardFeed(ConnectedFeed):
+        def scheduled(self, **_filters: object) -> list[Fixture]:
+            return [card]
+
+    app = run(
+        "match",
+        tmp_path,
+        monkeypatch,
+        feed=OneCardFeed(),
+        predictions=StubPredictions(fixtures=[twin]),
+        query={"match": "fdorg-1"},
+    )
+    assert app.exception == []
+    assert app.query_params["match"] == ["table-1"]
 
 
 # ---- what the service actually served ---------------------------------------

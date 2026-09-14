@@ -254,10 +254,10 @@ produces it; nothing invents a fixture.
 
 | Page | Contents |
 |---|---|
-| Home / Live centre | Live, upcoming and recent matches; auto-refresh every 60 s while open |
-| Competitions | Every league in `configs/leagues.yaml` |
-| Match | The forecast; how often forecasts in that probability band came true; the closing line and what a gap from it has meant; Dixon-Coles expected goals; registered squads; form; head-to-head |
-| Search | Clubs, competitions and matches |
+| Home / Live centre | Live matches, and the coming week's fixtures each with the model's probabilities; auto-refresh every 60 s while open |
+| Competitions | The nine leagues the live feed covers plus the Champions League, as a flag list; each page lists the coming week's fixtures with their probabilities |
+| Match | Opened from any card, not the sidebar: the forecast, and how often forecasts in that probability band came true; form and head-to-head for a match already played |
+| Search | A club in the covered leagues, with its crest, its live and upcoming fixtures, and its results |
 | Model | Headline numbers; every forecaster on the same matches; a reliability diagram filterable by competition and year; per-competition reliability; the served-forecast archive; limitations |
 
 - **Live and upcoming fixtures** come from the optional
@@ -338,7 +338,7 @@ by environment variables. Every variable is optional. See
 | `API_PORT`, `API_MAX_BATCH`, `API_PREDICTION_CACHE` | Service port, batch limit, cache size |
 | `PREDICTION_LOG_DSN` | PostgreSQL prediction log (secret; unset disables the log) |
 | `DASHBOARD_API_URL` | Where the dashboard asks for forecasts |
-| `DASHBOARD_FIXTURE_PROVIDER`, `DASHBOARD_SQUAD_PROVIDER` | `none` (default) or `football-data.org` |
+| `DASHBOARD_FIXTURE_PROVIDER` | `none` (default) or `football-data.org` |
 | `FOOTBALL_DATA_API_KEY` | football-data.org key (secret) |
 | `DASHBOARD_NOTIFIER`, `DASHBOARD_WEBHOOK_URL` | `none` or `webhook`, plus its URL (secret) |
 | `DASHBOARD_PROFILE_STORE` | Where saved favourites are written |
@@ -350,8 +350,8 @@ Optional sign-in uses Streamlit's OIDC support, configured in
 
 ## Setting up football-data.org
 
-The historical pipeline needs no key. The live fixtures, scores and squads on
-the dashboard do:
+The historical pipeline needs no key. The live fixtures and scores on the
+dashboard, and the week of fixtures `make fixtures` prices, do:
 
 1. Register for a free key at
    [football-data.org/client/register](https://www.football-data.org/client/register).
@@ -359,14 +359,12 @@ the dashboard do:
    ```bash
    export FOOTBALL_DATA_API_KEY=...
    export DASHBOARD_FIXTURE_PROVIDER=football-data.org
-   export DASHBOARD_SQUAD_PROVIDER=football-data.org   # optional
    ```
 3. Covered competitions on the free plan: Premier League, Championship,
    Bundesliga, Serie A, La Liga, Ligue 1, Eredivisie, Primeira Liga, and Brazil
    Série A.
 
-Requests are split into windows of at most 10 days and cached for 60 s (squads
-for an hour). Retries honour `Retry-After`. If the key is invalid or the feed
+Requests are split into windows of at most 10 days and cached for 60 s. Retries honour `Retry-After`. If the key is invalid or the feed
 is down, the affected section shows the feed's own error message and the rest
 of the page carries on.
 
@@ -496,7 +494,7 @@ MIT — see [LICENSE](LICENSE).
 
 Match data comes from [football-data.co.uk](https://www.football-data.co.uk/)
 and remains subject to its terms. This repository does not redistribute it.
-Live fixtures, scores and squads come from
+Live fixtures and scores come from
 [football-data.org](https://www.football-data.org/) under your own API key.
 Transfermarkt is deliberately not used, because its terms prohibit automated
 access and model training.

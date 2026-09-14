@@ -62,7 +62,7 @@ from typing import Any
 
 import requests
 
-from dashboard.domain.match import FEED_ONLY_PREFIX, Fixture, MatchStatus, Player, Squad
+from dashboard.domain.match import FEED_ONLY_PREFIX, Fixture, MatchStatus
 from src.utils.http import HttpClient
 from src.utils.logging import get_logger
 
@@ -81,6 +81,10 @@ CACHE_SECONDS = 60
 """How long an answer is reused. A minute is under the free tier's rate limit
 at any plausible click rate, and it is the resolution a live score is worth —
 the section is repainted on the next rerun after that."""
+
+CREST_CACHE_SECONDS = 24 * 60 * 60
+"""How long a competition's club list is reused. Crests change between seasons,
+not between clicks, and each list is one request against ten a minute."""
 
 MAX_WINDOW_DAYS = 10
 """Whole days one request can cover. The feed's own rule, measured on it:
@@ -137,7 +141,20 @@ rows), so the drop costs nothing and the alternative would be an unfiltered
 request for competitions the reader did not ask about.
 """
 
-OUR_ID: Mapping[str, str] = {code: ours for ours, code in COMPETITION_CODES.items()}
+FEED_ONLY_CODES: Mapping[str, str] = {
+    "UEFA_CL": "CL",
+}
+"""Competitions the live centre shows that the registry does not hold.
+
+The Champions League is on the free plan and worth a card, but football-data.co.uk
+publishes no results for it, so there is nothing to ingest or price. It can be
+followed like a league; its cards carry the feed's own competition name and open
+the feed-only match page.
+"""
+
+OUR_ID: Mapping[str, str] = {
+    code: ours for ours, code in {**COMPETITION_CODES, **FEED_ONLY_CODES}.items()
+}
 
 STATUSES: Mapping[str, MatchStatus] = {
     "SCHEDULED": MatchStatus.SCHEDULED,
@@ -155,6 +172,12 @@ both answers by :meth:`FootballDataOrgFixtures.scheduled`. A postponed match
 rendered as scheduled is a kick-off time on the screen that nobody is playing
 to, which is the one thing the null provider exists to refuse.
 """
+
+KNOWN_STATUSES = frozenset({*STATUSES, "POSTPONED", "SUSPENDED", "CANCELLED", "AWARDED", "LIVE"})
+"""Every status the feed documents. Anything else is the feed misreporting one:
+measured on 2026-09-14, some responses carry each Brazilian match's kick-off
+time in ``status`` in place of ``TIMED``, the same request answering correctly
+seconds later."""
 
 UPCOMING = (MatchStatus.SCHEDULED, MatchStatus.LIVE)
 
@@ -248,6 +271,25 @@ class FootballDataOrgFixtures:
         """
         return [one for one in self._now_window(competitions) if one.status is MatchStatus.LIVE]
 
+    def crests(self, competition_id: str) -> Mapping[str, str]:
+        """Crest URLs for the competition's clubs this season, by :func:`club_words` name.
+
+        One request per competition, asked for only when a page needs that
+        competition and reused for a day. A failure is an empty answer and is
+        not remembered, so the next rerun asks again; it does not set
+        :attr:`error`, because clubs without crests are not a feed that is down.
+        """
+        code = {**COMPETITION_CODES, **FEED_ONLY_CODES}.get(competition_id)
+        if not code or not self.api_key:
+            return {}
+        try:
+            return _fetch_crests(
+                self.base_url, self.api_key, code, self.http, _bucket(CREST_CACHE_SECONDS)
+            )
+        except (requests.RequestException, ValueError) as failure:
+            logger.info("football-data.org had no crests for %s: %s", code, _describe(failure))
+            return {}
+
     def _now_window(self, competitions: Sequence[str] | None) -> tuple[Fixture, ...]:
         """Everything the feed has around *now*, in the feed's own calendar.
 
@@ -322,15 +364,39 @@ def _fetch(
     return to_fixtures(payload.get("matches", []) if isinstance(payload, Mapping) else [])
 
 
+@lru_cache(maxsize=16)
+def _fetch_crests(
+    base_url: str,
+    api_key: str,
+    code: str,
+    http: HttpClient | None,
+    _bucket: int,
+) -> Mapping[str, str]:
+    """``GET /v4/competitions/{code}/teams``, as crest URL by club name.
+
+    Both the feed's ``name`` and ``shortName`` are keys, so "Manchester City FC"
+    and "Man City" each find the one crest.
+    """
+    with _client(http) as client:
+        response = client.get(
+            f"{base_url}/competitions/{code}/teams", headers={"X-Auth-Token": api_key}
+        )
+    payload = response.json()
+    teams = payload.get("teams", []) if isinstance(payload, Mapping) else []
+    found: dict[str, str] = {}
+    for team in teams:
+        crest = _crest(team) if isinstance(team, Mapping) else None
+        if crest is None:
+            continue
+        for spelling in (_text(team.get("name")), _text(team.get("shortName"))):
+            if club_words(spelling):
+                found[club_words(spelling)] = crest
+    return found
+
+
 def _bucket(seconds: int = CACHE_SECONDS) -> int:
     """Which window of ``seconds`` we are in. Monotonic, so a clock adjustment
-    cannot send the cache backwards.
-
-    Two windows are asked for: a minute for scores, an hour for squads. The
-    length is the caller's because it is a statement about how fast the thing
-    changes, and a squad refetched every minute would spend the whole rate
-    limit on a list that moves twice a year.
-    """
+    cannot send the cache backwards."""
     return int(time.monotonic() // seconds)
 
 
@@ -355,7 +421,8 @@ def _codes(competitions: Sequence[str] | None) -> str | None:
     """
     if not competitions:
         return ""
-    codes = [COMPETITION_CODES[one] for one in competitions if one in COMPETITION_CODES]
+    known = {**COMPETITION_CODES, **FEED_ONLY_CODES}
+    codes = [known[one] for one in competitions if one in known]
     return ",".join(codes) if codes else None
 
 
@@ -441,7 +508,7 @@ def as_fixture(row: Mapping[str, Any]) -> Fixture | None:
         date=when.date(),
         home_team=_team(home),
         away_team=_team(away),
-        status=STATUSES.get(str(row.get("status")), MatchStatus.UNKNOWN),
+        status=_status(str(row.get("status")), score),
         competition=str(competition.get("name")) or None,
         country=_text(_mapping(row.get("area")).get("name")),
         kickoff=_kickoff(when),
@@ -451,6 +518,15 @@ def as_fixture(row: Mapping[str, Any]) -> Fixture | None:
         home_crest_url=_crest(home),
         away_crest_url=_crest(away),
     )
+
+
+def _status(stated: str, score: Mapping[str, Any]) -> MatchStatus:
+    """The feed's status, or scheduled when it misreported one on an unscored match."""
+    if stated in STATUSES:
+        return STATUSES[stated]
+    if stated not in KNOWN_STATUSES and score.get("home") is None:
+        return MatchStatus.SCHEDULED
+    return MatchStatus.UNKNOWN
 
 
 def _order(fixture: Fixture) -> tuple[dt.date, str]:
@@ -523,17 +599,8 @@ def _as_int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-# ---- squads --------------------------------------------------------------------
+# ---- club names ----------------------------------------------------------------
 
-
-SQUAD_CACHE_SECONDS = 3600
-"""How long a squad list is reused. An hour, against a minute for scores.
-
-A squad changes on a transfer deadline and a score changes on a goal, and the
-free tier's ten requests a minute are the budget both come out of. One request
-answers a whole competition — every club and every squad — so an hour of reuse
-is at most nine requests a day for the nine competitions this plan covers.
-"""
 
 SUFFIXES = frozenset({"fc", "afc", "cf", "sc"})
 """Club-form tokens dropped before two vocabularies are compared.
@@ -543,211 +610,7 @@ club, and the difference is a convention rather than a name.
 """
 
 
-@dataclass(slots=True)
-class FootballDataOrgSquads:
-    """football-data.org's ``/v4/competitions/{code}/teams``, as a squad provider.
-
-    The same shape as the fixture feed: one class
-    satisfying one protocol, one entry in a registry, one environment variable.
-    It shares this module with the fixture feed because it shares the key, the
-    base URL, the competition codes and the way a failure is described — two
-    modules would be two copies of :func:`_describe`.
-
-    **One request per competition, not one per club.** The competition endpoint
-    answers with every club *and* its squad, so a page showing both sides of a
-    fixture makes one call rather than two, and the second fixture a reader
-    opens in that competition makes none.
-
-    :attr:`available` is the key check alone — unlike the fixture feed, which
-    probes. A probe here would have to name a competition, so it would be a
-    request for squads in the Premier League to answer a question about a
-    Brazilian match. The rejected-key case is not lost: the lookup itself sets
-    :attr:`error`, and the panel renders that instead of "no squad for this
-    club".
-    """
-
-    api_key: str = field(default_factory=lambda: os.environ.get(API_KEY_ENV, ""))
-    base_url: str = BASE_URL
-    http: HttpClient | None = None
-
-    name: str = "football-data.org"
-    error: str | None = None
-
-    @property
-    def available(self) -> bool:
-        if not self.api_key:
-            self.error = (
-                "No football-data.org key. Register a free one at "
-                "football-data.org/client/register and set "
-                f"`{API_KEY_ENV}`, or set `DASHBOARD_SQUAD_PROVIDER=none`."
-            )
-            return False
-        self.error = None
-        return True
-
-    def squad(self, team: str, *, competition_id: str | None = None) -> Squad | None:
-        """One club's registered players, or ``None`` with the reason in :attr:`error`.
-
-        Three different ``None``s, and the reason distinguishes them: a
-        competition off this plan, a club this feed spells differently enough
-        that nothing matched, and a feed that did not answer.
-        """
-        if not self.available:
-            return None
-        code = COMPETITION_CODES.get(str(competition_id or ""))
-        if code is None:
-            self.error = (
-                f"This feed's plan does not cover {competition_id or 'that competition'}. "
-                f"It covers {', '.join(sorted(COMPETITION_CODES))}."
-            )
-            return None
-        try:
-            found = _squads(
-                self.base_url, self.api_key, code, self.http, _bucket(SQUAD_CACHE_SECONDS)
-            )
-        except (requests.RequestException, ValueError) as failure:
-            self.error = _describe(failure)
-            logger.info("football-data.org did not answer: %s", self.error)
-            return None
-        picked = pick(team, found)
-        self.error = (
-            None
-            if picked is not None
-            else (
-                f"No club in this feed's {code} squad list is spelled like "
-                f"**{team}**. The two vocabularies are different — this project "
-                "ingests football-data.co.uk and this feed is football-data.org "
-                "— and a club matched on a guess would put another team's "
-                "squad on the page."
-            )
-        )
-        return picked
-
-
-@lru_cache(maxsize=16)
-def _squads(
-    base_url: str,
-    api_key: str,
-    code: str,
-    http: HttpClient | None,
-    _bucket: int,
-) -> tuple[Squad, ...]:
-    """``GET /v4/competitions/{code}/teams``, parsed. One :data:`SQUAD_CACHE_SECONDS` bucket.
-
-    The same memo shape as :func:`_fetch` and for the same reason: the context
-    builds a fresh provider on every Streamlit rerun, so a per-instance cache
-    would be a cache that is empty every time it is read.
-    """
-    with _client(http) as client:
-        response = client.get(
-            f"{base_url}/competitions/{code}/teams",
-            headers={"X-Auth-Token": api_key},
-        )
-    payload = response.json()
-    rows = payload.get("teams", []) if isinstance(payload, Mapping) else []
-    ours = OUR_ID.get(code)
-    made = (as_squad(row, ours) for row in rows if isinstance(row, Mapping))
-    return tuple(one for one in made if one is not None)
-
-
-def as_squad(row: Mapping[str, Any], competition_id: str | None) -> Squad | None:
-    """One ``/teams`` row as a :class:`~dashboard.domain.match.Squad`.
-
-    The feed's ``lastUpdated`` on a team record is **not** read: it is years old
-    on live rows — 2022 on two Premier League clubs whose squads are current —
-    so it says when the club's *record* last changed rather than when the squad
-    did, and a "squad as of" date taken from it would be wrong on the page.
-
-    ``None`` for a club with no name and for one the feed listed with an empty
-    squad — that second case is real on this plan for clubs it has not filled
-    in, and an empty squad rendered as a panel reads as "this club has nobody"
-    rather than as "this feed did not say".
-    """
-    team = _text(row.get("shortName")) or _text(row.get("name"))
-    players = tuple(
-        one
-        for one in (
-            _player(entry) for entry in row.get("squad") or [] if isinstance(entry, Mapping)
-        )
-        if one is not None
-    )
-    if not team or not players:
-        return None
-    return Squad(
-        team=team,
-        full_name=_text(row.get("name")) or team,
-        players=players,
-        source="football-data.org",
-        competition_id=competition_id,
-    )
-
-
-def _player(entry: Mapping[str, Any]) -> Player | None:
-    """One squad entry, or ``None`` when it has no name to show."""
-    name = _text(entry.get("name"))
-    if not name:
-        return None
-    return Player(
-        name=name,
-        position=_text(entry.get("position")) or None,
-        date_of_birth=_day(entry.get("dateOfBirth")),
-        nationality=_text(entry.get("nationality")) or None,
-    )
-
-
-def _day(value: Any) -> dt.date | None:
-    """``"1990-10-08"`` or a full stamp, as a date. ``None`` when unparseable."""
-    text = _text(value)
-    try:
-        return dt.datetime.fromisoformat(text.replace("Z", "+00:00")).date()
-    except ValueError:
-        return None
-
-
-def pick(team: str, squads: Sequence[Squad]) -> Squad | None:
-    """The squad belonging to ``team``, matched across two vocabularies.
-
-    This project's tables say "Man United", "Nott'm Forest" and "Brighton"; this
-    feed says "Manchester United FC", "Nottingham Forest FC" and "Brighton &
-    Hove Albion FC". The fixture feed needs no mapping between them because nothing
-    it fetches is joined to an ingested row. **The squad panel does need the
-    join**, and this function is the whole of what it costs.
-
-    Two rules, in order, and no third:
-
-    1. Exact match on the normalised name, short name or three-letter code.
-    2. Every word of the asked-for name appearing in the feed's — "Hull" in
-       "Hull City", "Brighton" in "Brighton & Hove Albion" — and **only when
-       exactly one club matches**. Two candidates is no answer, because a
-       fifty-fifty guess put on a page is worse than a sentence saying the
-       lookup missed.
-
-    No fuzzy distance and no alias table. "Nott'm Forest" against "Nottingham
-    Forest" is the case that fails, and it fails visibly: the page says no club
-    is spelled like that rather than showing a squad it is not sure about.
-    """
-    wanted = _words(team)
-    if not wanted:
-        return None
-    for one in squads:
-        if wanted in {_words(one.team), _words(one.full_name)}:
-            return one
-    inside = [one for one in squads if set(wanted.split()) <= _tokens(one)]
-    return inside[0] if len(inside) == 1 else None
-
-
-def _tokens(squad: Squad) -> set[str]:
-    """Every normalised word of both forms of the club's name.
-
-    Both, because neither alone is enough: "Hull" is inside the short form
-    "Hull City" and not inside the long one "Hull City AFC" once the suffix
-    goes, and "Forest" is inside the long form "Nottingham Forest FC" and not
-    inside the short one, which this feed gives as plain "Nottingham".
-    """
-    return set(_words(squad.team).split()) | set(_words(squad.full_name).split())
-
-
-def _words(name: str) -> str:
+def club_words(name: str) -> str:
     """A club name with accents, punctuation, case and club-form suffixes removed.
 
     ``"Brighton & Hove Albion FC"`` becomes ``"brighton hove albion"``, and

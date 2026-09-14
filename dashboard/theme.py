@@ -235,15 +235,82 @@ a.mop-pill:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2px;
   a.mop-card, a.mop-pill {{ transition: none; }}
 }}
 
-/* The competition tile: the same card, without the two team rows to give it
-   height. Fixed so that a country with one competition and a country with five
-   read as the same kind of row. */
-/* Wraps rather than truncating: "Copa de la Liga Profesional" is the name. */
-.mop-title {{
-  display: block;
-  font-size: 0.95rem;
-  font-weight: 600;
+/* ---- competition list ----------------------------------------------------- */
+
+/* A flag and a name per row, no card: the list is the browser, two columns
+   across the page's width (one on a phone). Wraps rather than truncating:
+   "Copa de la Liga Profesional" is the name. */
+.mop-leagues {{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 1.5rem;
+  margin-top: 1.5rem;
+}}
+@media (max-width: 640px) {{ .mop-leagues {{ grid-template-columns: 1fr; }} }}
+a.mop-league {{
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.1rem 1.5rem;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 1.6rem;
+  font-weight: 700;
   overflow-wrap: anywhere;
+  transition: background 120ms ease, border-color 120ms ease;
+}}
+a.mop-league:hover {{ background: var(--raised); border-color: #33456d; }}
+a.mop-league:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2px; }}
+@media (prefers-reduced-motion: reduce) {{ a.mop-league {{ transition: none; }} }}
+/* A flat flag in a rounded white frame. */
+.mop-flag {{
+  flex: 0 0 auto;
+  width: 3.4rem;
+  height: 2.4rem;
+  object-fit: cover;
+  border: 3px solid #f8fafc;
+  border-radius: 9px;
+  background: var(--raised);
+}}
+
+/* ---- sidebar menu --------------------------------------------------------- */
+
+/* Streamlit's page menu, as one rounded panel of large bold entries. Its test
+   ids are the only hooks it offers; if a release renames them the menu falls
+   back to Streamlit's own look rather than breaking. */
+[data-testid="stSidebarNavItems"] {{
+  background: var(--raised);
+  border-radius: 16px;
+  padding: 0.5rem;
+}}
+/* The header above the menu only holds the collapse arrow; Streamlit gives it
+   a logo's height, which left a blank band over Home. */
+[data-testid="stSidebarHeader"] {{ height: 2.5rem; min-height: 0; margin-bottom: 0; padding-bottom: 0; }}
+/* The panels' gaps separate the sections, so the rules between them go. */
+[data-testid="stSidebarNavSeparator"] {{ display: none; }}
+[data-testid="stSidebarNav"] {{ border-bottom: none; padding-bottom: 0; }}
+[data-testid="stSidebarUserContent"] {{ padding-top: 1.2rem; }}
+.st-key-mop-panel-you, .st-key-mop-panel-status {{
+  background: var(--raised);
+  border-radius: 16px;
+  padding: 1rem;
+}}
+[data-testid="stSidebarNavLink"] {{
+  gap: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+}}
+[data-testid="stSidebarNavLink"] span {{
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}}
+[data-testid="stSidebarNavLink"] [data-testid="stIconMaterial"] {{
+  font-size: 1.5rem;
+  color: var(--muted);
 }}
 
 /* ---- probability bar ------------------------------------------------------ */

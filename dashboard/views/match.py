@@ -1,7 +1,6 @@
-"""One fixture, in as much depth as this project can honestly go.
+"""One fixture: what the model says, and what that is worth.
 
-The page a card links to. It answers six questions and is explicit about the
-ones it cannot:
+The page a card links to. It answers the questions a forecast raises:
 
 1. **What does the model say?** Three calibrated probabilities, from the
    service over HTTP. Never computed here — see :mod:`dashboard.client`.
@@ -10,24 +9,11 @@ ones it cannot:
    ``docs/MODEL_CARD.md`` is generated from. A stated probability with no
    measured reliability beside it is the number this project exists to stop
    people quoting.
-3. **What happened when these two met before?** Head-to-head, from the match
-   table.
-4. **How have they been playing?** Form, likewise.
-5. **What did the market think?** The closing line with the overround removed,
-   beside the model, and — this is the part that matters — what the *distance*
-   between the two was worth over 61,889 out-of-sample forecasts.
-6. **How many goals does the goal model expect?** Dixon-Coles' two Poisson
-   rates, labelled as what they are and not as shot-quality xG, which nothing
-   here has ever seen.
+3. **For a match already played: form and head-to-head**, from the match table.
 
-7. **Who is registered to play?** Both squads, from the same feed the live
-   scores come from. The panel is careful about what it is: a squad is who
-   is *registered*, an upper bound on who is available, and the only one of
-   availability, injuries and transfers that any reachable source answers.
-
-What remains — team sheets, injuries, in-play statistics — has no source in
-this repository, and the sections for them say so and name what each would
-need rather than being absent.
+Panels that could only ever be empty for an upcoming fixture — the closing
+line, the goal-rate model's expectation and the registered squads — are not
+here: every one of them reads a played match.
 """
 
 from __future__ import annotations
@@ -42,49 +28,14 @@ from dashboard import context, ui
 from dashboard.domain import competition as catalogue
 from dashboard.domain.match import (
     FEED_ONLY_PREFIX,
-    ExpectedGoals,
-    MarketPrice,
     Prediction,
-    Squad,
 )
-from dashboard.services import history, market, matchday, reports
+from dashboard.services import history, matchday, reports
 
 MATCH_PARAM = "match"
 """The query parameter every card links with. ``match?match=<match_id>``."""
 
 PICKER_FIXTURES = 25
-
-FUTURE_SECTIONS: tuple[tuple[str, str, str], ...] = (
-    (
-        "Shot-quality expected goals",
-        "unscheduled",
-        "The panel above is a <em>goal-rate</em> model's expectation, which is "
-        "not the same thing as xG from a shot map. The ingested feed carries "
-        "shots and shots on target and no expected-goals column, so a real xG "
-        "figure needs a second provider — and a shot-quality model fitted here "
-        "would be a modelling change with its own ablation, not a panel.",
-    ),
-    (
-        "Injuries, suspensions and the team sheet",
-        "no source",
-        "The squad panel above shows who is registered; the rest has nowhere "
-        "to come from: football-data.org has no injury endpoint at any "
-        "tier, and its free plan answers a finished match with an "
-        "<em>empty</em> <code>lineup</code> and <code>bench</code> — measured, "
-        "not assumed. So a registered squad is the honest ceiling here. The "
-        "model has never seen a team sheet either, which "
-        "<code>docs/MODEL_CARD.md</code> lists among its limitations.",
-    ),
-    (
-        "In-play statistics on this page",
-        "unscheduled",
-        "Live scores are on the home page's live strip, which is where a "
-        "minute and a changing score belong — this page is opened about a "
-        "match a reader has already picked. Per-minute statistics (shots, "
-        "possession) are a different feed from the fixture one, and no "
-        "provider here carries them.",
-    ),
-)
 
 
 def render() -> None:
@@ -95,16 +46,22 @@ def render() -> None:
         _picker(ctx)
         return
 
+    if match_id.startswith(FEED_ONLY_PREFIX):
+        # A live-feed card: open the table's fixture it shows, which the model can price.
+        twin = matchday.priced_twin(match_id, fixtures=ctx.fixtures, predictions=ctx.predictions)
+        if twin is not None:
+            match_id = twin
+            st.query_params[MATCH_PARAM] = twin
+
     row = _lookup(ctx, match_id)
     answer = _price(ctx, match_id)
     prediction = answer if isinstance(answer, Prediction) else None
     if row is None and prediction is None and match_id.startswith(FEED_ONLY_PREFIX):
         st.info(
-            "This card comes from the live fixture feed, which reports kick-offs "
-            "and scores. The feed is not joined to this project's match table, so "
-            "there is no forecast for this fixture here. Forecasts cover played "
-            "matches and the upcoming fixtures `make fixtures` prices — find either "
-            "club in **Search**, or pick a match below."
+            "This card comes from the live fixture feed, and no fixture the model "
+            "has priced matches it — the competition has no match history here "
+            "(the Champions League), or `make fixtures` has not built this round "
+            "yet. Find either club in **Search**, or pick a match below."
         )
         _picker(ctx)
         return
@@ -121,12 +78,8 @@ def render() -> None:
 
     _header(row, prediction)
     _forecast(ctx, row, prediction)
-    _market(ctx, match_id, prediction)
-    _expected_goals(ctx, match_id, row)
-    _availability(ctx, row)
     if row is not None:
         _history(ctx, row)
-    _future()
 
 
 # ---- finding the fixture -----------------------------------------------------
@@ -164,7 +117,7 @@ def _price(ctx: context.Context, match_id: str) -> Prediction | str:
 def _picker(ctx: context.Context) -> None:
     """What the page shows when it was opened without a fixture."""
     st.title("Pick a match")
-    st.caption("Every card on this dashboard links here. Or choose one directly.")
+    st.caption("Open any fixture the model can price for its forecast.")
     found = ctx.predictions.priceable(limit=PICKER_FIXTURES)
     if not found:
         st.info(
@@ -172,15 +125,13 @@ def _picker(ctx: context.Context) -> None:
             or "The service has no fixtures indexed yet. Run `make model` and `make data`."
         )
         return
-    labels = {
-        f"{one.date}  {one.home_team} v {one.away_team}  "
-        f"({catalogue.short_label(one.competition_id)})": one.match_id
-        for one in found
-    }
-    chosen = st.selectbox("Fixture", list(labels))
-    if st.button("Open", type="primary"):
-        st.query_params[MATCH_PARAM] = labels[chosen]
-        st.rerun()
+    # No probability bars: that would be one HTTP call per card, and the page they open has it.
+    ui.card_grid(
+        [
+            ui.match_card(one, competition_label=catalogue.short_label(one.competition_id))
+            for one in matchday.with_crests(found, ctx.fixtures)
+        ]
+    )
 
 
 # ---- the page ----------------------------------------------------------------
@@ -336,220 +287,6 @@ def _bin_for(table: pd.DataFrame, stated: float) -> pd.Series | None:
     return None if inside.empty else inside.iloc[0]
 
 
-def _market(ctx: context.Context, match_id: str, prediction: Prediction | None) -> None:
-    """The closing line beside the forecast, and what the distance is worth.
-
-    Showing both prices invites the comparison to be made without the folds
-    that make it meaningful, so this panel does not show them bare.
-    The comparison is made *with* the folds, in
-    :func:`src.pipelines.report.market_comparison`, and what this panel puts on
-    the screen is the answer rather than the invitation.
-
-    That answer is not the one a reader expects. A gap between the model and
-    the price reads like an edge; over 61,889 out-of-sample forecasts it is the
-    opposite — the model's deficit against the closing line grows with the size
-    of the gap, and where the two are furthest apart the market gets *sharper*.
-    So the caption says what the gap measures, which is this model's likely
-    error on this fixture.
-    """
-    ui.section("What the market said", "the closing line, with the overround removed")
-    quoted = market.price(ctx.odds, match_id)
-    if quoted is None:
-        st.caption(
-            "No closing price for this fixture. The feed carries odds for about "
-            "81% of the table — effectively everything from 2003 — and for "
-            "nothing that has not been played."
-            if ctx.odds.available
-            else "No match table, so no closing price. Run `make data`."
-        )
-        return
-
-    st.markdown(ui.probability_bar(quoted.probabilities), unsafe_allow_html=True)
-    columns = st.columns(3)
-    for column, (label, key) in zip(
-        columns, (("Home", "home"), ("Draw", "draw"), ("Away", "away")), strict=True
-    ):
-        column.metric(label, f"{quoted.probabilities[key]:.1%}", f"{quoted.odds[key]:.2f}")
-    st.caption(
-        f"Decimal prices below each percentage. The book paid out on "
-        f"{1 + quoted.overround:.1%} of the stake — the overround — and it is "
-        "removed proportionally, which is the transparent way rather than the "
-        "most accurate one: the favourite carries more of the margin than an "
-        "equal share. `src/evaluation/market.py` does it once, for this page "
-        "and for the benchmark alike."
-    )
-
-    if prediction is None:
-        return
-    _disagreement(ctx, prediction, quoted)
-
-
-def _disagreement(ctx: context.Context, prediction: Prediction, quoted: MarketPrice) -> None:
-    """How far the model is from the price, and what that distance was worth.
-
-    The verdict is a row of a table `make card` wrote, not a computation here.
-    A dashboard that recomputed the measurement to draw one caption
-    would be a second number to reconcile with the one in the documents.
-    """
-    apart = market.gap(prediction, quoted)
-    loaded = reports.reports(ctx.reports_dir)
-    found = market.verdict(loaded.market, apart)
-
-    ui.section("How far apart, and what that is worth", "measured on the walk-forward folds")
-    if found is None:
-        st.info(
-            f"The model and the market are **{apart:.1%}** apart on this fixture. "
-            f"What a gap that size has been worth is measured by `{market.BUILD_COMMAND}`, "
-            "which has not been run here."
-        )
-        return
-
-    deficit = float(found["model_minus_market"])
-    columns = st.columns(3)
-    columns[0].metric("Apart", f"{apart:.1%}")
-    columns[1].metric("Model minus market, in this band", f"{deficit:+.4f}")
-    columns[2].metric("Over", f"{int(found['n']):,} forecasts")
-    st.caption(
-        f"On the {int(found['n']):,} walk-forward forecasts that were "
-        f"**{found['band']}** away from the closing line, this model scored "
-        f"{float(found['model']):.4f} against the market's {float(found['market']):.4f}, "
-        f"and beat it on {float(found['model_better']):.1%} of them. "
-        "**A gap is not an edge.** The deficit grows with the distance — 0.0009 "
-        "where the two nearly agree, 0.1835 where they are more than twenty "
-        "points apart — so the honest reading of a wide gap here is that this "
-        "model is more likely to be wrong about this match, not that the price "
-        "is. See `docs/EVALUATION.md`."
-    )
-
-
-def _expected_goals(ctx: context.Context, match_id: str, row: pd.Series | None) -> None:
-    """What the fitted goal model expects each side to score.
-
-    Not xG. These are the two Poisson rates the Dixon-Coles model
-    fits, and the distinction is the whole reason this panel is labelled the
-    way it is — nothing in this project has ever seen a shot map. They are
-    worth showing because the three-class probability this project reports is a
-    sum over a Poisson grid built from exactly these two numbers, so a reader
-    asking why a forecast leans one way is looking at its inputs.
-    """
-    ui.section("Expected goals", "what the fitted goal-rate model expects — not shot-quality xG")
-    rates = market.goals(ctx.ratings_path, match_id)
-    if rates is None and row is None:
-        st.caption(
-            "No goal rates for this fixture. This panel reads the ratings table, "
-            "which holds matches in the match table, and this one is not in it yet."
-        )
-        return
-    if rates is None:
-        st.caption(
-            "No goal rates for this fixture. Dixon-Coles refits per competition "
-            "on a rolling window and has nothing to say about a match before its "
-            "first fit; a clean checkout has no ratings table at all — "
-            "`make ratings` builds one."
-        )
-        return
-    _rates(rates, row)
-
-
-def _rates(rates: ExpectedGoals, row: pd.Series | None) -> None:
-    """The two rates, the total and the supremacy, with the caveat under them."""
-    home = str(row["home_team"]) if row is not None else "Home"
-    away = str(row["away_team"]) if row is not None else "Away"
-    columns = st.columns(4)
-    columns[0].metric(home, f"{rates.home:.2f}")
-    columns[1].metric(away, f"{rates.away:.2f}")
-    columns[2].metric("Total", f"{rates.total:.2f}")
-    columns[3].metric("Supremacy", f"{rates.supremacy:+.2f}")
-    st.caption(
-        "Poisson rates from `dc_home_lambda` and `dc_away_lambda` in the ratings "
-        "table, fitted on matches strictly earlier than this one — the property "
-        "`src/validation/temporal.py` proves on every build. Expected goals from "
-        "a *goal* model, which is a different measurement from expected goals "
-        "off a shot map, and this project ingests no shot map."
-    )
-
-
-def _availability(ctx: context.Context, row: pd.Series | None) -> None:
-    """Both registered squads, and the three things they are not.
-
-    The original scope was "player availability, injuries, transfers";
-    what a reachable source actually answers is *who is
-    registered*, and this panel is named and captioned for that rather than for
-    the ask. A squad is an upper bound on availability: it does not know who is
-    injured, who is suspended or who is being left out, and no feed this
-    project can reach does either.
-
-    Nothing here reaches the model. The forecast above was produced by a model
-    fitted on scorelines, and no column of any table in this repository has
-    ever held a player's name — so this panel is beside the forecast rather
-    than inside it, and saying so is most of what it is for.
-    """
-    ui.section("Who is registered", "squads, which are not team sheets")
-    if row is None:
-        st.caption(
-            "This fixture is not in the match table, so there is no competition "
-            "to look a squad up in."
-        )
-        return
-    if not ctx.squads.available:
-        st.caption(matchday.reason(ctx.squads))
-        return
-
-    competition_id = str(row["competition_id"])
-    # The reason is read immediately after each lookup, not once at the end.
-    # A provider carries the *last* failure it had, so asking after both clubs
-    # would caption a missing home squad with why the away one failed — or,
-    # when the away lookup succeeded, with nothing at all.
-    found: list[tuple[str, Squad | None, str]] = []
-    for column in ("home_team", "away_team"):
-        team = str(row[column])
-        squad = ctx.squads.squad(team, competition_id=competition_id)
-        found.append((team, squad, "" if squad is not None else matchday.reason(ctx.squads)))
-
-    if all(squad is None for _, squad, _ in found):
-        st.caption(found[0][2])
-        return
-    for side, (team, squad, why) in zip(st.columns(2), found, strict=True):
-        with side:
-            _squad(team, squad, why)
-    st.caption(
-        f"Registered squads from {ctx.squads.name}, reread hourly. "
-        "**Registered is not available**: a squad list does not know who is "
-        "injured, suspended or rested, and it is the whole of what this feed "
-        "carries. Nothing on this panel reached the forecast above — no table "
-        "in this project holds a player's name."
-    )
-
-
-def _squad(team: str, squad: Squad | None, error: str) -> None:
-    """One club's panel, or the sentence saying why there is not one."""
-    st.markdown(f"**{team}**")
-    if squad is None:
-        st.caption(error)
-        return
-    age = squad.median_age()
-    columns = st.columns(2)
-    columns[0].metric("Registered", squad.size)
-    columns[1].metric("Median age", f"{age:.1f}" if age is not None else "—")
-    st.caption(
-        ", ".join(f"{count} {position.lower()}" for position, count in squad.positions.items())
-        + (f" · listed as {squad.team}" if squad.team != team else "")
-    )
-    with st.expander(f"The {squad.size} names"):
-        st.dataframe(
-            pd.DataFrame(
-                {
-                    "player": [one.name for one in squad.players],
-                    "position": [one.position or "" for one in squad.players],
-                    "age": [one.age() for one in squad.players],
-                    "nationality": [one.nationality or "" for one in squad.players],
-                }
-            ),
-            width="stretch",
-            hide_index=True,
-        )
-
-
 def _history(ctx: context.Context, row: pd.Series) -> None:
     """Form and head-to-head: what the two clubs have actually been doing.
 
@@ -581,18 +318,4 @@ def _history(ctx: context.Context, row: pd.Series) -> None:
         meetings[["date", "competition_id", "home_team", "home_goals", "away_goals", "away_team"]],
         width="stretch",
         hide_index=True,
-    )
-
-
-def _future() -> None:
-    """The sections with no source, named rather than absent."""
-    ui.section("Not on this page yet", "and what each one needs")
-    for title, status, body in FUTURE_SECTIONS:
-        with st.expander(f"{title} — {status}"):
-            st.markdown(body, unsafe_allow_html=True)
-    st.caption(
-        "What each feature block is worth to the model is measured in "
-        "`docs/EXPLAINABILITY.md`. Per-fixture attribution — this match's "
-        "SHAP values — is a serving change rather than a page: the service "
-        "would have to return them."
     )

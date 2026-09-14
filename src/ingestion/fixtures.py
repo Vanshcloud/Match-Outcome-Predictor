@@ -175,8 +175,25 @@ def season_for(when: pd.Timestamp, played: Played | None) -> str:
     """
     if played is not None and (when - played.date).days <= SEASON_BREAK_DAYS:
         return played.season
+    if played is not None and "-" not in played.season:
+        # A calendar-year league (Brazil files "2026"): a new season is the year.
+        return str(when.year)
     start = when.year if when.month >= 7 else when.year - 1
     return f"{start}-{(start + 1) % 100:02d}"
+
+
+def fixture_divisions(registry: Registry) -> dict[str, Competition]:
+    """Competitions by the ``Div`` code a fixture row carries.
+
+    Every main-feed division, plus each per-country competition that is the only
+    one in its file — its country code names it without a league filter. Brazil
+    is one; Argentina, whose file mixes a league and a cup, is not.
+    """
+    divisions = {competition.code: competition for competition in registry.for_feed(Feed.MAIN)}
+    for competition in registry.for_feed(Feed.EXTRA):
+        if competition.league_filter is None:
+            divisions.setdefault(competition.code, competition)
+    return divisions
 
 
 def to_frame(
@@ -216,7 +233,7 @@ def to_frame(
             not fixtures — the canonical row for them is on its way through
             `make data`.
     """
-    divisions = {competition.code: competition for competition in registry.for_feed(Feed.MAIN)}
+    divisions = fixture_divisions(registry)
     known = played or {}
 
     records: list[dict[str, object]] = []

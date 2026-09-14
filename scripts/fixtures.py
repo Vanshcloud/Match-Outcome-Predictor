@@ -37,13 +37,16 @@ empty so that the service stops offering last week's.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd  # noqa: E402
 
+from src.ingestion import fixture_feed  # noqa: E402
 from src.ingestion import fixtures as feed  # noqa: E402
 from src.ingestion.registry import load_registry  # noqa: E402
 from src.pipelines.fixtures import run_upcoming  # noqa: E402
@@ -130,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
                 logger.warning("using the copy already at %s", path)
 
     rows = feed.read(path)
+    if not args.offline:
+        rows = rows + _feed_rows(rows, matches, today, args.days)
     fixtures = feed.to_frame(
         rows,
         load_registry(),
@@ -160,6 +165,43 @@ def main(argv: list[str] | None = None) -> int:
     print(f"written to {report.output}")
     print("\nThe service indexes its tables at startup: restart it to price these.")
     return 0
+
+
+def _feed_rows(
+    published: list[dict[str, str]], matches: pd.DataFrame, today: pd.Timestamp, days: int
+) -> list[dict[str, str]]:
+    """The live feed's fixtures the published list does not have yet.
+
+    The published list is a few days long; the feed has the week. Rows the list
+    already carries are left to it. No key, or no answer, is the old behaviour
+    with a line saying so — never a failed build.
+    """
+    api_key = os.environ.get(fixture_feed.API_KEY_ENV, "")
+    if not api_key:
+        logger.info(
+            "no %s set; fixtures come from the published list only", fixture_feed.API_KEY_ENV
+        )
+        return []
+    try:
+        with HttpClient() as client:
+            found = fixture_feed.fetch(client, api_key, since=today.date(), days=days)
+    except Exception as error:  # noqa: BLE001 - reported, then the published list alone
+        logger.warning("the live fixture feed did not answer: %s", error)
+        return []
+    have = {(row.get("Div"), row.get("Date"), row.get("HomeTeam")) for row in published}
+    added = [
+        row
+        for row in fixture_feed.to_rows(found, load_registry(), fixture_feed.recent_clubs(matches))
+        if (row["Div"], row["Date"], row["HomeTeam"]) not in have
+    ]
+    by_division = Counter(row["Div"] for row in added)
+    logger.info(
+        "%d fixture(s) added from the live feed (%d matches listed): %s",
+        len(added),
+        len(found),
+        ", ".join(f"{code} {count}" for code, count in sorted(by_division.items())),
+    )
+    return added
 
 
 if __name__ == "__main__":

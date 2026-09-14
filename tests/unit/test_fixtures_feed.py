@@ -18,6 +18,7 @@ from src.ingestion import fixtures as feed
 from src.ingestion.base import make_match_id
 from src.ingestion.csv_reader import ProviderFileError
 from src.ingestion.football_data import PROVIDER_NAME
+from src.ingestion.registry import load_registry
 from tests.factories import league_registry
 
 TODAY = pd.Timestamp("2026-09-09")
@@ -70,6 +71,13 @@ class TestSeasonFor:
     def test_the_spring_half_belongs_to_the_season_that_opened(self) -> None:
         assert feed.season_for(pd.Timestamp("2027-02-14"), None) == "2026-27"
 
+    def test_a_calendar_year_league_keeps_its_year_labels(self) -> None:
+        """Brazil files its seasons as "2026", mid-season and across the new year."""
+        played = feed.Played(date=pd.Timestamp("2026-09-01"), season="2026")
+        assert feed.season_for(pd.Timestamp("2026-09-15"), played) == "2026"
+        ended = feed.Played(date=pd.Timestamp("2026-12-06"), season="2026")
+        assert feed.season_for(pd.Timestamp("2027-02-01"), ended) == "2027"
+
 
 class TestToFrame:
     def test_the_id_is_the_one_the_played_match_will_carry(self) -> None:
@@ -99,6 +107,14 @@ class TestToFrame:
 
     def test_a_row_with_a_score_is_a_match_and_is_dropped(self) -> None:
         assert feed.to_frame([row(home_goals="2", away_goals="1")], league_registry()).empty
+
+    def test_a_per_country_competition_is_named_by_its_country_code(self) -> None:
+        """Brazil is alone in its file; Argentina's file holds two competitions,
+        so its code names neither."""
+        divisions = feed.fixture_divisions(load_registry())
+        assert divisions["BRA"].id == "BRA_1"
+        assert "ARG" not in divisions
+        assert divisions["E0"].id == "ENG_1"
 
     def test_a_division_the_registry_does_not_carry_is_skipped(self) -> None:
         assert feed.to_frame([row(div="SP1")], league_registry()).empty

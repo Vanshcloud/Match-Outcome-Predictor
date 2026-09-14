@@ -275,8 +275,7 @@ The share of matches the model scores better on falls monotonically, 49.2% to
 That rules out the reading a value detector rests on. "The model says 45% and
 the price says 38%, so there is value in the difference" is a testable claim,
 and the test is above: the wider that difference, the more likely it is that
-the model is the one that is wrong. The dashboard's match page shows the comparison with that sentence attached rather than a stake
-suggestion — see [DASHBOARD.md](DASHBOARD.md#the-market-and-what-a-gap-from-it-means).
+the model is the one that is wrong.
 
 **What this is not.** It is not a claim that a model *cannot* beat a closing
 line, and it is not a betting result: log loss is a scoring rule, not a profit

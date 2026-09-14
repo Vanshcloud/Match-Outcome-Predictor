@@ -51,6 +51,10 @@ def configure_logging(
     handler.setFormatter(logging.Formatter(fmt))
     root.addHandler(handler)
     root.setLevel(level.upper())
+    # urllib3 logs every request line — method, path and query — at DEBUG. A
+    # webhook URL is a credential whose secret *is* its path, so a DEBUG run
+    # would write it to the log. Its warnings and errors still come through.
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     _configured = True
 

@@ -121,7 +121,7 @@ def _is_this_service(health: Mapping[str, Any]) -> bool:
     something else is on the port. Checked by shape rather than by matching a
     component's name: the set of components is a thing this project will add to
     — an odds provider, a cache — and a check that enumerated them would fail
-    on the milestone that adds one, which is the wrong thing to be brittle
+    on the change that adds one, which is the wrong thing to be brittle
     about.
     """
     return isinstance(health.get("components"), list)
@@ -140,12 +140,18 @@ def _degraded(health: Mapping[str, Any]) -> str:
 
 def as_prediction(match_id: str, answer: Mapping[str, Any]) -> Prediction:
     """A ``/predict`` body as the domain type. The one place that knows the wire."""
+    fixture = answer.get("fixture")
+    fixture = fixture if isinstance(fixture, Mapping) else {}
     return Prediction(
         match_id=match_id,
         probabilities=dict(answer["probabilities"]),
         model=str(answer.get("model", "")),
         model_version=str(answer.get("model_version", "")),
         in_sample=bool(answer.get("in_sample", False)),
+        home_team=str(fixture.get("home_team", "")),
+        away_team=str(fixture.get("away_team", "")),
+        competition_id=str(fixture.get("competition_id", "")),
+        date=_as_date(fixture["date"]) if fixture.get("date") else None,
     )
 
 

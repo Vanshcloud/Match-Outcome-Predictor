@@ -24,5 +24,10 @@ font = "sans serif"
 maxUploadSize = 1
 headless = true
 
+[client]
+# Hides Streamlit's developer menu and its "Deploy" button, which are for
+# whoever is editing the app rather than for a reader of it.
+toolbarMode = "minimal"
+
 [browser]
 gatherUsageStats = false

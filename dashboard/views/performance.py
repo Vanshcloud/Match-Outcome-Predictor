@@ -1,13 +1,12 @@
-"""How good the model is, measured — the three panels Milestone 12 shipped.
+"""How good the model is, measured.
 
-Unchanged in substance from the tabs this page had before it became an
-application: the scoreboard, the reliability diagram and the per-competition
-breakdown, moved onto a page of their own so the home page can be about
-football and this one about the forecaster.
-
-Milestone 19 adds a fourth panel, and it is the only one on this dashboard
-whose subject is not the backtest: what the *service* actually answered, scored
-against what happened afterwards.
+A headline — what it predicts, what it scores, what the closing line scores,
+how reliable it is — over five panels: the scoreboard, the reliability diagram
+and the per-competition breakdown; what the *service* actually answered,
+scored against what happened afterwards, the only panel here whose subject is
+not the backtest; and the
+limitations, so that what the model must not be read as saying sits on the page
+that says how good it is rather than only in the card.
 
 **It computes nothing.** Every table here is produced by
 :mod:`src.pipelines.report`, :mod:`src.pipelines.backtest` or
@@ -23,12 +22,30 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from dashboard import context
+from dashboard import context, ui
 from dashboard.charts import competition_bars, reliability_diagram, score_bars
 from dashboard.domain import competition as catalogue
 from dashboard.services import reports as report_service
 from src.evaluation.archive import horizon
 from src.models.ensemble import SHIPPED
+
+LIMITATIONS: tuple[str, ...] = (
+    "**It does not beat the closing line** in any competition it was scored on. "
+    "It is a forecaster to be measured, not a betting signal.",
+    "**Forecasts for played matches are in-sample.** The served model is fitted "
+    "on the whole history, so its answer for a played match comes from a model "
+    "that saw the result; the match page flags these. The numbers on this page "
+    "are walk-forward and out of sample.",
+    "**Inputs are what free, match-level data carries:** results, shots where the "
+    "competition records them, dates and ratings. No lineups, injuries, transfers "
+    "or shot-level xG.",
+    "**A club with no history** gets forecasts close to the base rates.",
+    "**Reliability varies by competition,** and the rare statements of 80% or more "
+    "are somewhat overconfident. The By competition tab shows where.",
+    "**Pre-match only.** Nothing is fitted on in-play state, and the live scores "
+    "elsewhere on this dashboard never change a forecast.",
+)
+"""What the model must not be read as saying. The same limits as the model card."""
 
 WORTH_SEEING: tuple[float, ...] = (0.10, 0.05, 0.02, 0.0163, 0.01)
 """The shifts the horizon table is priced for, the same five `make archive`
@@ -51,9 +68,10 @@ def render() -> None:
     absent = reports.missing()
     if absent:
         st.warning("Missing: " + "; ".join(absent))
+    summary_panel(reports)
 
-    scoreboard, calibration, competitions, served = st.tabs(
-        ["Scoreboard", "Reliability", "By competition", "What we served"]
+    scoreboard, calibration, competitions, served, limits = st.tabs(
+        ["Scoreboard", "Reliability", "By competition", "What we served", "Limitations"]
     )
     with scoreboard:
         scoreboard_panel(reports)
@@ -63,6 +81,56 @@ def render() -> None:
         competitions_panel(reports)
     with served:
         archive_panel(reports)
+    with limits:
+        limitations_panel()
+
+
+def summary_panel(reports: report_service.Reports) -> None:
+    """The headline numbers, each read from a report, before any tab.
+
+    What the model predicts, how it was scored and against what, in the first
+    screen of the page. Nothing here is computed from anything but the same
+    tables the tabs below render.
+    """
+    if reports.scores is None or reports.forecasts is None:
+        return
+    if reports.scores.empty or reports.forecasts.empty:
+        return
+    table = report_service.leaderboard(reports.scores).set_index("forecaster")
+    rows = report_service.filtered_forecasts(reports.forecasts)
+    error = report_service.calibration_error(report_service.reliability_table(rows))
+
+    columns = st.columns(4)
+    columns[0].metric("Out-of-sample forecasts", f"{len(rows):,}")
+    columns[1].metric("Model log loss", _score(table, SHIPPED))
+    columns[2].metric("Closing-line log loss", _score(table, "bookmaker"))
+    columns[3].metric("Pooled calibration error", f"{error:.4f}")
+    st.caption(
+        "Predicts the full-time result (home, draw or away) before kick-off. "
+        f"Scored on {rows['fold'].nunique()} expanding walk-forward folds, each "
+        "trained only on matches before its first evaluation day. Log loss is over "
+        f"the {int(table['n'].iloc[0]):,} matches every forecaster could price, and "
+        "lower is better. The closing line is the benchmark, never a model input."
+    )
+
+
+def _log_loss_text(value: float) -> str:
+    """One log loss for the scoreboard, with infinity written out."""
+    return f"{value:.4f}" if np.isfinite(value) else "\u221e"
+
+
+def _score(table: pd.DataFrame, forecaster: str) -> str:
+    """One forecaster's pooled log loss, or a dash when it was not scored."""
+    if forecaster not in table.index:
+        return "—"
+    return f"{table.loc[forecaster, 'log_loss']:.4f}"
+
+
+def limitations_panel() -> None:
+    """What the model must not be read as saying."""
+    st.subheader("What this model is not")
+    st.markdown("\n".join(f"- {one}" for one in LIMITATIONS))
+    st.caption("The generated model card, `docs/MODEL_CARD.md`, lists them with the evidence.")
 
 
 def _missing(what: str, command: str) -> None:
@@ -83,17 +151,34 @@ def scoreboard_panel(reports: report_service.Reports) -> None:
         "Log loss and RPS are the metrics models are selected on; accuracy is "
         "reported and is not one of them."
     )
-    st.plotly_chart(score_bars(table), width="stretch")
-    st.dataframe(table, width="stretch", hide_index=True)
+    st.plotly_chart(score_bars(table, labels=ui.FORECASTER_LABELS), width="stretch")
+    st.dataframe(
+        table.assign(
+            forecaster=table["forecaster"].map(ui.forecaster_label),
+            # A string, because a NumberColumn renders an infinite log loss as
+            # an empty cell, and a blank where every other row has a number
+            # reads as data this project failed to compute rather than as the
+            # one forecaster the metric is unbounded for.
+            log_loss=table["log_loss"].map(_log_loss_text),
+        ),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "n": st.column_config.NumberColumn("matches", format="localized"),
+            "log_loss": st.column_config.TextColumn("log loss"),
+            "rps": st.column_config.NumberColumn("RPS", format="%.4f"),
+            "accuracy": st.column_config.NumberColumn("accuracy", format="percent"),
+        },
+    )
     st.caption(
-        "`home_always` scores infinite log loss and it is not clipped — a "
+        "Always home scores infinite log loss and it is not clipped — a "
         "forecast that ruled out what happened was infinitely wrong. RPS still "
         "ranks it, because RPS is bounded and knows H, D and A are ordered."
     )
 
 
 def reliability_panel(reports: report_service.Reports) -> None:
-    """The panel the milestone exists for: reliability, filtered by the reader.
+    """The page's central panel: reliability, filtered by the reader.
 
     The model card reports one pooled calibration error. The interesting
     question is what it is an average over, and that is a filter rather than a
@@ -127,13 +212,13 @@ def reliability_panel(reports: report_service.Reports) -> None:
     scope = (
         f"all {len(competitions)} competitions"
         if not chosen_competitions
-        else ", ".join(chosen_competitions)
+        else ", ".join(catalogue.short_label(one) for one in chosen_competitions)
     )
 
     metrics = st.columns(3)
     metrics[0].metric("Matches", f"{len(rows):,}")
     metrics[1].metric("Calibration error", f"{error:.4f}")
-    metrics[2].metric("Model", SHIPPED)
+    metrics[2].metric("Model", ui.forecaster_label(SHIPPED))
 
     st.plotly_chart(reliability_diagram(table, title=f"Reliability — {scope}"), width="stretch")
     st.dataframe(table, width="stretch", hide_index=True)
@@ -157,21 +242,36 @@ def competitions_panel(reports: report_service.Reports) -> None:
         return
 
     rows = report_service.filtered_forecasts(reports.forecasts)
-    worst = report_service.worst_competitions(rows)
+    worst = _named(report_service.worst_competitions(rows))
     st.plotly_chart(competition_bars(worst), width="stretch")
-    st.dataframe(worst, width="stretch", hide_index=True)
+    st.dataframe(
+        worst.rename(
+            columns={"competition_id": "competition", "calibration_error": "calibration error"}
+        ),
+        width="stretch",
+        hide_index=True,
+    )
 
     if reports.has_scores and reports.scores is not None:
         st.markdown("**Log loss per competition, every forecaster**")
         st.dataframe(
-            report_service.by_competition(reports.scores), width="stretch", hide_index=True
+            _named(report_service.by_competition(reports.scores)).rename(
+                columns={"competition_id": "competition", "n": "matches", **ui.FORECASTER_LABELS}
+            ),
+            width="stretch",
+            hide_index=True,
         )
+
+
+def _named(table: pd.DataFrame) -> pd.DataFrame:
+    """The same rows with each competition id replaced by the name a reader knows."""
+    return table.assign(competition_id=table["competition_id"].map(catalogue.short_label))
 
 
 def archive_panel(reports: report_service.Reports) -> None:
     """What the service served, scored — and whether that can mean anything yet.
 
-    Milestone 19. Every other panel on this page is about the walk-forward
+    Every other panel on this page is about the walk-forward
     backtest, which is a measurement of a model. This one is about the
     deployment: the forecasts that were actually answered, joined to the
     results that arrived afterwards, against what the folds said the same model
@@ -197,15 +297,16 @@ def archive_panel(reports: report_service.Reports) -> None:
         )
         return
 
-    table = reports.archive
-    st.dataframe(table, width="stretch", hide_index=True)
-    for _, row in table.iterrows():
+    for _, row in reports.archive.iterrows():
         _version(row)
 
 
 def _version(row: pd.Series) -> None:
     """One served model version: what it answered, and what that is worth."""
-    st.markdown(f"**{row['model']} {row['model_version']}**")
+    st.markdown(
+        f"**{ui.forecaster_label(str(row['model']))}** · version {row['model_version']} · "
+        f"served {row['first_served']:%d %b %Y} to {row['last_served']:%d %b %Y}"
+    )
     counts = st.columns(4)
     counts[0].metric("Logged", f"{int(row['logged']):,}")
     counts[1].metric("In sample", f"{int(row['in_sample']):,}")

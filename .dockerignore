@@ -29,4 +29,12 @@ scripts/
 htmlcov/
 
 .env
+.env.*
+# The dashboard image copies .streamlit/ for its config.toml; the optional
+# sign-in's OIDC client secret and cookie secret must not ride along with it.
+.streamlit/secrets.toml
+# Local audit notes, kept out of the repository by .git/info/exclude. No COPY
+# reaches them, and they have no business in a build context either.
+*_AUDIT_REPORT.md
+*_PUBLICATION_REPORT.md
 .DS_Store

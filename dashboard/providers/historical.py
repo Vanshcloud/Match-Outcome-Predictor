@@ -1,7 +1,7 @@
 """Results and closing prices, from the table this project's pipelines wrote.
 
 The providers that work today: the only source of a scoreline anywhere in this
-application, and — since Milestone 17 — the only source of a bookmaker's price.
+application, and the only source of a bookmaker's price.
 Both read the same canonical table, because the closing odds are three columns
 of it; two modules would be two opens of one file. It reads the canonical match table through
 :func:`src.pipelines.tables.read_matches` — through the storage layer, like
@@ -124,10 +124,10 @@ class HistoricalOdds:
     """The bookmaker's closing line, out of the same canonical table.
 
     **The odds are read here and nowhere else in this package.** They are
-    deliberately not in :data:`~src.pipelines.tables.RESULT_COLUMNS` — Milestone
-    12 kept them off the reader's columns on the grounds that a page showing
+    deliberately not in :data:`~src.pipelines.tables.RESULT_COLUMNS`, which
+    keeps them off the reader's columns on the grounds that a page showing
     both invites the model/market comparison to be made without the folds that
-    make it meaningful. Milestone 17 makes that comparison properly instead of
+    make it meaningful. The match page makes that comparison properly instead of
     hiding it, and this is the narrow read that feeds it: three columns and a
     key, never joined to the twelve a result is displayed by.
 

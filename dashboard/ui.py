@@ -54,12 +54,39 @@ CREST_COLOURS: Final[tuple[str, ...]] = (
 """The palette a generated crest picks from.
 
 There are no club badges in this repository and there is no licence to ship
-any, so a crest is the club's initials on a colour derived from its name. The
+any. Where a fixture feed supplies a badge URL the browser loads it from
+that feed; everywhere else a crest is the club's initials on a colour derived
+from its name. The
 colour is stable — the same club is the same colour on every page and between
 sessions — because a reader scanning a column of forty cards navigates by
 colour before they read a word, and a palette that reshuffled per render would
 be worse than no colour at all.
 """
+
+
+FORECASTER_LABELS: dict[str, str] = {
+    "bookmaker": "Closing line, overround removed",
+    "ensemble-calibrated": "Blend, calibrated (shipped)",
+    "ensemble": "Blend, uncalibrated",
+    "xgboost": "XGBoost",
+    "xgboost-calibrated": "XGBoost, calibrated",
+    "lightgbm": "LightGBM",
+    "catboost": "CatBoost",
+    "logistic_regression": "Logistic regression",
+    "random_forest": "Random forest",
+    "mlp": "MLP",
+    "dixon_coles": "Dixon-Coles rating",
+    "class_prior": "Class prior",
+    "home_always": "Always home",
+}
+"""Forecaster ids as a reader names them. An id with no entry is shown as is."""
+
+
+def forecaster_label(name: str) -> str:
+    """A forecaster id as a reader names it: ``"ensemble-calibrated"`` is
+    ``"Blend, calibrated (shipped)"``. The id itself stays the key in every
+    report, the API and the artefact; only the page says it differently."""
+    return FORECASTER_LABELS.get(name, name)
 
 
 # ---- small pieces ------------------------------------------------------------
@@ -68,9 +95,9 @@ be worse than no colour at all.
 def crest_html(team: str, url: str | None = None) -> str:
     """A club's badge: the provider's image where there is one, initials where not.
 
-    ``url`` is filled by no source in this repository. It is the field a badge
-    provider starts writing, and this is the one function that has to change
-    when it does.
+    ``url`` is filled only by the football-data.org fixture feed, which
+    returns an ``https`` crest URL per club; the image is loaded from there
+    by the browser and never stored in this repository.
     """
     if url:
         return f'<img class="mop-crest" src="{html.escape(url, quote=True)}" alt="">'
@@ -126,13 +153,13 @@ def probability_bar(probabilities: Mapping[str, float], *, legend: bool = True) 
         f' title="{key} {width:.1f}%"></span>'
         for key, width in widths.items()
     )
-    bar = f'<div class="mop-bar">{segments}</div>'
+    bar = f'<span class="mop-bar">{segments}</span>'
     if not legend:
         return bar
     labels = "".join(
         f"<span>{key.capitalize()} <b>{width:.0f}%</b></span>" for key, width in widths.items()
     )
-    return f'{bar}<div class="mop-legend">{labels}</div>'
+    return f'{bar}<span class="mop-legend">{labels}</span>'
 
 
 def _percentages(probabilities: Mapping[str, float]) -> dict[str, float]:
@@ -217,9 +244,9 @@ def section(title: str, note: str = "") -> None:
 def placeholder(title: str, body: str) -> None:
     """What a section that has no provider yet says.
 
-    A rendered, deliberate sentence rather than an empty column. Milestone 12
-    ships the architecture for live fixtures and not the fixtures, and a screen
-    that was simply blank there would read as a bug rather than as a boundary.
+    A rendered, deliberate sentence rather than an empty column. Live fixtures
+    need an optional provider, and a screen that was simply blank without one
+    would read as a bug rather than as a boundary.
     """
     st.markdown(
         f'<div class="mop-placeholder"><b>{html.escape(title)}</b><br>{body}</div>',
@@ -242,6 +269,12 @@ def match_card(
     forecast card. A page listing two hundred finished matches does not ask the
     service to price all of them — that would be two hundred HTTP calls behind
     one scroll — so it renders the same card without a bar.
+
+    **Only inline elements inside the anchor.** Streamlit's markdown wraps the
+    card in a ``<p>``, and a ``<p>`` cannot hold a ``<div>``: the browser closes
+    the anchor at the first one and re-opens it around every block, so a card
+    built from divs renders as five separate fragments. Every piece is a
+    ``<span>`` that the stylesheet lays out as a block or a flex row.
     """
     top = _card_top(fixture, competition_label)
     body = _card_sides(fixture)
@@ -258,8 +291,8 @@ def _card_top(fixture: Fixture, competition_label: str | None) -> str:
         minute = f"{fixture.minute}'" if fixture.minute is not None else "live"
         parts.append(pill(minute, live=True))
     parts.append('<span class="spacer"></span>')
-    parts.append(f"<span>{html.escape(_when(fixture))}</span>")
-    return f'<div class="mop-card-top">{"".join(parts)}</div>'
+    parts.append(f'<span class="mop-when">{html.escape(_when(fixture))}</span>')
+    return f'<span class="mop-card-top">{"".join(parts)}</span>'
 
 
 def _when(fixture: Fixture) -> str:
@@ -287,8 +320,8 @@ def _side(team: str, goals: int | None, crest: str | None, *, dim: bool) -> str:
     score = f'<span class="mop-score">{goals}</span>' if goals is not None else ""
     classes = "mop-row dim" if dim else "mop-row"
     return (
-        f'<div class="{classes}"><span class="mop-side">{crest_html(team, crest)}'
-        f'<span class="mop-team">{html.escape(team)}</span></span>{score}</div>'
+        f'<span class="{classes}"><span class="mop-side">{crest_html(team, crest)}'
+        f'<span class="mop-team">{html.escape(team)}</span></span>{score}</span>'
     )
 
 
@@ -296,19 +329,48 @@ def _int(value: int | None) -> int:
     return 0 if value is None else value
 
 
-def card_grid(
-    cards: Sequence[str], *, columns: int = 3, empty: str = "Nothing to show here."
-) -> None:
-    """Lay cards out in columns, down each column in turn.
+def competition_card(name: str, competition_id: str, tier: int | None, href: str) -> str:
+    """One competition, as the link that opens its page.
 
-    Streamlit's columns are independent vertical stacks, so a grid is built by
-    dealing cards into them. Round-robin rather than in blocks, because cards
-    have different heights and blocks put every tall one in the same column.
+    The same anchor a match card is, minus the two team rows — so the
+    competition browser lays thirty-nine of these out on the grid the rest of
+    the dashboard uses, rather than as a stack of loose headings whose height
+    depends on how many leagues a country happens to have.
+    """
+    label = f"tier {tier}" if tier else "cup"
+    top = (
+        f'<span class="mop-card-top">{pill(label)}<span class="spacer"></span>'
+        f"<span>{html.escape(competition_id)}</span></span>"
+    )
+    title = f'<span class="mop-title">{html.escape(name)}</span>'
+    return (
+        f'<a class="mop-card" href="{html.escape(href, quote=True)}" target="_self">'
+        f"{top}{title}</a>"
+    )
+
+
+def card_grid(
+    cards: Sequence[str],
+    *,
+    columns: int = 3,
+    min_rem: float = 17,
+    empty: str = "Nothing to show here.",
+) -> None:
+    """Lay cards out in a grid that chooses its own number of columns.
+
+    One CSS grid (``.mop-grid`` in :mod:`dashboard.theme`) rather than
+    ``st.columns``: Streamlit's columns are a fixed count whatever the width, so
+    three of them beside an open sidebar at 1024px were 143px cards that
+    truncated club names and broke the kick-off time over two lines. The grid
+    fits up to ``columns`` columns no narrower than ``min_rem``, and a row's cards share
+    its height. A ``<span>``, like every piece of a card, because Streamlit's
+    markdown wraps it in a ``<p>``.
     """
     if not cards:
         st.caption(empty)
         return
-    lanes = st.columns(min(columns, len(cards)))
-    for position, card in enumerate(cards):
-        with lanes[position % len(lanes)]:
-            st.markdown(card, unsafe_allow_html=True)
+    st.markdown(
+        f'<span class="mop-grid" style="--mop-cols:{int(columns)};--mop-min:{float(min_rem)}rem">'
+        f'{"".join(cards)}</span>',
+        unsafe_allow_html=True,
+    )

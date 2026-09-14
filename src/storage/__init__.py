@@ -1,5 +1,5 @@
 """Storage: how the canonical table is queried, and by what.
 
-One protocol (:mod:`src.storage.base`) and, today, one implementation over
-DuckDB. The second arrives with the milestone that has something to serve.
+A read protocol (:mod:`src.storage.base`) implemented over DuckDB, and a
+separate PostgreSQL prediction log for what the service serves.
 """

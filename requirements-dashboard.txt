@@ -7,15 +7,15 @@
 # an estimator:
 #
 #   xgboost, scikit-learn  The blend's members. The dashboard does not load the
-#                          artefact — that is the point of Milestone 12's
-#                          hybrid, and CI enforces that it cannot import `api`
+#                          artefact — that is the point of the
+#                          client/service split, and CI enforces that it cannot import `api`
 #                          either. If this list ever needs them, something has
 #                          started computing a probability in the wrong process.
 #   joblib                 Only used to read the artefact. See above.
 #   catboost, lightgbm     Not in the blend at all.
 #   optuna, mlflow, shap   Search, tracking, explainability. None is a page.
 #   psycopg                The prediction log is written by the service. It is
-#                          also not where Milestone 14 keeps favourites — that
+#                          also not where favourites are kept — that
 #                          is a JSON file, for the reasons in docs/DASHBOARD.md.
 #   authlib                `streamlit[auth]`, which powers st.login(). Accounts
 #                          are optional: with no [auth] section in secrets the

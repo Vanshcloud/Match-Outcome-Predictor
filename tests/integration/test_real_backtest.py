@@ -4,7 +4,7 @@ Skips without `python scripts/fetch_data.py` and `scripts/build_ratings.py`.
 What these add over the unit suite is the only thing that matters about a
 backtest: the numbers. A synthetic league can prove the bookkeeping is right;
 it cannot say whether Dixon-Coles is worth building, and that is the question
-Milestone 7 exists to answer.
+the backtest exists to answer.
 
 The bands are the measured figures with room for the provider adding a season.
 Wide enough not to go red on new data, narrow enough that a change of sign or

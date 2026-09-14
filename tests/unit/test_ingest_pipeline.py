@@ -1,6 +1,6 @@
 """The ingestion pipeline coordinates; it must not compute.
 
-The properties worth protecting are the ones a later milestone silently depends
+The properties worth protecting are the ones later stages silently depend
 on: chronological ordering, deduplication, and that a missing season is a
 normal outcome rather than a failure that aborts the run.
 """

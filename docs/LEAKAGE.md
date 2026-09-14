@@ -40,11 +40,11 @@ And two blocks that are deliberately withheld:
 
 ### What the model layer actually receives
 
-Milestone 8 turned "the model layer" from a plan into thirty columns. They are
+The model layer receives thirty columns. They are
 the twenty features and the ten ratings above, and the list is *derived* from
 the two registries rather than written out again — `src/models/dataset.py`
 reads `FEATURES`, `ELO_COLUMNS` and `DIXON_COLES_COLUMNS`, so a feature added
-in Milestone 5 is a column the zoo sees without anyone editing a second list,
+to the registry is a column the zoo sees without anyone editing a second list,
 and a column that stops existing stops being requested.
 
 Nothing canonical is passed through directly. Not the scoreline, and not the
@@ -61,7 +61,7 @@ only a fit whose inputs the fold boundary already decided. What *is* checked,
 per family, is that rewriting the evaluation half's results does not move its
 forecast.
 
-### The two boundaries Milestone 9 adds
+### The ensemble and calibration boundaries
 
 An ensemble and a calibration layer are both places where something is
 *chosen*, and a choice is a way for the evaluation half to reach a model
@@ -115,8 +115,8 @@ place the same leak lives, and the harder one to see, because nothing about the
 output looks wrong. No training row may be dated at or after any evaluation
 row, and no match may appear in both halves. Ties fail: a full Saturday
 programme is one round, and a model trained on the 3pm results is not entitled
-to predict the 5.30 kick-off. Milestone 7 owns the splits; the probe is here,
-tested, waiting for them.
+to predict the 5.30 kick-off. The splits live in
+`src/models/splits.py`; the probe is here and runs on every fold.
 
 **4. Observed reads.** Rewrite one input column, recompute, and whatever moved
 read it. This is the measured counterpart to the feature registry's
@@ -128,7 +128,7 @@ feature as safe. The suite asserts the declaration *covers* what was measured.
 
 ## Every producer, not every producer we remembered
 
-Milestones 4 and 5 each run the probes inside their own pipeline, over their
+The ratings and features pipelines each run the probes inside their own pipeline, over their
 own list of producers. A list is a thing you can forget to add to: a builder
 wired into a pipeline but omitted from its probe call would ship unverified,
 and nothing in the output would say so.
@@ -144,7 +144,7 @@ by the same command its author already runs locally.
 The mirror check closes the other half: `check_defaults_are_complete()` fails if
 a discovered producer is in no pipeline's defaults. That is not a leak, but it
 is a column the model layer expects and will not get, and it would otherwise
-surface milestones later as a table of nulls.
+surface much later as a table of nulls.
 
 ---
 

@@ -1,13 +1,11 @@
 """What this reader follows, and for how long.
 
-**Milestone 14 replaced the "for how long".** These accessors used to read and
-write ``st.session_state``, so a favourite lasted as long as a browser tab and
-a reader who closed one lost their leagues. They now read and write
+**Favourites outlive the browser tab.** These accessors read and write
 :mod:`dashboard.domain.store`, keyed by whatever
 :mod:`dashboard.domain.identity` says the reader is.
 
-**Nothing else changed, and that was the claim.** Every signature here is the
-one Milestone 12 shipped, no view was touched, and no view has ever named
+**Storage is swappable.** Moving favourites out of ``st.session_state`` kept
+every signature here, touched no view, and no view has ever named
 ``st.session_state`` — which is why an account store could replace the storage
 under six pages without any of them knowing. CI asserts that property rather
 than trusting it.

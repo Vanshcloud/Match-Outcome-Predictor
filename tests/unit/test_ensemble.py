@@ -123,13 +123,13 @@ def test_the_pass_returns_the_matches_the_backtest_only_returns_means_of() -> No
         "result",
     ]
     assert forecasts["result"].isin(["H", "D", "A"]).all()
-    # Carried for Milestone 10's "where is it reliable", which is a grouping
+    # Carried for the "where is it reliable" report, which is a grouping
     # the scored table keeps only as means.
     assert set(forecasts["competition_id"]) == set(LEAGUE["competition_id"])
 
 
 def test_every_forecast_names_the_fixture_it_is_about() -> None:
-    """Milestone 17. ``match`` lines two forecasters up within a fold;
+    """``match`` lines two forecasters up within a fold;
     ``match_id`` is what joins these rows to the closing odds, and
     re-deriving it from the split somewhere else would be a plausible-looking
     wrong answer waiting for a split parameter to change."""

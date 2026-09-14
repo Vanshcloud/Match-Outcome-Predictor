@@ -1,10 +1,8 @@
 """Where a reader's favourites are kept between visits.
 
-Milestone 14's persistence, and the whole of it: one JSON file, keyed by
-whatever :mod:`dashboard.domain.identity` says the reader is. Before this,
-favourites lived in ``st.session_state`` and lasted as long as a browser tab —
-which is what Milestone 12 asked for and what a reader who closed the tab
-immediately lost.
+The whole of the persistence: one JSON file, keyed by whatever
+:mod:`dashboard.domain.identity` says the reader is. Favourites kept in
+``st.session_state`` would last only as long as a browser tab.
 
 **A file rather than the database that already exists.** ``docker-compose.yml``
 runs PostgreSQL, but it is the *service's*: it holds served predictions so the

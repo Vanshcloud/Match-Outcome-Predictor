@@ -1,7 +1,7 @@
 """Served forecasts scored against what happened, and when that means anything.
 
-Milestone 19. Every prediction this service answers with has been written to
-:mod:`src.storage.predictions` since Milestone 11, with the model, the version
+Every prediction this service answers with is written to
+:mod:`src.storage.predictions`, with the model, the version
 and the moment it was served. This module is the other end of that: it joins
 the archive to the canonical table, scores the forecasts whose matches have
 since been played, and compares the result to what the walk-forward backtest

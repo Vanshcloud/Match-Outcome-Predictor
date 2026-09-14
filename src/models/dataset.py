@@ -1,15 +1,15 @@
 """What a model is allowed to see, and how it is grouped for the ablation.
 
-Thirty columns: the twenty features from Milestone 5 and the ten rating
-columns from Milestone 4. Nothing canonical is passed through directly — not
+Thirty columns: the twenty registered features and the ten rating
+columns. Nothing canonical is passed through directly — not
 the scoreline, obviously, and **not the odds**, which are pre-match and still
 withheld because they are the benchmark this project measures itself against.
 A model given the closing line learns to copy the bookmaker.
 
 The column list is *derived* from the two registries rather than written out
-again. A feature added in Milestone 5's registry is a column the zoo sees
+again. A feature added to the feature registry is a column the zoo sees
 without anyone editing this file, and a column that stops existing stops being
-requested — which is the failure a hand-maintained list produces a milestone
+requested — which is the failure a hand-maintained list produces months
 later, as a table of nulls nobody notices.
 
 Blocks are what the ablation switches off. They come from the same place: the

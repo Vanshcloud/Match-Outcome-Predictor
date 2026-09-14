@@ -96,7 +96,7 @@ def test_fewer_than_one_bin_is_refused() -> None:
 
 def test_one_class_can_be_binned_on_its_own() -> None:
     """Pooling the three answers whether the model is honest; splitting them
-    says which class it is dishonest about. Milestone 10 asks the second."""
+    says which class it is dishonest about."""
     draws_only = reliability(
         _repeated(HONEST, HONEST_OUTCOMES), list(HONEST_OUTCOMES), classes=("D",)
     )

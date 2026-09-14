@@ -3,7 +3,7 @@
 A per-column number is not what anyone reads. Thirty columns, fourteen of them
 rolling windows of the same idea, produce a ranking whose top of the list moves
 between runs and whose meaning is "form matters" either way. So everything here
-reports **per block** — the same five blocks Milestone 8 withheld one at a time
+reports **per block** — the same five blocks the ablation withholds one at a time
 — because that is the grain at which the answer can be checked against a second
 method.
 

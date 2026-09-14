@@ -672,8 +672,8 @@ picked.** The four tree-based families correlate between 0.9934 and 0.9960 —
 substitutes, which is the quantitative form of Milestone 8's "the top four are
 within 0.0003". The rule admitted XGBoost, logistic regression and the **MLP**,
 the worst model in the zoo, because it is the only one wrong about different
-matches at 0.92. That blend beats every family that went into it *and*
-CatBoost, which did not. Averaging the top three would have averaged three
+matches at 0.92. That blend beats every family that went into it and is level
+with CatBoost, which did not (0.0003, about 1.4 standard errors). Averaging the top three would have averaged three
 near-substitutes and reported the averaging.
 
 **Calibration buys reliability and not loss.** The scalar halves the gap

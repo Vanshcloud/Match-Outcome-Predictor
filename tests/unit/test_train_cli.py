@@ -136,7 +136,7 @@ def test_the_blend_and_the_calibration_layer_are_reported_together(
     printed = capsys.readouterr().out
     assert "ensemble-calibrated" in printed
     assert "calibration_error" in printed
-    # The before-and-after the milestone exists to report, by stated probability.
+    # The before-and-after calibration exists to report, by stated probability.
     assert "logistic_regression, by stated probability:" in printed
 
 

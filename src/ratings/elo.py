@@ -4,7 +4,7 @@ Elo is the right first rating here for a reason that is easy to lose: it is
 *online*. Each match updates two numbers and nothing else, so the rating
 carried into match *n* is a function of matches 1..*n*-1 by construction. There
 is no window to get wrong and no statistic over the whole table to accidentally
-include — the causal property Milestone 6 has to enforce for every other
+include — the causal property the leakage probes enforce for every other
 feature comes free, and that is worth having in the first rating rather than
 the last.
 
@@ -54,8 +54,8 @@ to re-derive them when the data grows — ``scripts/build_ratings.py --fit-until
 — but the pipeline does not tune anything at runtime.
 
 Per-competition tuning may still be worth it against a *three-class* objective,
-which Elo alone cannot express. That belongs to Milestone 7, which owns the
-splits such a fit would need.
+which Elo alone cannot express. That belongs to the evaluation layer, which owns
+the splits such a fit would need.
 """
 
 from __future__ import annotations
@@ -134,8 +134,8 @@ def expected_score(home: float, away: float, parameters: EloParameters) -> float
 
     **Not a probability of winning.** Elo's expectation is a mean score, mixing
     a win and a draw, and it cannot be decomposed into three class
-    probabilities without a further model — that mapping belongs to Milestone
-    7. Naming it anything else here would put a number in the feature table
+    probabilities without a further model — that mapping belongs to the model
+    layer. Naming it anything else here would put a number in the feature table
     that every consumer would misread.
     """
     difference = home + parameters.home_advantage - away
@@ -222,7 +222,7 @@ class EloRatings:
             expected.append(score)
 
             # A row with no scoreline is a fixture rather than a match —
-            # Milestone 20 appends the next week of them so that the same
+            # the fixture pipeline appends the next week of them so that the same
             # builders that rate the history can rate what has not happened
             # yet. It is rated like any other row, from the state both sides
             # bring to it, and it updates nothing: there is no result to learn

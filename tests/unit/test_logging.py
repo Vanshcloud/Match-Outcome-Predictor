@@ -33,6 +33,15 @@ def test_force_replaces_rather_than_appends() -> None:
     assert root.level == logging.DEBUG
 
 
+def test_a_debug_run_does_not_log_urllib3_request_lines() -> None:
+    """urllib3 logs method, path and query at DEBUG, and a webhook URL's path
+    is its secret. The root may go to DEBUG; the transport must not."""
+    configure_logging(level="DEBUG", force=True)
+    assert logging.getLogger().level == logging.DEBUG
+    assert not logging.getLogger("urllib3.connectionpool").isEnabledFor(logging.DEBUG)
+    assert logging.getLogger("urllib3").isEnabledFor(logging.WARNING)
+
+
 def test_level_is_case_insensitive() -> None:
     configure_logging(level="warning", force=True)
     assert logging.getLogger().level == logging.WARNING

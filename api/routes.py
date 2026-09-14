@@ -130,8 +130,8 @@ def version(service: Service) -> VersionResponse:
 def limitations(service: Service) -> LimitationsResponse:
     """The model card's own section, served rather than linked.
 
-    Milestone 11's scope asked for the limitations to be reachable from a
-    response instead of buried in a repository, and every prediction carries
+    The limitations are reachable from a response instead of buried in a
+    repository, and every prediction carries
     the path to this endpoint. The text is the constant the card renders from,
     so the two cannot drift.
     """
@@ -181,9 +181,9 @@ def fixtures(
     """Fixtures in the feature table, most recent first.
 
     Discovery exists because without it nothing else here is usable: the
-    provider publishes results rather than a fixture list, so the matches this
-    service can price are exactly the ones the batch build wrote, and a caller
-    has no other way to learn which those are.
+    matches this service can price are exactly the ones the batch builds wrote
+    — played matches, and the upcoming ones `make fixtures` last built — and a
+    caller has no other way to learn which those are.
     """
     found = service.fixtures(
         competition_id=competition_id, team=team, since=since, until=until, limit=limit

@@ -1,6 +1,6 @@
 """The two breakdowns calibration left pooled, and the card assembled from them.
 
-Milestone 9 reported one calibration number on purpose. These are the questions
+The training report gives one calibration number on purpose. These are the questions
 it hides — which class the model is dishonest about, and where — and both come
 off the same per-match pass, so what is tested here is the grouping rather than
 the arithmetic (`test_reliability.py` owns that).

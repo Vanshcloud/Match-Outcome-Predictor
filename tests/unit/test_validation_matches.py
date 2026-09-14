@@ -407,6 +407,10 @@ def test_a_match_outside_its_season_window_is_a_warning() -> None:
         if r.name == "matches fall inside the season they are labelled with"
     )
     assert stray.outcome is Outcome.FAILED
+    assert (
+        f"({frame.loc[frame['date'] == pd.Timestamp('2019-01-01'), 'competition_id'].iloc[0]})"
+        in stray.message
+    )
     assert report.ok
 
 

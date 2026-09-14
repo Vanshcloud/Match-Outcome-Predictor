@@ -1,6 +1,6 @@
 """The market's price, the model's goal rates, and what a gap between them means.
 
-Milestone 17's service layer. Three cached reads and one lookup, over
+The market service layer. Three cached reads and one lookup, over
 :class:`~dashboard.providers.historical.HistoricalOdds`, the ratings table and
 the disagreement table `make card` writes.
 

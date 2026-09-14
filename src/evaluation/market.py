@@ -1,6 +1,6 @@
 """The closing line as a forecast, and what disagreeing with it is worth.
 
-Milestone 17. Two things live here and they are the same subject from opposite
+Two things live here and they are the same subject from opposite
 ends: turning decimal odds into probabilities, and measuring what happens when
 the model's probabilities differ from them.
 
@@ -10,7 +10,7 @@ disagreement table below, and the dashboard's match page — and three
 implementations of removing an overround is three chances to publish a number
 that is not the one the benchmark was scored against.
 
-**Why the measurement is the milestone rather than a value detector.** The
+**Why this is a measurement rather than a value detector.** The
 obvious reading of "the model says 45%, the market says 38%" is that there is
 value in the difference. That reading is testable, this project has the data to
 test it, and it does not survive: over the walk-forward folds the model's
@@ -152,7 +152,7 @@ def disagreement(
 ) -> pd.DataFrame:
     """What each forecaster scores, grouped by how far apart the two were.
 
-    The measurement Milestone 17 rests on. Rows where either forecaster has
+    The market measurement itself. Rows where either forecaster has
     nothing to say are dropped before anything is grouped: a band whose model
     column is computed over more matches than its market column would compare
     two different questions, which is the same reason

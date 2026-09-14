@@ -10,6 +10,6 @@ is always paired with the count of matches it was computed over.
 Two modules. `metrics` scores a forecast — log loss, RPS, accuracy — and
 `reliability` asks the other question a single score cannot answer: whether a
 stated probability happens as often as it says. A model can be sharp and
-overconfident, or timid and honest, and land on the same loss; Milestone 9's
+overconfident, or timid and honest, and land on the same loss; the
 calibration layer is measured on the difference.
 """

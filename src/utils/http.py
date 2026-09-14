@@ -165,7 +165,7 @@ class HttpClient:
         exists, and it inherits the restriction rather than quietly widening
         it.
 
-        Added by Milestone 12, whose dashboard prices a fixture by asking the
+        Used by the dashboard, which prices a fixture by asking the
         service rather than by loading the model a second time.
 
         Raises:

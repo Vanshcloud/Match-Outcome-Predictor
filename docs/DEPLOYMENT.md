@@ -1,7 +1,7 @@
 # Running this somewhere that is not a laptop
 
-Milestone 16. The images and the compose file existed from Milestone 11 and 12;
-what was missing was everything between "it builds" and "it is running and
+Building the images and the compose file is the easy part; this page covers
+everything between "it builds" and "it is running and
 somebody would know if it stopped". That is three things — a published image, a
 scrape target, and a cache — and one honest list of what this still is not.
 
@@ -69,7 +69,7 @@ to the host. Four things change on the way to anywhere real:
 
 | | |
 |---|---|
-| `PREDICTION_LOG_DSN` | From a secret store, injected as an environment variable. It is the one secret in this project |
+| Secrets | From a secret store, injected as environment variables: `PREDICTION_LOG_DSN` for the API, and `FOOTBALL_DATA_API_KEY` and `DASHBOARD_WEBHOOK_URL` for the dashboard. See [SECURITY.md](../SECURITY.md) |
 | TLS | Terminated in front of the API. Nothing here speaks it, on purpose — a service that terminates its own TLS is a service that has to be redeployed to rotate a certificate |
 | Published ports | The API, and nothing else. Not PostgreSQL, and not the dashboard unless it is meant to be public |
 | `restart` | `unless-stopped` here; whatever the orchestrator's equivalent is there |
@@ -252,8 +252,8 @@ call too.
 
 ## Drift, and how much archive it takes
 
-Milestone 19. Every prediction the service answers with has been written to
-PostgreSQL since Milestone 11. `make archive` reads them back, joins the matches
+Every prediction the service answers with is written to PostgreSQL.
+`make archive` reads them back, joins the matches
 that have since been played, scores them with the same function the backtest
 uses, and puts the two numbers side by side.
 
@@ -310,13 +310,15 @@ would take:
 reported as *not evidence of drift* rather than as a small drift, on the Model
 page and in the command alike.
 
-### What a real archive says today
+### What the archive said before fixtures were priced
 
 Against the compose stack with the shipped artefact and the real 303,517-row
-table, Milestone 19 found 35 rows in the log, 25 after repeats collapse, **25
-in-sample and 0 scorable** — and said that this was a property of how the
-service was being driven rather than a defect in the report. Milestone 20 is
-the other half of that sentence, and it is the section below.
+table, the first archive run found 35 rows in the log, 25 after repeats
+collapse, **25 in-sample and 0 scorable** — a property of how the service was
+being driven rather than a defect in the report: every fixture it could be
+asked about was one the artefact had trained on. Pricing fixtures before
+kick-off, in the section below, is what changed that: forecasts made that way
+are logged as out-of-sample, and become scorable once their results are ingested.
 
 The scoring path itself was checked against the real tables by feeding the
 walk-forward forecasts back in as if they had been served: at 62,036 rows the
@@ -362,14 +364,14 @@ thing to add if it ever matters is a cached rating *state*, not a second rater.
 competitions, built from the 303,517-row table and priced by a service holding
 the shipped artefact, writing to the compose PostgreSQL:
 
-| | Milestone 19 | After `make fixtures` and `make price` |
+| | First archive run | After `make fixtures` and `make price` |
 |---|---:|---:|
 | Logged (repeats collapsed) | 25 | 58 |
 | In-sample | **25** | 50 |
 | Unresolved | 0 | **8** |
 | Scorable | 0 | 0 |
 
-Still nothing scored, and the difference is the whole milestone: the exclusion
+Still nothing scored, and the difference is the whole point: the exclusion
 moved from `in_sample` to `unresolved`. The first is structural — those
 forecasts could never be scored, because the artefact trained on those matches
 — and the second resolves itself on Saturday, when the matches are played and
@@ -398,7 +400,7 @@ number rather than a feeling.
   deliberately manual. A scheduled job that promoted a model without a human
   reading the comparison is a change to what this project serves made by a cron
   entry.
-- **Drift is measured, not detected.** Milestone 19 ships `make archive`, below.
+- **Drift is measured, not detected.** `make archive`, below, scores it.
   There is no alert and no threshold that fires: the archive is scored on
   demand, and what it mostly reports is that it is not big enough to say
   anything yet.

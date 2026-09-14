@@ -79,15 +79,15 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 strict_equality = true
 
-# NOTE: per-package `ignore_missing_imports` overrides are added by the
-# milestone that introduces the import, never up front. Declared before
+# NOTE: per-package `ignore_missing_imports` overrides are added with the
+# code that introduces the import, never up front. Declared before
 # anything imports them, mypy reports each as an unused section — and a gate
 # that prints noise on a clean run is a gate people learn to skim.
 #
 # Real stubs are preferred over an override wherever they exist: a stub
 # type-checks the call, an override only silences it. See requirements-lint.txt.
 
-# Milestone 8. scikit-learn and CatBoost ship no `py.typed` marker and have no
+# scikit-learn and CatBoost ship no `py.typed` marker and have no
 # maintained stub distribution, so there is nothing to prefer over this.
 # XGBoost, LightGBM, Optuna and MLflow all ship their own types and are
 # deliberately absent from this list — an override for a package that does not
@@ -96,14 +96,14 @@ strict_equality = true
 module = ["sklearn.*", "catboost.*"]
 ignore_missing_imports = true
 
-# Milestone 10. shap ships no `py.typed` marker and has no maintained stub
+# shap ships no `py.typed` marker and has no maintained stub
 # distribution. It is imported in exactly one function, inside the call rather
 # than at module scope, so the untyped surface is one name wide.
 [[tool.mypy.overrides]]
 module = ["shap.*"]
 ignore_missing_imports = true
 
-# Milestone 11. joblib ships no `py.typed` marker. Two calls are made against
+# joblib ships no `py.typed` marker. Two calls are made against
 # it — `dump` and `load` — and both are wrapped by src/pipelines/serving.py,
 # which re-checks what came back with an `isinstance` before returning it. The
 # untyped surface is two names wide and the boundary is guarded.
@@ -129,7 +129,7 @@ filterwarnings = [
   # every run of the two tests that import it. Targeted at the module rather
   # than the category, so a pending deprecation anywhere else still shows.
   "ignore:The set_(bad|over|under) function will be deprecated:PendingDeprecationWarning:shap.plots.colors._colors",
-  # Milestone 11. Starlette's TestClient names `anyio.abc.BlockingPortal`, an
+  # Starlette's TestClient names `anyio.abc.BlockingPortal`, an
   # alias anyio has deprecated in favour of `anyio.from_thread.BlockingPortal`.
   # The reference is inside starlette, at import time, so there is nothing here
   # to fix and no version of this project that does not trigger it while using
@@ -142,8 +142,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-# `api` joined `src` in Milestone 11 and `dashboard` in Milestone 12, on the
-# same reasoning both times. The service is first-party code on the request
+# `api` and `dashboard` are measured beside `src` for the same reason. The service is first-party code on the request
 # path and the dashboard is first-party code a reader looks at; measuring the
 # library and not the two things people actually reach would put the 100%
 # badge on the part nobody calls.

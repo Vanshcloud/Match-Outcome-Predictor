@@ -1,6 +1,6 @@
 """The feature registry.
 
-Its job is to make the Milestone 3 leakage classification enforceable rather
+Its job is to make the schema's leakage classification enforceable rather
 than documented: each feature declares what it reads, and whether it *can* leak
 follows from that rather than from a second field somebody might set wrongly.
 """

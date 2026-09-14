@@ -1,6 +1,6 @@
 """What changed since this page last looked, and who to tell.
 
-Milestone 15. The fixture feed already answers "what is in play"; this asks the
+The fixture feed already answers "what is in play"; this asks the
 question a person actually has — *what happened while I was not looking* — and
 turns the answer into :class:`~dashboard.domain.match.MatchEvent` objects that
 a toast and a webhook render the same way.
@@ -124,8 +124,8 @@ def _kind(before: Fixture | None, after: Fixture) -> EventKind | None:
     holds what
     :meth:`~dashboard.providers.base.FixtureProvider.live` returned, so
     everything in it was in play when it was recorded, and a branch for a state
-    this function cannot be handed is a branch no test can honestly reach. The
-    milestone that starts tracking scheduled matches adds it back, with a case.
+    this function cannot be handed is a branch no test can honestly reach. A change
+    that starts tracking scheduled matches adds it back, with a case.
     """
     if before is None:
         return EventKind.KICK_OFF if after.status is MatchStatus.LIVE else None

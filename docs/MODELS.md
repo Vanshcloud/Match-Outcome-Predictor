@@ -1,8 +1,8 @@
 # Models
 
 Six families over thirty columns, a blend of the three that are not
-substitutes, and a calibration layer over both — all scored on the folds
-Milestone 7 built and against the baselines it measured. What each one is
+substitutes, and a calibration layer over both — all scored on the
+walk-forward folds and against the baselines in EVALUATION.md. What each one is
 worth, what tuning bought, what each feature block contributes, and what the
 last two layers did not buy.
 
@@ -24,12 +24,12 @@ every forecaster could price:
 | Logistic regression | 1.0162 | 0.2083 | 49.2% |
 | Random forest | 1.0172 | 0.2087 | 49.2% |
 | MLP | 1.0203 | 0.2091 | 49.1% |
-| Dixon-Coles (Milestone 4) | 1.0277 | 0.2114 | 48.5% |
+| Dixon-Coles rating | 1.0277 | 0.2114 | 48.5% |
 | Class prior | 1.0751 | 0.2284 | 43.7% |
 | Home always | ∞ | 0.4316 | 43.7% |
 
 **Every family beats the rating it was built on**, in all 39 competitions. The
-zoo closes **0.0118 of the 0.0284** Milestone 7 measured between Dixon-Coles
+zoo closes **0.0118 of the 0.0284** the baseline backtest measured between Dixon-Coles
 and the closing line — 42% of the gap — and the blend and the calibration layer
 together close **0.0003 more**, leaving 0.0163.
 
@@ -41,7 +41,7 @@ section below, and it is not a score.
 
 And the finding that matters more than the ranking: **the top four are within
 0.0003 of each other.** Logistic regression, on thirty columns, is not
-distinguishable from three tuned gradient-boosting libraries. Milestone 7 said
+distinguishable from three tuned gradient-boosting libraries. The baseline backtest showed
 what the bookmaker knows on top of a strength rating is worth about the same
 amount in every competition and is not strength; this says it is not a function
 these thirty columns express non-linearly either. Whatever is left is missing
@@ -51,8 +51,7 @@ information, not missing model capacity.
 
 ## What a model sees
 
-Thirty columns: the twenty features from Milestone 5 and the ten rating columns
-from Milestone 4.
+Thirty columns: the twenty registered features and the ten rating columns.
 
 | Block | Columns | What it is |
 |---|---:|---|
@@ -65,8 +64,8 @@ from Milestone 4.
 The list is **derived** from the two registries, not written out again. A
 feature added in `src/feature_engineering/registry.py` is a column the zoo sees
 without anyone editing a second list, and a column that stops existing stops
-being requested — which is the failure a hand-maintained list produces a
-milestone later, as a table of nulls nobody notices.
+being requested — which is the failure a hand-maintained list produces
+months later, as a table of nulls nobody notices.
 
 Nothing canonical is passed through directly. Not the scoreline, obviously.
 **Not the odds either**: they are pre-match and still withheld, because they
@@ -186,8 +185,9 @@ the ratings; they are substitutes for each other, and the model can recover
 most of what one says from the other. It is an argument about where the
 remaining effort goes.
 
-**Rest days and congestion are worth 0.0003.** Milestone 5 shipped them saying
-they carried no marginal signal and that this ablation would settle it. It has.
+**Rest days and congestion are worth 0.0003.** They were added on the
+expectation that they carried no marginal signal, pending this ablation. It
+settles it.
 They survive — four columns, computed by the same pass that computes the rest,
 and a positive delta is a positive delta — but they are the first thing to go
 if the feature set ever needs trimming, and nothing should be built on top of
@@ -198,7 +198,7 @@ meetings tell a model what their strengths already told it.
 
 ### The competition the rating could not price
 
-Milestone 7 found Dixon-Coles losing to *counting base rates* on the Argentine
+The baseline backtest found Dixon-Coles losing to *counting base rates* on the Argentine
 cup: 1.1329 against 1.0902, the only competition of 39 where that happened. It
 diagnosed a narrow field fitted per competition on 610 matches while the same
 clubs' 2,211 league matches sat unused next door, and asked whether the answer
@@ -224,8 +224,8 @@ rating, stated in one competition.
 ## The blend, and why it is these three
 
 Averaging models that are wrong about the same matches produces a model that is
-wrong about those matches with slightly less confidence. Milestone 8 refused to
-build an ensemble for exactly that reason — its top four sat within 0.0003 of
+wrong about those matches with slightly less confidence. No ensemble was
+built on the zoo ranking alone for exactly that reason — its top four sat within 0.0003 of
 each other — so the members here are chosen on **the correlation of their
 per-match errors**, and their individual scores decide only the order
 candidates are considered in.
@@ -243,15 +243,19 @@ the hyperparameters were chosen there:
 | random_forest | 0.9922 | 0.9860 | 0.9796 | 0.9153 | 1.0000 | 0.9934 |
 | xgboost | 0.9960 | 0.9953 | 0.9857 | 0.9213 | 0.9934 | 1.0000 |
 
-The pairs are not evenly spread, and the gap in them is the whole decision. The
-four tree-based families sit between 0.9934 and 0.9960 of each other — they are
-substitutes, which is the quantitative form of Milestone 8's finding that the
-top four were indistinguishable. Logistic regression is a little further out at
-0.9857. The MLP is the only family that is wrong about different matches at
-all, at 0.92 against everything, and it is also the worst model here.
+The pairs are not evenly spread, and the gap in them is the whole decision.
+Admission is greedy and best-first, so the column that decides it is the one
+against **XGBoost**, the best family and therefore the first one in: the other
+three trees sit at 0.9934 to 0.9960 against it — they are substitutes, which is
+the quantitative form of the zoo's finding that the top four were
+indistinguishable. (Among themselves the trees spread wider, down to 0.9860 for
+lightgbm against random forest, but neither of those is ever in the blend to be
+compared against.) Logistic regression is further out at 0.9857, and the MLP is
+the only family wrong about different matches at all, at 0.92 against
+everything — and it is also the worst model here.
 
 `MAX_ERROR_CORRELATION = 0.99` sits in the empty band between 0.9857 and
-0.9934. It is read off the measurement rather than chosen in advance, and it
+0.9934 of that deciding column. It is read off the measurement rather than chosen in advance, and it
 admits, best-first: **XGBoost, logistic regression, the MLP**.
 
 | 59,001 matches | log loss | RPS |
@@ -261,14 +265,17 @@ admits, best-first: **XGBoost, logistic regression, the MLP**.
 | XGBoost, the blend's own best member | 1.0161 | 0.2084 |
 | MLP, the blend's worst member | 1.0203 | 0.2091 |
 
-**The blend beats every family that went into it, and the one that did not.**
-It is worth 0.0005 over its best member and 0.0002 over CatBoost, which did not
-make it in — a plain mean of a good model, a mediocre one and the worst one in
-the zoo beats every model in the zoo. That is what choosing on error
-correlation is for, and it is the argument against the obvious alternative of
-averaging the top three, all of which correlate above 0.9915.
+**The blend is the best row — clearly against its members, within noise
+against CatBoost.** It is 0.0005 of log loss better than XGBoost, its best
+member, and 0.0003 better than CatBoost, which did not make it in. Paired over
+the 193 fold × competition cells those gaps are about 2.4 and 1.4 standard
+errors: a plain mean of a good model, a mediocre one and the worst one in the
+zoo is measurably better than the models it averages and level with the best
+single family. That is what choosing on error correlation is for, and it is the
+argument against the obvious alternative of averaging the top three, all of
+which correlate above 0.9915.
 
-It is also very small. Per competition the blend beats XGBoost in 28 of 39 —
+It is also very small. Per competition the blend beats XGBoost in 27 of 39 —
 not 39 — and it beats Dixon-Coles and the class prior in all 39, as every
 family already did.
 
@@ -312,7 +319,7 @@ are noise. The calibration error — the mean gap between a stated probability
 and how often it happened, weighted by how many statements are behind each bin
 — falls by 46% and 67%.
 
-That is the answer to the question the milestone asked, and it is not a
+That is the answer to the question calibration asks, and it is not a
 disappointment. A layer that improved the score *and* the honesty would have
 meant the score was the thing that was wrong; log loss is a proper scoring rule
 and these models were fitted on it, so they were already close to proper. What
@@ -355,7 +362,7 @@ seeing.
 LightGBM beats Dixon-Coles in **39 of 39** competitions and the class prior in
 all 39; the bookmaker beats it in all 39. The gap to the closing line ranges
 from 0.0059 to 0.0615, with a median of 0.0154 — against Dixon-Coles' median of
-0.0263 at the same point in Milestone 7. The zoo took about 40% of the gap in
+0.0263 in the baseline backtest. The zoo took about 40% of the gap in
 the median competition, which is the same share it took overall.
 
 The blend does not change that picture: 39 of 39 against the rating and the
@@ -367,7 +374,7 @@ The widest remaining gap is the Chinese Super League at 0.0615, and the
 narrowest is the Russian Premier League at 0.0059. Neither is a competition
 this project has any reason to model differently; what the spread says is that
 the market's advantage is not uniform, only that it does not track team
-strength — which was Milestone 7's finding and survives the zoo.
+strength — which was the baseline backtest's finding and survives the zoo.
 
 ---
 
@@ -384,8 +391,8 @@ neither is justified by a reliability table whose largest bins are already
 within 0.0001 after one scalar.
 
 **No feature added to close the gap.** The ablation says where the remaining
-value is not, and Milestone 7 says what is left is not team strength. Two
-milestones of model work have now bought 0.0121 of the 0.0284 and the last two
+value is not, and the baseline backtest says what is left is not team strength.
+The model zoo, blend and calibration have bought 0.0121 of the 0.0284 and the last two
 layers bought 0.0003 of that, which is the strongest evidence yet that the
 remaining 0.0163 is information this project does not have rather than
 modelling it has not done.

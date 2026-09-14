@@ -1,7 +1,6 @@
 """Who the reader is, decided in one place.
 
-Milestone 14. Favourites used to belong to a browser tab; they now belong to
-*someone*, and this module is the only thing in the application that knows how
+Favourites belong to *someone* rather than to a browser tab, and this module is the only thing in the application that knows how
 that someone is named. :mod:`dashboard.domain.store` keys on whatever
 :func:`current` returns and has no opinion about where it came from.
 
@@ -51,7 +50,7 @@ GUEST = "Guest"
 
 A real profile with a real row in the store rather than a null case, so that
 favourites persist for someone who never opens the picker — which is the whole
-user-visible point of this milestone.
+user-visible point of profiles.
 """
 
 ACCOUNT_PREFIX = "account:"

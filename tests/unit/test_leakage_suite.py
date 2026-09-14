@@ -1,6 +1,6 @@
 """The leakage suite: every producer, probed, on every run of the test suite.
 
-Milestone 4 and 5 each probe their own producers inside their own pipeline.
+The ratings and features pipelines each probe their own producers.
 This file probes whatever *exists*, discovered by walking the packages, which
 is the difference between "every builder we remembered" and "every builder".
 It is a unit test rather than a shell step in the workflow on purpose: CI runs

@@ -48,7 +48,7 @@ def _isolate_logging() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _isolate_the_profile_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point Milestone 14's favourites store at a temporary file, everywhere.
+    """Point the favourites store at a temporary file, everywhere.
 
     Autouse and suite-wide rather than per-test, because the failure it
     prevents is silent in both directions: without it a test writes real

@@ -89,8 +89,8 @@ nothing at runtime. `scripts/build_ratings.py --fit-until DATE` re-derives the
 constants when the data grows.
 
 Per-competition tuning may still pay against a **three-class** objective, which
-Elo alone cannot express. Milestone 7 built the walk-forward splits such a fit
-would need; it has not been tried against them, and the question is still
+Elo alone cannot express. The walk-forward splits such a fit would need
+exist; it has not been tried against them, and the question is still
 open.
 
 ### What Elo does not give you
@@ -215,8 +215,8 @@ ones.
 
 It is still one number per setting for thirty-nine competitions, and Serie B
 gains least — a division with a wider talent spread and more turnover may well
-want its own decay. The walk-forward splits to tune that against honestly exist
-as of Milestone 7; the per-competition decay has not been fitted on them.
+want its own decay. The walk-forward splits to tune that against honestly exist;
+the per-competition decay has not been fitted on them.
 
 ### Causality, and the case the generic probes cannot reach
 
@@ -263,5 +263,5 @@ the rewrite:
 | Lagged by one match (causal) | passes | passes |
 
 Elo passes both over the full table. The probes are generic over
-`Callable[[DataFrame], DataFrame]`, so Milestone 6 runs the same two over
+`Callable[[DataFrame], DataFrame]`, so the leakage suite runs the same two over
 feature builders rather than writing a second suite.

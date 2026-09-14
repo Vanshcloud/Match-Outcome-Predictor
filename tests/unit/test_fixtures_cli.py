@@ -137,9 +137,15 @@ class TestFixturesCommand:
 
         Read off stderr rather than ``caplog``: the command configures logging
         itself, which replaces the root handlers pytest's capture fixture
-        installs."""
+        installs.
+
+        Aged from the clock now, not from the module's ``TODAY``: a suite that
+        crosses midnight would otherwise see 31 days where it wrote 30."""
         matches = pd.read_parquet(workspace / "processed" / "matches.parquet")
-        aged = matches.assign(date=matches["date"] - pd.Timedelta(30, "D"))
+        now = pd.Timestamp.today().normalize()
+        aged = matches.assign(
+            date=matches["date"] + (now - matches["date"].max()) - pd.Timedelta(30, "D")
+        )
         aged.to_parquet(workspace / "processed" / "matches.parquet", index=False)
         assert FIXTURES.main(["--offline"]) == 0
         assert "30 days behind" in capsys.readouterr().err

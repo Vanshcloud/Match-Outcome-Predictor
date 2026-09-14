@@ -39,7 +39,7 @@ _NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
 #
 # Empty on purpose. This project currently reads one provider whose vocabulary
 # is internally consistent, so every entry here would be a guess about a
-# provider not yet integrated. Populated by the milestone that adds the second
+# provider not yet integrated. Populated when a second results provider is added
 # source, where the mappings can be verified against two real vocabularies
 # instead of imagined.
 ALIASES: Mapping[tuple[str, str], str] = {}

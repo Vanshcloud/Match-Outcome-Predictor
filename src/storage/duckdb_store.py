@@ -54,7 +54,7 @@ and a consumer that wants both writes the join it needs."""
 FEATURES_VIEW = "features"
 """The derived feature table, on the same terms as the ratings. Separate from
 them because the two are rebuilt on different cadences again — the feature set
-churns through the modelling milestones and the ratings do not."""
+changes with modelling work and the ratings do not."""
 
 IN_MEMORY = ":memory:"
 

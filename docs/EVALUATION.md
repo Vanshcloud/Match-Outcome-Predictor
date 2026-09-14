@@ -28,7 +28,7 @@ everywhere, in all 39 competitions, which is the result to expect. A model that
 beat the closing line on public data would be evidence of a leak rather than of
 skill.
 
-**Where that 0.0163 lives** is a Milestone 17 measurement rather than a guess:
+**Where that 0.0163 lives** is measured rather than guessed:
 grouped by how far the model was from the closing line, the deficit runs from
 +0.0009 where the two agree to +0.1835 where they are furthest apart. See
 [Where the gap to the closing line actually lives](#where-the-gap-to-the-closing-line-actually-lives).
@@ -39,7 +39,7 @@ grouped by how far the model was from the closing line, the deficit runs from
 
 Expanding window, anchored at the end of the history:
 
-| Fold | Trains to | Scores | Matches |
+| Fold | Trains to | Scores (end exclusive) | Matches |
 |---|---|---|---:|
 | 0 | 2021-09-02 | 2021-09-03 → 2022-09-03 | 13,030 |
 | 1 | 2022-09-02 | 2022-09-03 → 2023-09-03 | 12,302 |
@@ -87,7 +87,7 @@ at. Counted per fold rather than taken from a constant, because a prior read
 off the whole table has seen the future — and measurably so, since the home-win
 rate has drifted over the thirty years in this dataset.
 
-**Dixon-Coles.** Milestone 4's rating, read from the ratings table. The rating
+**Dixon-Coles.** The goal-rate rating, read from the ratings table. The rating
 was fitted over the whole history, which sounds like a leak and is not: every
 row of it depends only on matches strictly earlier than its own, and that is
 the property the temporal probes establish on every build. Recomputing it per
@@ -232,14 +232,13 @@ while the same clubs' 2,211 league matches sit next door, unused.
 It is left in rather than special-cased. A per-competition exclusion has to be
 justified for every competition it is *not* applied to. What the finding
 actually argues for is pooling a cup's fit with its country's league, which is
-a change to the rating and belongs in the milestone that has an ablation to
-justify it with.
+a change to the rating and needs an ablation to justify it.
 
 ---
 
 ## Where the gap to the closing line actually lives
 
-Milestone 17. The project-level number — the shipped model 0.0163 behind the
+The project-level number — the shipped model 0.0163 behind the
 bookmaker — is a mean over 61,889 matches, and a mean can hide two very
 different worlds: a model uniformly a little worse everywhere, or a model level
 with the line on most fixtures and badly wrong on some. It is the second.
@@ -261,8 +260,8 @@ percentage-point gap — 0.07 is "seven points apart":
 the reliability tables are computed from.
 
 **Where the model agrees with the line, it is level with it.** +0.0009 over
-9,628 matches is not a deficit worth a sentence. Two milestones of model work
-bought 0.0003 of the 0.0165 that Milestone 8 left; this says the remaining gap
+9,628 matches is not a deficit worth a sentence. The blend and calibration
+bought 0.0003 of the 0.0165 the model zoo left; this says the remaining gap
 is not spread thinly across every match, it is concentrated in the ones the
 model sees differently.
 
@@ -276,8 +275,7 @@ The share of matches the model scores better on falls monotonically, 49.2% to
 That rules out the reading a value detector rests on. "The model says 45% and
 the price says 38%, so there is value in the difference" is a testable claim,
 and the test is above: the wider that difference, the more likely it is that
-the model is the one that is wrong. Milestone 17 ships the comparison on the
-dashboard's match page with that sentence attached rather than a stake
+the model is the one that is wrong. The dashboard's match page shows the comparison with that sentence attached rather than a stake
 suggestion — see [DASHBOARD.md](DASHBOARD.md#the-market-and-what-a-gap-from-it-means).
 
 **What this is not.** It is not a claim that a model *cannot* beat a closing
@@ -306,7 +304,7 @@ correctly, not failing — roughly a quarter of matches are drawn and almost non
 of them are the modal outcome beforehand.
 
 **Reliability** — whether a stated probability happens as often as it says —
-arrived with Milestone 9, in `src/evaluation/reliability.py`, and is reported
+lives in `src/evaluation/reliability.py`, and is reported
 in [MODELS.md](MODELS.md) rather than here: everything on this page is a
 baseline, and the two that are fitted are fitted on likelihood already.
 
@@ -320,7 +318,7 @@ reliable and the least useful, and the Argentine cup the least reliable of the
 
 ## What the service actually served
 
-Milestone 19. Everything above is the *backtest* — a measurement of a model on
+Everything above is the *backtest* — a measurement of a model on
 folds cut out of history. This section is about the deployment: the forecasts
 the service really answered, scored against the results that arrived afterwards.
 
@@ -376,14 +374,14 @@ reason not to read a small archive as drift.
 
 ### Why the archive had nothing in it, and what changed
 
-Milestone 19 found 35 rows in the log, 25 after repeats collapsed, **25 of them
+The first archive run found 35 rows in the log, 25 after repeats collapsed, **25 of them
 in-sample and 0 scorable**, and concluded that this was a property of how the
 service was being driven rather than of the code. It was, and the property had
 a name: this project ingests results, so every fixture the service could be
 asked about was one the shipped artefact had trained on. `in_sample` was
 `true` on all of it because it could not have been anything else.
 
-Milestone 20 is the fix, and it is two commands rather than a change to any
+The fix is two commands rather than a change to any
 measurement on this page:
 
 ```bash

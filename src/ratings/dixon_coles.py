@@ -254,6 +254,13 @@ def fit_window(
             affordable — the optimiser lands near the answer rather than
             walking to it from zero.
     """
+    # Rows with no scoreline are fixtures, not evidence. `make fixtures` appends
+    # a week of them, so a refit dated after the first has the rest in its
+    # window: a null goal count turns the likelihood into NaN — the optimiser
+    # then stops on its starting point — and a club seen only in a fixture would
+    # be handed strengths nothing fitted. The canonical table holds none, so
+    # training and the backtest are unchanged by this line.
+    window = window.dropna(subset=["home_goals", "away_goals"])
     teams = sorted(set(window["home_team_id"]) | set(window["away_team_id"]))
     if len(window) < parameters.min_matches or len(teams) < parameters.min_teams:
         return None

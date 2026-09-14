@@ -48,6 +48,14 @@ from dashboard.views import competitions, home, match, performance, search  # no
 TITLE = "Match Outcome Predictor"
 ICON = "⚽"
 
+# Every page, in the order the sidebar lists them. The first is the default and
+# owns `/`. `match` and `competitions` are reached by a card or a link carrying a
+# query parameter far more often than by the sidebar, and they are listed anyway:
+# a page nobody can navigate to directly is unreachable the moment a link is wrong.
+#
+# A comment rather than the attribute docstring every other module uses: this
+# file is the script Streamlit runs, and its "magic" writes any bare string
+# literal in it to the page — so a docstring here is text every reader sees.
 PAGES = (
     (home.render, "Home", ":material/home:", ""),
     (home.render_live, "Live centre", ":material/sensors:", "live"),
@@ -56,13 +64,6 @@ PAGES = (
     (search.render, "Search", ":material/search:", "search"),
     (performance.render, "Model", ":material/query_stats:", "model"),
 )
-"""Every page, in the order the sidebar lists them.
-
-The first is the default and owns ``/``. ``match`` and ``competitions`` are
-reached by a card or a link carrying a query parameter far more often than by
-the sidebar, and they are listed anyway: a page nobody can navigate to directly
-is a page that is unreachable the moment a link is wrong.
-"""
 
 
 def sidebar(ctx: context.Context) -> None:
@@ -177,7 +178,10 @@ def main() -> None:
         page_title=TITLE,
         page_icon=ICON,
         layout="wide",
-        initial_sidebar_state="expanded",
+        # "auto", not "expanded": Streamlit opens the sidebar on a wide screen
+        # and collapses it on a narrow one. Pinned open, a phone opens every
+        # page with the chrome covering the football.
+        initial_sidebar_state="auto",
     )
     theme.inject()
     sidebar(context.resolve())

@@ -33,7 +33,7 @@ and checks that match's own row does not move. Both run on every build against
 a sample competition, and the build exits non-zero if either fails. A
 deliberately leaky builder in the test suite proves the failure path works.
 
-Milestone 6 extended all of this past the feature layer:
+The leakage suite extends all of this past the feature layer:
 [LEAKAGE.md](LEAKAGE.md) traces every derived column — features and ratings
 both — back to the canonical columns it actually reads, measured by rewriting
 each input and seeing what moves.
@@ -131,7 +131,7 @@ visible in the marginal.
 It is kept, for two reasons and neither of them is hope. A flat marginal is not
 a flat *interaction*: a tired team facing a strong one is a different case from
 a tired team facing a weak one, and a tree model is exactly the thing that can
-find that. And the column costs nothing to carry. Milestone 8's ablation
+find that. And the column costs nothing to carry. The model ablation
 settled it against a real model rather than a cross-tab: withholding rest and
 congestion costs 0.0003 of log loss, which is small, positive, and enough to
 keep a free column.

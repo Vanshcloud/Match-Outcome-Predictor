@@ -36,7 +36,7 @@ LEAGUE = modelled_frame(seasons=season_labels(2010, 12), teams=14)
 
 
 def test_the_tuning_slice_ends_before_the_first_reported_fold() -> None:
-    """The line that makes this milestone's numbers mean something."""
+    """The line that makes the reported numbers mean something."""
     first = next(iter(walk_forward(LEAGUE)))
     assert tuning_slice(LEAGUE)["date"].max() < first.evaluate["date"].min()
 

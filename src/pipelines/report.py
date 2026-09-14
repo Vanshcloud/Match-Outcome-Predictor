@@ -1,7 +1,7 @@
 """Where the shipped model is honest, where it is not, and the card that says so.
 
-Milestone 9 measured calibration as one pooled number, deliberately, and left
-the two breakdowns that number hides. Both are here, and both come off the same
+The training report measures calibration as one pooled number, deliberately,
+and leaves the two breakdowns that number hides. Both are here, and both come off the same
 diagnostic pass over the folds:
 
 **By class.** Pooling all three statements answers "are these probabilities
@@ -181,14 +181,14 @@ def market_comparison(
 ) -> pd.DataFrame:
     """What the model scores against the closing line, by how far apart they were.
 
-    Milestone 17's measurement, and the reason that milestone ships a verdict
-    rather than a value detector. The obvious reading of a gap between a model
+    The reason this project reports a verdict rather than shipping a value
+    detector. The obvious reading of a gap between a model
     and a price is that the gap is an edge. This asks the data instead, and the
     answer runs the other way: the model's deficit against the line grows with
     the size of the disagreement.
 
     The join is on ``match_id``, which
-    :func:`~src.models.ensemble.fold_forecasts` carries from Milestone 17 for
+    :func:`~src.models.ensemble.fold_forecasts` carries for
     exactly this. Reconstructing it by re-deriving the fold split would produce
     a frame that looks right and silently stops being right the first time a
     split parameter moves.
@@ -229,8 +229,8 @@ def write_market(table: pd.DataFrame, destination_dir: Path) -> Path:
 
     Five rows, and worth writing down for the reason the forecasts are: the
     join behind them is 62,000 forecasts against 300,000 matches, and a
-    dashboard that redid it to draw one caption would be recomputing a
-    milestone's measurement on every page load.
+    dashboard that redid it to draw one caption would be recomputing the
+    whole measurement on every page load.
     """
     return persist(
         table,
@@ -268,8 +268,8 @@ def write_forecasts(forecasts: pd.DataFrame, destination_dir: Path) -> Path:
 
     The rows the card computes and then throws away. They cost about five
     minutes to produce and answer the one question the scored table cannot —
-    whether a stated probability happens at the rate it states — so Milestone
-    12's dashboard reads them instead of recomputing them on every page load,
+    whether a stated probability happens at the rate it states — so the
+    dashboard reads them instead of recomputing them on every page load,
     and a second `make card` is the only thing that has to.
 
     Written through the same :func:`~src.pipelines.derived.persist` every
@@ -279,7 +279,7 @@ def write_forecasts(forecasts: pd.DataFrame, destination_dir: Path) -> Path:
     Takes the destination directory rather than the reports root and the
     subdirectory name. Reaching into :mod:`src.pipelines.train` for that one
     string would import the model zoo to learn a filename, which is the import
-    Milestone 11 found by watching a container fail to start.
+    that once stopped the serving container from starting.
 
     Args:
         forecasts: The per-match pass, as :func:`~src.models.ensemble.fold_forecasts`
@@ -316,5 +316,5 @@ def write_model_card(card: ModelCard, docs_dir: Path) -> Path:
 def shipped_forecaster(
     columns: Sequence[str] = DESIGN_COLUMNS, members: Sequence[str] = MEMBERS
 ) -> Calibrated:
-    """The model the card is about, built the way Milestone 9 scored it."""
+    """The model the card is about, built the way the ensemble backtest scored it."""
     return Calibrated(ensemble(members, columns))

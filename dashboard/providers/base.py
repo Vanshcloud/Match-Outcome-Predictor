@@ -1,13 +1,12 @@
 """The interfaces a football data source implements.
 
-This is the layer the next eight milestones plug into, and the reason the rest
-of the package can be written before any of them exists. A view asks a provider
+This is the layer every data source plugs into, and the reason the rest of the
+package does not depend on any of them. A view asks a provider
 for matches; it never asks *which* provider, and it never learns whether the
 answer came from a Parquet file, an HTTP feed or a websocket.
 
 **Five protocols, and a transport, because they are genuinely different
-questions.** Milestone 12 wrote four of these; each milestone since has added
-one, and no view has moved to take any of them.
+questions.** Each was added without a view moving to take it.
 
 :class:`ResultProvider`
     What has been played. Answered today by
@@ -19,8 +18,8 @@ one, and no view has moved to take any of them.
     by :class:`~dashboard.providers.football_data_org.FootballDataOrgFixtures`
     where a key is configured, and by
     :class:`~dashboard.providers.null.NullFixtures` — which returns nothing and
-    says so — where one is not. Milestone 13 was the first of these, and it was
-    one class satisfying this protocol.
+    says so — where one is not. The live feed is one class satisfying this
+    protocol.
 
 :class:`Notifier`
     Where an event is sent. Answered by
@@ -39,8 +38,7 @@ one, and no view has moved to take any of them.
     What the *market* says. Answered by
     :class:`~dashboard.providers.historical.HistoricalOdds`, out of the same
     canonical table the results come from — the closing price is a column of
-    it. Milestone 12 predicted this as "a fourth protocol beside the three",
-    and that is what it cost.
+    it, and adding it cost one protocol.
 
     Its own protocol rather than three more fields on :class:`ResultProvider`,
     because the two answer different questions about different moments: a
@@ -53,7 +51,7 @@ one, and no view has moved to take any of them.
     :class:`~dashboard.providers.football_data_org.FootballDataOrgSquads`,
     which reads the same feed the fixtures come from — squads are on the free
     tier, team sheets and injuries are not, and the protocol is named after
-    what can be answered rather than after what Milestone 18 was called.
+    what can be answered rather than after what was asked for.
 
 They are separate because a source that has one rarely has the others: the feed
 that knows tonight's kick-off times has no forecast, and the service that has
@@ -173,8 +171,8 @@ class OddsProvider(Provider, Protocol):
 class SquadProvider(Provider, Protocol):
     """Who is registered to play for a club — which is not who is fit to.
 
-    Milestone 18, and the name is the finding. The roadmap called this
-    milestone "player availability, injuries, transfers" and the protocol is
+    The name is the finding. The original scope was "player availability,
+    injuries, transfers" and the protocol is
     not called ``AvailabilityProvider``, because that would be a protocol named
     after the question rather than after the answer any reachable source gives.
 

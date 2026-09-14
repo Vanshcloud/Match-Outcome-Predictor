@@ -78,7 +78,7 @@ def tuning_slice(
 ) -> pd.DataFrame:
     """Every match strictly before the first fold the report scores.
 
-    The one line that makes this milestone's numbers honest. Everything the
+    The one line that makes the reported numbers honest. Everything the
     search touches is on this side of it.
     """
     first = boundaries(matches, folds=folds, horizon_days=horizon_days)[0]

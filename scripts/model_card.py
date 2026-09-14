@@ -16,8 +16,8 @@ individual probabilities: per class, and per competition. Both breakdowns are
 printed here as well as written, because the run that produces them is long
 enough that nobody should have to open a file to see whether it worked.
 
-Reads the ensemble backtest by default, so the row it reports is the one
-Milestone 9 shipped. Exits non-zero if the tables or the scores are missing.
+Reads the ensemble backtest by default, so the row it reports is the
+shipped model. Exits non-zero if the tables or the scores are missing.
 """
 
 from __future__ import annotations
@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\nWhere it is least reliable, by competition:")
     print(render(reliability_by_competition(forecasts, bins=args.bins).head(10)))
 
-    # Milestone 17. Printed rather than only written, because the direction
+    # Printed rather than only written, because the direction
     # down this table is the finding and a number in a Parquet file nobody
     # reads at the end of a five-minute command is a finding nobody has.
     market = market_comparison(forecasts, frame, name=model.name)

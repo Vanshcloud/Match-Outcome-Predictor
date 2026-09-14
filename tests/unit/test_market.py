@@ -1,8 +1,8 @@
 """The closing line as a forecast, and what disagreeing with it is worth.
 
-Milestone 17. Two questions, and they are the same subject from opposite ends:
+Two questions, and they are the same subject from opposite ends:
 does the de-vig produce the probabilities the benchmark was scored against, and
-does the disagreement table say what the milestone claims it says.
+does the disagreement table say what the documentation claims it says.
 
 The direction of that table is the finding, so it is asserted as a direction —
 a test that pinned five means would go red on any change to the split and tell
@@ -160,7 +160,7 @@ def test_the_table_has_one_row_per_band_that_holds_matches() -> None:
 
 
 def test_the_deficit_grows_with_the_disagreement() -> None:
-    """Milestone 17's finding, as the shape of the answer rather than as five
+    """The market finding, as the shape of the answer rather than as five
     pinned means: a model that strays further from a well-calibrated market
     pays for it, and this is the function that has to show it."""
     model, market, outcomes = frames()
@@ -204,7 +204,7 @@ def forecasts_with(match_ids: list[str], probabilities: list[list[float]]) -> pd
 
 
 def test_the_comparison_joins_on_the_fixture_rather_than_on_a_position() -> None:
-    """Milestone 17 put ``match_id`` on every forecast for exactly this. The
+    """Every forecast carries ``match_id`` for exactly this. The
     matches here are deliberately in the other order."""
     forecasts = forecasts_with(["a", "b"], [[0.5, 0.3, 0.2], [0.6, 0.2, 0.2]])
     matches = pd.DataFrame(

@@ -38,6 +38,15 @@ def render() -> None:
     ctx = context.resolve()
     st.title("Match centre")
     _headline(ctx)
+    st.markdown(
+        f"Pre-match home / draw / away probabilities for "
+        f"{len(competition.competitions())} competitions, from a model evaluated "
+        "walk-forward against the bookmaker's closing line. Open a played or "
+        "priced match for the forecast, how often forecasts of that size came true, "
+        "and what the market said; cards from the live feed show kick-offs and "
+        "scores. The **Model** page has the evaluation; the **Live centre** follows "
+        "matches in play, polled about once a minute."
+    )
 
     live_now(ctx)
 

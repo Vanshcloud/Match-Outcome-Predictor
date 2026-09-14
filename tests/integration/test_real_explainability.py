@@ -6,7 +6,7 @@ one reads `docs/MODEL_CARD.md` if it is there and pins what it claims.
 
 The finding this file exists to protect is the **disagreement**. Permutation
 ranks the elo block far above form; the ablation ranks form above elo. Both are
-right, and the gap between them is the substitution Milestone 8 measured: the
+right, and the gap between them is the substitution the ablation measures: the
 model leans on elo, and can do without it, because Dixon-Coles says most of the
 same thing. A change that quietly made the two agree would have lost that.
 """
@@ -94,7 +94,7 @@ def test_every_block_is_measured(broken: pd.DataFrame) -> None:
 
 def test_breaking_a_block_never_helps(broken: pd.DataFrame) -> None:
     """A block whose removal improved the model would be a block that should
-    not have shipped, and Milestone 8's ablation already said none is."""
+    not have shipped, and the ablation already says none is."""
     assert (broken["delta_log_loss"] > -0.001).all()
 
 
@@ -102,7 +102,7 @@ def test_the_deltas_are_far_larger_than_the_noise_between_repeats(
     broken: pd.DataFrame,
 ) -> None:
     """The three blocks that matter clear their own spread by an order of
-    magnitude. The two that do not are the two Milestone 8 measured at 0.0001."""
+    magnitude. The two that do not are the two the ablation measures at 0.0001."""
     real = broken[broken["delta_log_loss"] > 0.001]
     assert len(real) == 3
     assert (real["delta_log_loss"] > 10 * real["spread"]).all()
@@ -116,7 +116,7 @@ def test_the_model_leans_hardest_on_the_ratings(broken: pd.DataFrame) -> None:
 def test_schedule_and_head_to_head_are_worth_nothing_here_either(
     broken: pd.DataFrame,
 ) -> None:
-    """Milestone 8's ablation put both at 0.0001–0.0003. A second method
+    """The ablation puts both at 0.0001–0.0003. A second method
     agreeing is what makes that a property of the features rather than of the
     way they were measured."""
     assert broken.loc["schedule", "delta_log_loss"] < 0.001

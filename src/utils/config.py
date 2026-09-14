@@ -231,8 +231,7 @@ class DashboardConfig(_Strict):
 class Settings(_Strict):
     """The fully resolved configuration for one process.
 
-    Sections are added by the milestone that first reads them — ingestion,
-    storage and split settings arrive with Milestones 2, 3 and 7. A section
+    Sections are added by the code that first reads them. A section
     declared before anything reads it is a setting that looks configurable and
     is not.
 

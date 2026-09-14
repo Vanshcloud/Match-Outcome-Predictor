@@ -78,8 +78,8 @@ def test_a_real_match_can_be_found_and_then_priced(client: TestClient) -> None:
     """The two endpoints in the order a caller uses them: discovery is how a
     match gets named at all.
 
-    ``until`` is what makes this about a *played* match. Before Milestone 20
-    every row in the index was one, so the first row of ``/fixtures`` was
+    ``until`` is what makes this about a *played* match. When the index held
+    only results every row in it was one, so the first row of ``/fixtures`` was
     necessarily inside the artefact's training window; now the index also holds
     matches that have not kicked off, and they sort first. Asking for a match
     before the artefact's cut-off is asking the question this test is about.
@@ -101,7 +101,7 @@ def test_a_real_match_can_be_found_and_then_priced(client: TestClient) -> None:
 
 
 def test_an_upcoming_fixture_prices_out_of_sample(client: TestClient) -> None:
-    """Milestone 20's whole point, against the real tables.
+    """Pricing a fixture before kick-off, against the real tables.
 
     Skipped where `make fixtures` has not run, which is a clean checkout and
     every week the provider has nothing to publish. Where it has, the forecast

@@ -1,6 +1,6 @@
 """Data validation: the assertions that used to live in a test file.
 
-Milestone 2 checked the ingested table from ``tests/integration``. That was the
+The ingested table was first checked from ``tests/integration``. That was the
 right place to start and the wrong place to stay: a test run is something a
 developer does, and these questions — is the table chronological, does the
 result agree with the score, did shot coverage collapse — are things a

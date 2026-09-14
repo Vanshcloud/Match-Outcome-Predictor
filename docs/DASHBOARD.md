@@ -1,7 +1,7 @@
 # The dashboard
 
-Milestone 12, with the fixture feed of Milestone 13 behind it. A football
-dashboard over a prediction engine it is only ever a client of.
+A football dashboard over a prediction engine it is only ever a client of,
+with an optional live fixture feed behind it.
 
 ```bash
 make dashboard      # http://127.0.0.1:8501
@@ -45,7 +45,7 @@ views  ──▶  services  ──▶  providers  ──▶  domain
 | | What lives there | Why it is separate |
 |---|---|---|
 | `domain/` | `Fixture`, `Prediction`, `MatchStatus`, the competition catalogue, favourites | Value types with no I/O. A provider, a test and one day a React client all mean the same thing by a `Fixture`. |
-| `providers/` | One protocol per kind of source, one implementation per source | The layer the next eight milestones plug into. A view never learns which provider answered. |
+| `providers/` | One protocol per kind of source, one implementation per source | The layer every data source plugs into. A view never learns which provider answered. |
 | `services/` | Orchestration and caching | What the home page *needs*, assembled from three providers and a favourites list. Streamlit reruns the whole script on every interaction, so the caching is real work. |
 | `views/` | Streamlit | Thin, and the only layer that would be rewritten if this became a React client reading the same API. |
 
@@ -98,20 +98,18 @@ game on the screen that is not being played, and that is the one failure this
 application cannot recover from: a reader who catches it once stops believing
 the real rows too.
 
-### What Milestone 13 actually cost
+### What adding the live feed cost
 
-One class, one registry entry, one variable — the claim Milestone 12's shape
-was making, now spent:
+One class, one registry entry, one variable:
 
 ```python
 FIXTURE_PROVIDERS = {"none": NullFixtures, "football-data.org": FootballDataOrgFixtures}
 ```
 
 No view moved and no card changed. The one line of `views/` that did change was
-the sidebar caption, which used to read `✕ No fixture feed — Milestone 13` and
-now names the connected feed or the provider's own reason — a status bar citing
-an unshipped milestone after it ships is a small lie a reader stops checking
-the rest of the page against.
+the sidebar caption, which names the connected feed or the provider's own
+reason — a status bar that is wrong about its sources is a small lie a reader
+stops checking the rest of the page against.
 
 ### What it is not
 
@@ -161,7 +159,7 @@ the rest of the page against.
   cache would be one that is empty every time it is read.
 - **Not in-play modelling.** The card carries a minute and a score; the
   probabilities beside it are pre-match. A model fitted on in-play state is a
-  modelling milestone with its own ablation, and `docs/MODEL_CARD.md` is
+  modelling change with its own ablation, and `docs/MODEL_CARD.md` is
   explicit that nothing here is.
 
 ## The pages
@@ -201,9 +199,9 @@ same band actually happened, in this competition, from the same reliability
 tables the model card is generated from. A stated probability with no measured
 reliability beside it is the number this project exists to stop people quoting.
 
-Then, since Milestone 17, **what the market said** and **what the goal model
+Then **what the market said** and **what the goal model
 expects** — see [The market, and what a gap from it means](#the-market-and-what-a-gap-from-it-means)
-below — and since Milestone 18, **who is registered**: both squads, from the
+below — and **who is registered**: both squads, from the
 same feed the live scores come from. Then form and head-to-head from the match
 table, and named placeholders for team sheets, injuries, in-play statistics and
 shot-quality xG — each saying what it needs and why it is not a rendering
@@ -216,12 +214,19 @@ ranked list: a reader typing "Arsenal" wants the club and a reader typing
 second for no reason a person could predict.
 
 ### Model
-The three panels Milestone 12 shipped, unchanged in substance: the scoreboard,
+The page opens with four headline numbers, each read from the reports: the
+out-of-sample forecasts, the shipped model's and the closing line's log loss
+over the matches both could price, and the pooled calibration error. A
+**Limitations** tab closes it, listing what the model must not be read as
+saying. The scoreboard is a dot plot on an axis framed around the scores:
+every score lies near 1.0, and bars drawn from zero come out the same length.
+
+Beneath the headline, three panels: the scoreboard,
 the reliability diagram filtered by competition and fold, and the
 per-competition breakdown. Moved onto their own page so the home page can be
 about football and this one about the forecaster.
 
-Milestone 19 adds a fourth, **What we served**, and it is the only panel on this
+A fourth, **What we served**, and it is the only panel on this
 dashboard whose subject is not the backtest: the forecasts the service actually
 answered, scored against the results that arrived afterwards. It renders the
 size of the archive before the drift figure and never the other way round — a
@@ -233,7 +238,7 @@ with the table saying how many more forecasts it would take. See
 
 ## The market, and what a gap from it means
 
-Milestone 17. Two panels on the match page, and one of them is mostly a
+Two panels on the match page, and one of them is mostly a
 sentence.
 
 ### What the market said
@@ -255,9 +260,7 @@ project ingests results. A fixture without a price says so.
 
 ### How far apart, and what that is worth
 
-This is the panel Milestone 12 said should not exist, and the reason it now
-does is that the objection was satisfied rather than overruled. Milestone 12's
-argument was that *"showing both invites the comparison to be made without the
+The obvious objection to this panel is that *"showing both invites the comparison to be made without the
 walk-forward folds that make it meaningful."* So the comparison is made **with**
 the folds, in `src/pipelines/report.py::market_comparison`, and the panel shows
 the answer instead of the invitation.
@@ -296,7 +299,7 @@ they are — it just declines to say what the distance has been worth.
 ### Expected goals, and the word that is not used
 
 `dc_home_lambda` and `dc_away_lambda` from the ratings table: the two Poisson
-rates Milestone 4's Dixon-Coles model fits, with the total and the supremacy
+rates the Dixon-Coles model fits, with the total and the supremacy
 beside them.
 
 **These are not xG.** Nothing in this project has ever seen a shot map — the
@@ -314,9 +317,9 @@ competition has no rates, and says that rather than showing zeros.
 
 ## Squads, and the three words that are not interchangeable
 
-Milestone 18. The roadmap called it *player availability, injuries, transfers*.
-What shipped is a squad panel, and the gap between those two sentences is the
-milestone.
+The original scope was *player availability, injuries, transfers*. What a
+reachable source supports is a squad panel, and the gap between those two
+sentences is the point of this section.
 
 | `DASHBOARD_SQUAD_PROVIDER` | Class | What it answers |
 |---|---|---|
@@ -345,15 +348,14 @@ other.
 So the protocol is `SquadProvider` and not `AvailabilityProvider`: a protocol
 named after the question rather than after the answer would be three methods
 returning `None`. The panel says *registered*, the caption says what that does
-not include, and the section for the other two now reads "no source" instead of
-naming a milestone that has been spent.
+not include, and the section for the other two reads "no source" rather than
+promising future work.
 
-### The join Milestone 13 said it would not make
+### The join the fixture feed does not make
 
-Milestone 13 was explicit that its feed is **not joinable to the match table**,
-and that has not changed: ids are still prefixed `fdorg-` and nothing this feed
+The fixture feed is **not joinable to the match table**: ids are still prefixed `fdorg-` and nothing this feed
 returns is written anywhere. But a squad panel on a match page has to find
-*this* club in *that* feed, and Milestone 18 is the first milestone that needs
+*this* club in *that* feed, and the squad panel is the one place that needs
 the two vocabularies reconciled at all.
 
 It is done by name, in `providers/football_data_org.py::pick`, with two rules
@@ -407,7 +409,7 @@ on a goal, and the same ten requests a minute pay for both.
 
 ### What it did not touch
 
-No view moved for the odds at Milestone 17 and none moved for this: the panel
+No view moved for the odds and none moved for this: the panel
 is one function on the match page, and `src/` is **unchanged**. Nothing here
 reaches the model — no table in this project has ever held a player's name, and
 the forecast above the panel was produced by a model fitted on scorelines. A
@@ -416,7 +418,7 @@ presentation change's clothes.
 
 ## Live tracking and alerts
 
-Milestone 15. The live strip **repaints itself** — `@st.fragment(run_every=60)`
+The live strip **repaints itself** — `@st.fragment(run_every=60)`
 — and says what changed since it last looked.
 
 A fragment rather than a whole-page rerun: everything else on the home page is
@@ -481,11 +483,11 @@ alert can never be this dashboard's doing.
 **Alerts exist while something is watching.** The page has to be open. A
 process that polls with every browser closed is a different thing with its own
 lifecycle — a second consumer of a ten-request budget, reading favourites
-outside Streamlit — and it is not in this milestone.
+outside Streamlit — and it is not built.
 
 ## Favourites
 
-Competitions and clubs, and since Milestone 14 they **outlive the browser
+Competitions and clubs, and they **outlive the browser
 tab**. They are saved against whoever the reader is, in a small JSON file that
 `dashboard/domain/store.py` owns.
 
@@ -569,11 +571,12 @@ set of contrast ratios to check.
   the outcome labels invite — which is the most common way a football
   visualisation becomes unreadable for one viewer in twelve. The three differ
   in lightness, so the probability bar survives greyscale.
-- **Crests are generated**, because there are no club badges in this repository
-  and no licence to ship any. Initials on a colour derived from the club's
-  name — stable between sessions, because a reader scanning forty cards
-  navigates by colour before they read a word. `Fixture.home_crest_url` is the
-  one field a badge provider starts filling.
+- **No club badges ship in this repository**, and there is no licence to ship
+  any. Cards from the football-data.org feed show the crest URL that feed
+  returns, loaded by the browser from football-data.org; every other card
+  draws initials on a colour derived from the club's name — stable between
+  sessions, because a reader scanning forty cards navigates by colour before
+  they read a word.
 - **Cards are anchors, not buttons.** A grid of forty `st.button` widgets is
   forty round trips to the server; forty links are forty links.
 
@@ -600,7 +603,7 @@ constant the API and the model card use.
 - **Not a place to retrain anything.** No button here starts a fit. The
   pipelines are commands with manifests, and a fit triggered from a web page is
   a fit nobody can trace to the bytes that produced it.
-- **Not a tipster.** Milestone 17 put the closing line on the match page, and
+- **Not a tipster.** The closing line is on the match page, and
   the panel beside it says what a gap from that line has been worth: nothing
   good for the model. No page here flags value, suggests a stake or computes an
   expected return, and the reason is a measurement rather than caution — the
@@ -609,7 +612,7 @@ constant the API and the model card use.
   estimate of this model's own error.
 - **Not authenticated by default, and not for public hosting.** It reads local
   files and talks to a local service, and out of the box its profiles are
-  names without passwords. Milestone 14 added optional OIDC login for
+  names without passwords. Optional OIDC login exists for
   deployments that configure one, which changes who favourites belong to — not
   what the pages will show a reader who is not signed in. Every page remains
   readable by anyone who can reach it. `docker-compose.yml` is a local

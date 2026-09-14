@@ -255,6 +255,29 @@ def test_a_warm_start_lands_in_the_same_place() -> None:
         assert warm.attack[team] == pytest.approx(cold.attack[team], abs=0.05)
 
 
+def test_a_fixture_in_the_window_changes_nothing_the_fit_returns() -> None:
+    """`make fixtures` appends unplayed rows, so a refit on a later fixture date
+    has earlier ones in its window. A null goal count used to turn the
+    likelihood into NaN, and a club seen only in a fixture was handed
+    strengths nothing had fitted."""
+    matches, _, _ = simulate()
+    matches = matches.astype({"home_goals": "float64", "away_goals": "float64"})
+    as_of = matches["date"].max() + pd.Timedelta(3, "D")
+    fixtures = matches.tail(2).copy()
+    fixtures["date"] = as_of - pd.Timedelta(1, "D")
+    fixtures["match_id"] = ["fixture-1", "fixture-2"]
+    fixtures["away_team_id"] = [fixtures["away_team_id"].iloc[0], "eng:promoted"]
+    fixtures[["home_goals", "away_goals"]] = np.nan
+
+    clean = fit_window(matches, as_of, UNWEIGHTED)
+    with_fixtures = fit_window(pd.concat([matches, fixtures], ignore_index=True), as_of, UNWEIGHTED)
+    assert clean is not None and with_fixtures is not None
+    assert "eng:promoted" not in with_fixtures.attack
+    assert with_fixtures.attack == pytest.approx(clean.attack)
+    assert with_fixtures.defence == pytest.approx(clean.defence)
+    assert with_fixtures.rho == pytest.approx(clean.rho)
+
+
 def test_rates_are_unavailable_for_an_unseen_team() -> None:
     strengths = Strengths(attack={"a": 0.1}, defence={"a": 0.0}, home_advantage=0.3, rho=-0.1)
     assert strengths.rates("a", "b") is None

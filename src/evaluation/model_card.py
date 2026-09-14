@@ -50,8 +50,7 @@ LIMITATIONS: tuple[str, ...] = (
 """The section that changes what someone does with the model, as lines.
 
 A constant rather than a literal inside :meth:`ModelCard.render`, because
-Milestone 11 serves these four bullets from the API — the plan asked for the
-card's limitations to be reachable from a response rather than buried in a
+the API serves these four bullets — the card's limitations should be reachable from a response rather than buried in a
 repository, and the only way that stays true is for the served text and the
 rendered text to be the same object. Wrapped at the width the card is written
 at, so splicing them into the document needs no reflow.
@@ -160,7 +159,7 @@ class ModelCard:
             "Every fold trains on matches strictly earlier than the ones it is scored",
             "on, and the boundary is a date rather than a row — two matches played on",
             "the same afternoon are never split across it. The inputs are the twenty",
-            "features and ten rating columns from earlier milestones. **The",
+            "features and ten rating columns from the ratings table. **The",
             "bookmaker's odds are not among them**: they are the benchmark this",
             "project measures itself against, and a model given the closing line",
             "learns to copy it.",

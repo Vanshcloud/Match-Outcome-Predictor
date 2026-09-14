@@ -5,12 +5,12 @@ The registry, and the two functions that read it. Nothing in
 knows how many exist — a view asks :func:`fixtures` for the fixture feed and
 renders whatever comes back, including nothing.
 
-**Milestone 13 was exactly this change.**
+**Adding the live feed was exactly this change.**
 :class:`~dashboard.providers.football_data_org.FootballDataOrgFixtures` is one
 class implementing :class:`~dashboard.providers.base.FixtureProvider`, one
 entry below, and one environment variable. No view moved, no card changed, and
-the two forward sections stop being empty. The same shape takes an odds
-provider at Milestone 17 and a live socket at Milestone 15.
+the two forward sections stop being empty. The same shape takes the odds
+provider and the webhook notifier.
 
 **An unknown name falls back rather than failing.** A dashboard that refused to
 start because of a typo in an environment variable, on a page whose live
@@ -85,7 +85,7 @@ NOTIFIERS: dict[str, Callable[[], Notifier]] = {
 
 The same shape as :data:`FIXTURE_PROVIDERS` and read the same way, because
 "which transport is configured" and "which feed is configured" are the same
-question asked of different things. Milestone 15 added ``webhook``; a phone or
+question asked of different things. ``webhook`` is one entry; a phone or
 an inbox is one more entry.
 """
 
@@ -112,8 +112,8 @@ SQUAD_PROVIDERS: dict[str, Callable[[], SquadProvider]] = {
 }
 """Where a club's registered players come from, by the name that selects it.
 
-The third registry, the same shape as the two above, and Milestone 18's whole
-wiring. Its own variable rather than riding on
+The third registry, the same shape as the two above, and the squad panel's
+whole wiring. Its own variable rather than riding on
 :data:`FIXTURE_PROVIDERS`, even though the shipped implementation of both is
 the same feed and the same key: a reader who wants live scores and no squad
 panel — or the reverse — sets one and not the other, and one variable

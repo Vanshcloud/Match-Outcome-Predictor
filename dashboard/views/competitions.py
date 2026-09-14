@@ -1,8 +1,8 @@
 """Competitions: the whole registry to browse, and one league at a time to read.
 
 Every competition in ``configs/leagues.yaml`` has a page here, and it has one
-without anybody writing it: the page is a function of the registry, so the
-league added in a future milestone appears with no code change. That is the
+without anybody writing it: the page is a function of the registry, so a
+league added to the registry appears with no code change. That is the
 same property ``tests/unit/test_registry.py`` asserts about ingestion, extended
 to the presentation layer.
 """
@@ -20,6 +20,7 @@ from src.ingestion.registry import Competition
 
 COMPETITION_PARAM = "competition"
 FIXTURE_CARDS = 12
+BROWSER_LANES = 4
 
 STANDINGS_NOTE = (
     "A league table is a season's results added up, and this project ingests "
@@ -59,7 +60,8 @@ def _browser() -> None:
         options=[one.id for one in catalogue.competitions()],
         default=favourites.leagues(),
         format_func=catalogue.label,
-        help="Kept for this session. Accounts and saved preferences are Milestone 14.",
+        help="Saved against your profile, or your account if you are signed in, "
+        "and kept between visits.",
     )
     if followed != favourites.leagues():
         favourites.remember_leagues(followed)
@@ -70,16 +72,16 @@ def _browser() -> None:
         if not shown:
             continue
         ui.section(country, f"{len(shown)} competition{'s' if len(shown) != 1 else ''}")
-        lanes = st.columns(min(4, len(shown)))
-        for position, one in enumerate(shown):
-            with lanes[position % len(lanes)]:
-                tier = f"tier {one.tier}" if one.tier else "cup"
-                st.markdown(f"**{one.name}**")
-                st.caption(f"`{one.id}` · {tier}")
-                st.markdown(
-                    ui.link("Open", f"competitions?{COMPETITION_PARAM}={one.id}"),
-                    unsafe_allow_html=True,
+        ui.card_grid(
+            [
+                ui.competition_card(
+                    one.name, one.id, one.tier, f"competitions?{COMPETITION_PARAM}={one.id}"
                 )
+                for one in shown
+            ],
+            columns=BROWSER_LANES,
+            min_rem=11,
+        )
 
 
 def _matches(one: Competition, query: str) -> bool:

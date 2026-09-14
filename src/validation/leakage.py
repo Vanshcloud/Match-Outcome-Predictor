@@ -1,6 +1,6 @@
 """Every producer, found rather than listed, and probed.
 
-Milestones 4 and 5 each run the temporal probes inside their own pipeline, over
+The ratings and features pipelines each run the temporal probes inside their own pipeline, over
 their own producers. That is one list per pipeline, and a list is a thing you
 can forget to add to: a new rating model or feature builder wired into a
 pipeline but omitted from the probe call would ship unverified, and nothing
@@ -128,7 +128,7 @@ def check_defaults_are_complete(defaults: Sequence[str]) -> tuple[str, ...]:
 
     The mirror of the walk. A producer nobody runs is not a leak, but it is a
     column the model layer expects and will not get, and the failure shows up
-    milestones later as a table of nulls.
+    much later as a table of nulls.
     """
     return tuple(sorted({producer.name for producer in producers()} - set(defaults)))
 

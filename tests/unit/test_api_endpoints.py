@@ -292,7 +292,7 @@ def other_ids(count: int) -> list[str]:
 def test_the_same_fixture_twice_is_the_same_answer_at_a_later_moment() -> None:
     """What is cached is the arithmetic, never the timestamp. ``predicted_at``
     says when this service answered, not when it last multiplied — and
-    Milestone 19 scores the log those timestamps land in."""
+    `make archive` scores the log those timestamps land in."""
     service = PredictionService(model=LOADED, index=INDEX)
 
     first, _ = service.predict([{"match_id": str(SOME["match_id"])}])

@@ -4,7 +4,7 @@
      validation run overwrites it, and a hand-edited figure is a figure
      that no longer describes the data. -->
 
-Generated 2026-09-03 12:15 UTC by match-outcome-predictor 0.4.0.
+Generated 2026-09-12 21:16 UTC by match-outcome-predictor 0.12.0.
 
 ## What this is
 
@@ -58,7 +58,7 @@ are unavailable.
 
 | | Check | Severity | Detail |
 |---|---|---|---|
-| FAIL | matches fall inside the season they are labelled with | warning | matches outside their season window: ['2013-14: 1 row(s), e.g. 2015-01-29'] |
+| FAIL | matches fall inside the season they are labelled with | warning | matches outside their season window: ['2013-14 (ARG_1): 1 row(s), e.g. 2015-01-29'] |
 | pass | columns are exactly the canonical schema, in order | error | ok |
 | pass | dtypes are the canonical dtypes | error | ok |
 | pass | every column is classified as pre-match or post-match | error | ok |

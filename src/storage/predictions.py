@@ -4,7 +4,7 @@ This is the first application state in the project. Everything else on disk is
 *derived* — delete it and `make reproduce` rebuilds it byte for byte — and a
 served prediction is the opposite: it happened once, at a time, from inputs
 that will not be the same tomorrow, and nothing regenerates it. That difference
-is the condition Milestone 3 set for adding a second store, and it is met here.
+is the condition for adding a second store, and it is met here.
 
 **Why PostgreSQL and not DuckDB.** The analytical store is right for column
 scans over Parquet and wrong for this: DuckDB takes a single writer, and the

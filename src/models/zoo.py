@@ -26,7 +26,7 @@ silently pre-filled matrix.
 
 **The three boosted libraries are imported when their family is built, not when
 this module is.** They are separate wheels of a few hundred megabytes each, and
-Milestone 11 serves a blend that contains one of them — so importing all three
+the API serves a blend that contains one of them — so importing all three
 at module scope made the serving image carry LightGBM and CatBoost to satisfy
 an `import` that nothing in a request ever reaches. The failure was not subtle:
 the container would not start. scikit-learn stays at the top because three
@@ -93,7 +93,7 @@ class TrainedForecaster:
     def fit(self, train: pd.DataFrame) -> Estimator:
         """A fresh estimator, fitted on the matches it is handed.
 
-        Public because Milestone 10 needs the fitted thing itself: SHAP reads
+        Public because explainability needs the fitted thing itself: SHAP reads
         the trees, and permutation importance predicts nineteen times off one
         fit. Both would otherwise refit for every number they report, and both
         would reimplement the two lines below to do it.

@@ -53,7 +53,7 @@ class Context:
     def ratings_path(self) -> str:
         """Where the ratings table is, as the string its cache is keyed on.
 
-        Milestone 17 reads two columns of it — Dixon-Coles' goal rates — and
+        The match page reads two columns of it — Dixon-Coles' goal rates — and
         nothing else in this application reads it at all. A property rather
         than a provider because it is *this project's own fitted model*, in the
         same category as the report tables, not somebody else's football.

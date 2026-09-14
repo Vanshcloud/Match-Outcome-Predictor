@@ -109,8 +109,8 @@ def predictions(**kwargs: Any) -> ApiPredictions:
 
 
 def test_every_shipped_provider_satisfies_the_interface_it_claims(table: Path) -> None:
-    """The check that stops the protocols from being documentation. Milestone
-    13's provider passes exactly this and nothing else has to change."""
+    """The check that stops the protocols from being documentation. A new
+    provider passes exactly this and nothing else has to change."""
     assert isinstance(HistoricalResults(table), ResultProvider)
     assert isinstance(NullFixtures(), FixtureProvider)
     assert isinstance(predictions(), PredictionProvider)
@@ -183,7 +183,7 @@ def test_the_registry_returns_the_null_feed_by_default(monkeypatch: pytest.Monke
 
 
 def test_the_provider_is_chosen_by_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The whole of the Milestone 13 wiring: a class, a registry entry, and
+    """The whole of the provider wiring: a class, a registry entry, and
     this variable."""
     monkeypatch.setenv(providers.FIXTURE_PROVIDER_ENV, "none")
     assert providers.fixtures().name == "none"
@@ -273,6 +273,25 @@ def test_a_prediction_body_becomes_the_domain_type() -> None:
     assert stated.match_id == "abc"
     assert stated.model == "ensemble-calibrated"
     assert stated.model_version == "0.12.0"
+    assert (stated.home_team, stated.date) == ("", None)
+
+
+def test_the_fixture_the_service_priced_is_carried_onto_the_prediction() -> None:
+    """An upcoming fixture is in no table the dashboard reads, so the clubs and
+    date in the service's answer are what its page can put in the title."""
+    fixture = {
+        "home_team": "Mechelen",
+        "away_team": "Anderlecht",
+        "competition_id": "BEL_1",
+        "date": "2026-09-11",
+    }
+    stated = as_prediction("abc", {**ANSWER, "fixture": fixture})
+    assert (stated.home_team, stated.away_team, stated.competition_id) == (
+        "Mechelen",
+        "Anderlecht",
+        "BEL_1",
+    )
+    assert stated.date == dt.date(2026, 9, 11)
 
 
 # ---- the edges of a real table -----------------------------------------------
@@ -301,7 +320,7 @@ def test_a_row_with_no_goals_recorded_carries_none_rather_than_a_number() -> Non
 
 # ---- the fixture feed that is connected: football-data.org -------------------
 #
-# Milestone 13. No network: the client is a stub whose `get` records what was
+# No network: the client is a stub whose `get` records what was
 # asked and answers a canned body, which is enough because the only thing this
 # provider does with the wire is turn it into `Fixture` objects and turn every
 # failure into an empty answer with a reason.
@@ -331,7 +350,7 @@ class StubHttp:
         return self._record(url, kwargs)
 
     def post(self, url: str, **kwargs: Any) -> StubResponse:
-        """Milestone 15 posts through the same client the feeds read with."""
+        """The notifier posts through the same client the feeds read with."""
         return self._record(url, kwargs)
 
     def close(self) -> None:
@@ -403,7 +422,7 @@ def _no_memo_between_cases() -> Any:
 
 
 def test_the_connected_feed_satisfies_the_interface_the_views_are_written_against() -> None:
-    """The Milestone 13 claim, checked rather than asserted in prose."""
+    """The provider-layer claim, checked rather than asserted in prose."""
     assert isinstance(FootballDataOrgFixtures(api_key="k"), FixtureProvider)
     assert providers.FIXTURE_PROVIDERS["football-data.org"] is FootballDataOrgFixtures
 
@@ -769,7 +788,7 @@ def test_another_project_answering_on_the_port_is_not_a_prediction_service() -> 
 
 def test_the_check_is_the_documents_shape_not_a_list_of_component_names() -> None:
     """A service that is ours but has grown a component this build has never
-    heard of is still ours. The set of components is a thing later milestones
+    heard of is still ours. The set of components is a thing later changes
     add to, and a check that enumerated them would fail on the one that does."""
     provider = predictions(health={"status": "ok", "components": [{"name": "odds", "ready": True}]})
     assert provider.available
@@ -782,7 +801,7 @@ def test_a_service_answering_a_component_list_that_is_not_a_list_is_refused() ->
     assert "not this project's API" in str(provider.error)
 
 
-# ---- where an event is sent (Milestone 15) -----------------------------------
+# ---- where an event is sent -----------------------------------------------
 
 
 def event(kind: MatchEvent | EventKind = EventKind.GOAL) -> MatchEvent:
@@ -853,6 +872,35 @@ def test_a_webhook_that_cannot_be_reached_says_that_instead() -> None:
     assert "could not be reached" in str(sink.error)
 
 
+def test_an_unreachable_webhook_never_puts_its_url_in_the_error_or_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The URL is the credential. ``requests`` embeds it — path and query —
+    in a connection error's message, which is exactly what used to be logged."""
+    url = "https://user:hunter2@hooks.example.test/services/T0SECRET/B0SECRET/PATHTOKEN?token=QUERYTOKEN"
+    leaked = requests.ConnectionError(
+        "HTTPSConnectionPool(host='hooks.example.test', port=443): Max retries exceeded "
+        "with url: /services/T0SECRET/B0SECRET/PATHTOKEN?token=QUERYTOKEN"
+    )
+    sink = webhook.WebhookNotifier(url=url, http=StubHttp(fails=leaked))  # type: ignore[arg-type]
+    with caplog.at_level("DEBUG"):
+        assert not sink.send(event())
+
+    said = f"{sink.error}\n{caplog.text}"
+    for secret in ("T0SECRET", "B0SECRET", "PATHTOKEN", "QUERYTOKEN", "hunter2", "/services/"):
+        assert secret not in said
+    assert "hooks.example.test" in str(sink.error)
+    assert "ConnectionError" in str(sink.error)
+
+
+def test_a_url_too_malformed_to_parse_still_fails_with_a_sentence() -> None:
+    """The likeliest reason a post failed; naming the host must not raise too."""
+    http = StubHttp(fails=requests.exceptions.InvalidURL("Invalid URL 'http://[::1/SECRET'"))
+    sink = webhook.WebhookNotifier(url="http://[::1/SECRET", http=http)  # type: ignore[arg-type]
+    assert not sink.send(event())
+    assert sink.error == "the webhook at the configured host could not be reached (InvalidURL)"
+
+
 def test_a_client_this_transport_built_is_closed_and_an_injected_one_is_not(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -898,7 +946,7 @@ def test_every_shipped_transport_satisfies_the_interface() -> None:
     assert isinstance(webhook.WebhookNotifier(url="https://hooks.test/abc"), Notifier)
 
 
-# ---- Milestone 17: the closing line, and the goal model's rates ---------------
+# ---- the closing line, and the goal model's rates --------------------------
 
 
 @pytest.fixture
@@ -945,7 +993,7 @@ def test_no_table_means_unavailable_and_no_price(tmp_path: Path) -> None:
 
 
 def test_the_goal_rates_are_read_from_the_ratings_table() -> None:
-    """Milestone 4's Dixon-Coles fits these; Milestone 17 shows them. They are
+    """The Dixon-Coles model fits these; the match page shows them. They are
     a goal model's expectation, not xG off a shot map."""
     ratings = pd.DataFrame(
         {"match_id": ["a", "b"], "dc_home_lambda": [1.42, None], "dc_away_lambda": [1.03, None]}
@@ -973,11 +1021,11 @@ def test_no_ratings_table_means_no_rates() -> None:
     assert expected_goals(pd.DataFrame({"match_id": ["a"]}), "a") is None
 
 
-# ---- squads: Milestone 18 ----------------------------------------------------
+# ---- squads --------------------------------------------------------------------
 #
 # The fifth protocol. What is worth testing is the join — this feed spells a
-# club differently from the table this project ingests, and Milestone 18 is the
-# first milestone that has to reconcile the two — and the three different
+# club differently from the table this project ingests, and the squad panel is
+# the one place that has to reconcile the two — and the three different
 # nothings a lookup can answer with.
 
 
@@ -1026,7 +1074,7 @@ def _no_squad_memo_between_cases() -> Any:
 
 
 def test_the_squad_source_satisfies_the_fifth_protocol_and_is_in_the_registry() -> None:
-    """Milestone 18's claim, in the same form Milestone 13's was checked in."""
+    """The squad provider's claim, in the same form the fixture feed's is checked in."""
     assert isinstance(football_data_org.FootballDataOrgSquads(api_key="k"), SquadProvider)
     assert isinstance(NullSquads(), SquadProvider)
     assert providers.SQUAD_PROVIDERS["football-data.org"] is football_data_org.FootballDataOrgSquads
@@ -1155,7 +1203,7 @@ def test_a_player_with_no_position_or_birthday_is_counted_rather_than_dropped() 
 
 
 def test_the_two_vocabularies_are_reconciled_by_name_not_by_an_alias_table() -> None:
-    """The join Milestone 18 is the first to need. This project's tables say
+    """The join the squad panel needs. This project's tables say
     "Hull" and "Brighton"; the feed says "Hull City AFC" and "Brighton & Hove
     Albion FC", and neither list is going to change to suit the other."""
     source, _ = squad_feed(

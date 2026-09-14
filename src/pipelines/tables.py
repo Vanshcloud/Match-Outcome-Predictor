@@ -12,8 +12,8 @@ to say about keeps its row and loses those columns, which the models read as
 the null it is — "no history yet" — rather than losing the match. An inner join
 here would silently drop every club's first fixtures and improve every score.
 
-**Through the store, never by opening a path.** The one rule Milestone 3 set
-and CI enforces: nothing outside `src/storage` names a file format.
+**Through the store, never by opening a path.** The storage rule
+CI enforces: nothing outside `src/storage` names a file format.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ FORECASTS_FILENAME = "forecasts.parquet"
 :mod:`src.pipelines.backtest` persists *means* — one row per fold,
 competition, forecaster and subset — which is right for a report and cannot
 answer whether a stated probability happens at the rate it states. The card
-recomputes the rows to ask that, at about five minutes a run, and Milestone 12
+recomputes the rows to ask that, at about five minutes a run, and the dashboard
 needs the same rows on every page load. So the card writes them down.
 """
 
@@ -51,7 +51,7 @@ needs the same rows on every page load. So the card writes them down.
 ARCHIVE_FILENAME = "archive.parquet"
 """What the service actually served, scored against what happened.
 
-Milestone 19, written by `make archive` rather than by `make card`, because it
+Written by `make archive` rather than by `make card`, because it
 is the one report in this project whose input is not on disk: it comes out of
 the prediction log, which is application state and which nothing regenerates.
 `make reproduce` cannot rebuild this file, and that is the difference between
@@ -64,7 +64,7 @@ One row per served model version, so a log that spans a redeploy reports two.
 UPCOMING_FILENAME = "upcoming.parquet"
 """Design rows for fixtures that have not been played yet.
 
-Milestone 20, written by `make fixtures` beside the ratings and the features.
+Written by `make fixtures` beside the ratings and the features.
 Named here rather than in :mod:`src.pipelines.fixtures` for the same reason
 :data:`ARCHIVE_FILENAME` is: that module reads
 :data:`~src.pipelines.serving.SERVED_COLUMNS`, which is defined downstream of
@@ -83,7 +83,7 @@ MARKET_FILENAME = "market.parquet"
 Five rows, written by `make card` beside the forecasts it is computed from.
 Small enough to be a page load rather than a computation: the join behind it is
 62,000 forecasts against 300,000 matches, and a dashboard that redid it per
-render would be doing Milestone 17's measurement to draw one caption.
+render would be redoing the market measurement to draw one caption.
 """
 
 
@@ -101,7 +101,7 @@ class TablePaths:
 
     Optional where the other three are required, because it is optional: a
     checkout that has never run `make fixtures` prices the matches in the
-    feature table exactly as it did before Milestone 20, and
+    feature table and nothing else, and
     :meth:`missing` deliberately does not name it. A service that reported
     itself degraded because there was no football on this week would be
     reporting the calendar as a fault.
@@ -209,7 +209,7 @@ def read_archive(path: Path) -> pd.DataFrame | None:
 def read_upcoming(path: Path) -> pd.DataFrame | None:
     """Design rows for fixtures that have not been played, or ``None``.
 
-    Milestone 20, and absent is the ordinary state: a checkout that has not run
+    Absent is the ordinary state: a checkout that has not run
     `make fixtures`, and a fixture file that has aged out. Delegates like every
     other single-file report read — the store is the only package that knows
     the format.
@@ -221,7 +221,7 @@ def read_ratings(path: Path) -> pd.DataFrame | None:
     """The Elo and Dixon-Coles columns, or ``None`` when there is no table.
 
     A narrow read of the ratings table for the readers that want the rating
-    itself rather than a design matrix — Milestone 17's expected goals are
+    itself rather than a design matrix — the match page's expected goals are
     ``dc_home_lambda`` and ``dc_away_lambda``, and
     :func:`load_modelling_frame` would join three hundred thousand rows across
     three tables to reach two of them.

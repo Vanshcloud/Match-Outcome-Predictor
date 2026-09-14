@@ -1,9 +1,9 @@
 """Scoring what was served, and refusing to read noise as a finding.
 
-Milestone 19. Two things are worth testing here and they are different in kind.
+Two things are worth testing here and they are different in kind.
 The first is arithmetic: a repeat is one forecast, an in-sample row is not
 evidence, an unplayed fixture is a count rather than a gap. The second is the
-guard the whole milestone exists for — that a difference smaller than the
+guard the archive report exists for — that a difference smaller than the
 sampling noise at the archive's size is reported as indistinguishable rather
 than as drift.
 
@@ -197,7 +197,7 @@ def test_an_empty_archive_joins_to_a_result_column_that_is_simply_empty() -> Non
     assert scorable(joined).empty
 
 
-# ---- the sample-size guard, which is the milestone ----------------------------
+# ---- the sample-size guard ---------------------------------------------------
 
 
 def test_nothing_is_distinguishable_in_an_empty_archive() -> None:
@@ -303,7 +303,7 @@ def test_the_report_shows_what_was_dropped_beside_what_was_kept() -> None:
 
 
 def test_a_small_archive_reports_its_difference_as_indistinguishable() -> None:
-    """The finding this milestone is mostly about. Two scored forecasts cannot
+    """The central finding. Two scored forecasts cannot
     tell a drifted model from a lucky Saturday, and the report has to say that
     in a column rather than leave it to a reader to work out."""
     report = summarise(

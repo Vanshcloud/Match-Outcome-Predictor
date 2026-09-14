@@ -1,21 +1,20 @@
 """Matches that have not been played, from the provider that publishes the results.
 
-Milestone 20, and the thing every milestone before it did without. This project
-ingests *results*: :mod:`src.ingestion.football_data` drops a row with no
-scoreline on sight, because a row with no scoreline is not a match this project
-can train on. That rule is right for the canonical table and it is why the
-service can only price fixtures that have already been played, which is why
-Milestone 19's archive scored **nothing** — every forecast it held was for a
-match inside the artefact's own training window.
+This project ingests *results*: :mod:`src.ingestion.football_data` drops a row
+with no scoreline on sight, because a row with no scoreline is not a match this
+project can train on. That rule is right for the canonical table, and without
+this module it would leave the service able to price only played fixtures —
+every forecast in the served archive would be for a match inside the
+artefact's own training window, with **nothing** to score.
 
 The same provider publishes ``/fixtures.csv``: the next week or so of
 kick-offs, in the same columns as a season file with the result columns empty.
-That is the whole of the source, and choosing it over the live feed Milestone 13
-registered is the one decision in this module worth arguing:
+That is the whole of the source, and choosing it over the dashboard's live
+feed is the one decision in this module worth arguing:
 
 **The team names already match.** ``dashboard/providers/football_data_org.py``
 spells clubs "Manchester United FC" where the canonical table says "Man
-United", and Milestone 18 needed a whole matching function to join the two.
+United", and the squad panel needs a whole matching function to join the two.
 This file is written by the same hand as the tables, so "Man United" is "Man
 United" and there is no matching function here at all. A fixture whose team
 names do not resolve is a fixture that gets a design row full of nulls, which

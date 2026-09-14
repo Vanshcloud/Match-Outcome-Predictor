@@ -1,7 +1,7 @@
 """Fit the shipped model once, write it down, and read it back to serve.
 
-Milestone 11 is the first thing here that needs a model to outlive the process
-that fitted it. Everything before it fits inside a backtest fold and is thrown
+Serving is the one place that needs a model to outlive the process that
+fitted it. Everything else fits inside a backtest fold and is thrown
 away, which is what makes the folds honest; a service cannot work that way, so
 the fit happens once — in :mod:`scripts.build_model` — and the result is
 persisted with a manifest beside it.
@@ -24,9 +24,9 @@ built by the audited pipelines and proved causal by the leakage suite;
 rebuilding one at request time would be a second implementation of the feature
 layer, living outside every probe that guards the first. So the service reads
 the row the batch build wrote. What that costs is stated plainly rather than
-worked around: this API prices fixtures that are in the feature table, and the
-provider publishes results rather than a fixture list, so an unplayed match is
-not something this project has the inputs to price at all.
+worked around: this API prices only fixtures a batch build wrote — played
+matches from `make features`, and upcoming ones from `make fixtures`, which
+runs the same builders over the published fixture list.
 """
 
 from __future__ import annotations
@@ -332,9 +332,9 @@ class FixtureIndex:
     ) -> pd.DataFrame:
         """Fixtures matching every filter given, most recent first.
 
-        Discovery, because without it a caller cannot name a match: the
-        provider publishes no fixture list, so the only fixtures that exist are
-        the ones in the table, and a service that could only answer about
+        Discovery, because without it a caller cannot name a match: the only
+        fixtures that exist are the ones in the index — played matches, and
+        whatever `make fixtures` last wrote — and a service that could only answer about
         matches you already knew the id of would be answering nobody.
         """
         rows = self.frame

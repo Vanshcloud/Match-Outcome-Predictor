@@ -8,7 +8,7 @@ answers can be put in one table:
   forest of trees rather than a pipeline around one.
 - :mod:`~src.explainability.permutation` breaks a block and measures what the
   score loses. Model-agnostic, so it covers all six families and is the only
-  one of the two that can be read against Milestone 8's ablation.
+  one of the two that can be read against the ablation.
 
 The third answer already exists: the ablation, which *retrains* without a
 block. Three methods that agree is a check on all three, and where they

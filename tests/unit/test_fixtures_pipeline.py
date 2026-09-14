@@ -3,7 +3,7 @@
 The claim under test is the holdout: **blank a played match's scoreline, hand
 it back as a fixture, and the design row that comes out is the one the batch
 build already wrote for it.** That is the whole correctness argument for
-Milestone 20 — the service prices a fixture with the same thirty columns the
+pricing fixtures — the service prices a fixture with the same thirty columns the
 backtest was scored on, because the same producers built them — and it is
 checked rather than reasoned about here.
 """
@@ -20,6 +20,9 @@ from src.pipelines.fixtures import design_rows, run_upcoming
 from src.pipelines.ratings import build_ratings
 from src.pipelines.serving import SERVED_COLUMNS, load_index
 from src.pipelines.tables import TablePaths, read_upcoming
+from src.ratings.base import DIXON_COLES_COLUMNS, ELO_COLUMNS
+from src.ratings.dixon_coles import DixonColesParameters, DixonColesRatings
+from src.ratings.elo import EloRatings
 from tests.factories import league_frame
 
 UNPLAYED: tuple[str, ...] = (
@@ -93,6 +96,45 @@ class TestTheHoldout:
             built[design].astype("float64"),
             expected[design].astype("float64"),
             check_names=False,
+        )
+
+    def test_an_earlier_fixture_moves_no_rating_of_a_later_one(
+        self, holdout: tuple[pd.DataFrame, pd.DataFrame]
+    ) -> None:
+        """A fixture list spans several days, so a later fixture is built with
+        earlier *unplayed* ones in the frame. Its ratings must not depend on
+        them: Elo updates nothing on a row with no result, and a Dixon-Coles
+        refit must not fit on one — refitted daily here so a refit is certain to
+        land on the later date. The club is promoted, seen only in fixtures, so
+        it must stay unrated rather than be handed strengths nothing fitted."""
+        history, later = holdout
+        # The last stretch of history only: a daily refit over all of it takes
+        # minutes, and the property does not depend on how long the past is.
+        history = history.tail(150).reset_index(drop=True)
+        later = later.copy()
+        later.loc[0, "home_team_id"] = "eng:promoted"
+        earlier = later.iloc[[0]].copy()
+        earlier["date"] = later["date"].max() - pd.Timedelta(1, "D")
+        earlier["match_id"] = "earlier-fixture"
+        models = (
+            EloRatings(),
+            DixonColesRatings(DixonColesParameters(refit_days=1, min_matches=60)),
+        )
+
+        together = design_rows(
+            history, pd.concat([earlier, later], ignore_index=True), models=models
+        ).set_index("match_id")
+        alone = design_rows(history, later, models=models).set_index("match_id")
+
+        ratings = [*ELO_COLUMNS, *DIXON_COLES_COLUMNS]
+        promoted = str(later.loc[0, "match_id"])
+        assert together.loc[promoted, list(DIXON_COLES_COLUMNS)].isna().all()
+        pd.testing.assert_frame_equal(
+            together.loc[alone.index, ratings].astype("float64"),
+            alone[ratings].astype("float64"),
+            check_exact=False,
+            rtol=0,
+            atol=1e-4,
         )
 
     def test_appending_a_fixture_changes_no_historical_row(

@@ -196,7 +196,7 @@ class StubPredictions:
 
 
 class StubFixtures:
-    """A connected fixture feed, which is what Milestone 13 will register."""
+    """A connected fixture feed, stubbed."""
 
     name = "stub-feed"
     available = True
@@ -319,7 +319,7 @@ def test_narrowed_rows_become_the_cards_a_view_renders(table: str) -> None:
     assert len(history.as_fixtures(frame)) == len(frame)
 
 
-# ---- what changed since the page last looked (Milestone 15) -------------------
+# ---- what changed since the page last looked -------------------------------
 #
 # The diff is a pure function over two lists, so most of this needs no browser.
 # What it has to get right is the pair of rules that are wrong in the obvious

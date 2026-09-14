@@ -59,12 +59,12 @@ class Reports:
     the others, and a page that demanded all three would go blank over the two
     it did not need.
 
-    ``market`` arrived at Milestone 17 — five rows saying what the model scores
+    ``market`` is five rows saying what the model scores
     against the closing line, by how far apart the two were. Five rows and its
     own file because the join behind them is 62,000 forecasts against 300,000
     matches, which is a measurement rather than a page load.
 
-    ``archive`` arrived at Milestone 19 and is the odd one out: `make ensemble`
+    ``archive`` is the odd one out: `make ensemble`
     and `make card` write the other three from the ingested data, and this one
     is written by `make archive` from the *prediction log* — application state
     that nothing regenerates. Its absence is therefore the ordinary state for

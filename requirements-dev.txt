@@ -1,15 +1,13 @@
 # Everything needed to develop and test. CI installs exactly this file, so
 # "works on my machine" has no room to hide.
 #
-# A pinned lockfile (requirements-lock.txt) arrives with the container images
-# in Milestone 13, when there is finally an image whose resolution must match
-# the developer's. Locking a four-package list today would be ceremony.
+# uv.lock pins the transitive closure; this file lists direct dependencies.
 -r requirements.txt
 -r requirements-lint.txt
 
 pytest==9.1.1
 pytest-cov==7.1.0
-# Milestone 11. FastAPI's TestClient is a thin wrapper over httpx, which
+# FastAPI's TestClient is a thin wrapper over httpx, which
 # fastapi does not install itself — without it every API test fails at import
 # with a message about starlette rather than about a missing test dependency.
 httpx==0.28.1

@@ -6,8 +6,8 @@ and one day by a different front end, and it will behave the same in all four.
 
 That is the property the layer exists for. Everything above it is replaceable:
 :mod:`dashboard.views` is Streamlit today and could be a React client reading
-the API tomorrow, and :mod:`dashboard.providers` is one historical reader today
-and will be three feeds by Milestone 17. Neither can change what a
+the API tomorrow, and :mod:`dashboard.providers` is a historical reader and
+several live feeds. Neither can change what a
 :class:`~dashboard.domain.match.Fixture` means, because neither is imported
 from here.
 """

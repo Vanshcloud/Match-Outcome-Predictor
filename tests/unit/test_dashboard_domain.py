@@ -135,6 +135,13 @@ def test_a_competition_is_labelled_the_way_a_reader_would_name_it() -> None:
     assert competition.short_label("ESP_1") == "La Liga"
 
 
+def test_a_card_label_keeps_a_country_code_when_the_name_alone_is_ambiguous() -> None:
+    """Italy and Brazil both call their top flight "Serie A"; two cards side by
+    side reading "Serie A" would be two different competitions looking like one."""
+    assert competition.short_label("ITA_1") == "Serie A · ITA"
+    assert competition.short_label("BRA_1") == "Serie A · BRA"
+
+
 def test_an_unknown_competition_falls_back_to_its_id() -> None:
     """A report from an older run can name a league the registry has since
     renamed, and a page that raised there would be a page that cannot open an
@@ -209,8 +216,8 @@ def test_following_no_league_is_no_filter_rather_than_a_filter_matching_nothing(
 
 
 def test_a_favourite_outlives_the_session_that_set_it() -> None:
-    """Milestone 14, in one assertion. Two separate app runs are two browser
-    sessions; before this, the second one started empty."""
+    """Two separate app runs are two browser sessions, and the second one
+    still sees what the first one saved."""
     first = run("favourites.remember_leagues(['ENG_1'])")
     assert first.exception == []
     second = run("import streamlit as st; st.text(str(favourites.leagues()))")

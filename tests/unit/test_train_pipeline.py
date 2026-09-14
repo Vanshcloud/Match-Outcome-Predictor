@@ -1,7 +1,7 @@
 """Training, the ablation, the blend — all of them the *unchanged* backtest.
 
 A trained model is a forecaster that fits inside its own `forecast`, so
-Milestone 7's evaluation pipeline runs the zoo without knowing an estimator
+the evaluation pipeline runs the zoo without knowing an estimator
 exists. What is tested here is that the wiring holds that shape: same folds,
 same two subsets, same file, and an ablation whose variants are all scored on
 identical matches.
@@ -207,7 +207,7 @@ def test_the_blocks_ablated_are_the_ones_the_registries_define() -> None:
 # ---- the blend and the calibration layer ------------------------------------
 
 
-def test_the_four_rows_the_milestone_compares_are_built_together() -> None:
+def test_the_four_rows_the_ensemble_report_compares_are_built_together() -> None:
     """The model, that model calibrated, the blend, and the blend calibrated.
     One list, so one backtest scores them on identical matches and a difference
     between two rows is the layer rather than the subset."""

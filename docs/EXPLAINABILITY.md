@@ -23,11 +23,11 @@ Three columns, three questions:
   prediction time and see what log loss loses. *Does this model use it?*
 - **its share** — SHAP. Decompose the model's own arithmetic into per-column
   contributions. *How much of the output does it move?*
-- **never having had it** — Milestone 8's ablation. Retrain without the block.
+- **never having had it** — the ablation. Retrain without the block.
   *Would a model built without it be worse?*
 
 **The first two rank elo above form. The third ranks form above elo.** That is
-not a bug in any of them; it is the substitution Milestone 8 measured, showing
+not a bug in any of them; it is the substitution the ablation measures, showing
 up as a number.
 
 ---
@@ -41,7 +41,7 @@ is the one it reaches for and the one it can most easily do without.
 
 Dixon-Coles is why. The two rating blocks are substitutes: both are strength
 estimates over the same matches, and a model retrained without one recovers
-most of what it said from the other. Milestone 8 measured this as "withholding
+most of what it said from the other. The ablation measures this as "withholding
 Elo costs 0.0021 and Dixon-Coles 0.0016, each alone, because the two ratings
 are substitutes"; here the same fact appears as a 19× gap between what a block
 is used for and what it is worth.
@@ -60,7 +60,7 @@ builder broke, nothing would cover for it.
 `head_to_head` are worth 0.0001–0.0003 by every method, on every family. Three
 independent measurements putting six columns at the noise floor is the
 strongest statement this project has made about a feature block, and it settles
-the question Milestone 5 left open.
+the question the feature layer left open.
 
 ---
 
@@ -81,7 +81,7 @@ Every family puts elo first and the same two blocks last. The MLP is the
 outlier and in the direction that explains its ranking: it leans on the ratings
 far harder than anyone else (0.0500 and 0.0320) and gets the least out of form.
 That is the same MLP whose errors correlate at 0.92 with everything else in
-Milestone 9's matrix — it is in the blend precisely because it is wrong about
+the ensemble's correlation matrix — it is in the blend precisely because it is wrong about
 different matches, and this is a second look at why.
 
 ---
@@ -126,7 +126,7 @@ general-purpose explainer that would handle them costs hours per family for a
 number permutation importance produces exactly, for every family, in seconds.
 Where SHAP cannot go, the other method already goes.
 
-### The ablation — Milestone 8
+### The ablation
 
 Retrain with the block withheld, all variants in one backtest so they share a
 common subset. Full method and numbers in [MODELS.md](MODELS.md).
@@ -158,9 +158,9 @@ not report one, because a plausible story about one fixture is the most
 misusable output an explainability layer has — see the model card's "anything
 that needs the reason".
 
-**No plots.** Every figure this milestone would have drawn is a five-row table,
+**No plots.** Every figure this report would draw is a five-row table,
 and a PNG in a repository is a number that goes stale without a diff to show
-for it. `matplotlib` was in the plan for this milestone and is not installed.
+for it. `matplotlib` is not installed.
 
 **No interaction terms.** SHAP interaction values are quadratic in the column
 count and would answer a question nobody here has asked yet.

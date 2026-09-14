@@ -28,8 +28,8 @@ it is that the declaration is the one part of the feature registry that can be
 wrong silently — a typo there reclassifies a leaking feature as safe.
 
 All four are generic over ``Callable[[DataFrame], DataFrame]`` rather than tied
-to a rating model: the first two were written for Milestone 4's ratings and are
-the same tests Milestone 6 runs over every registered producer.
+to a rating model: the first two were written for the ratings and are
+the same tests the leakage suite runs over every registered producer.
 """
 
 from __future__ import annotations

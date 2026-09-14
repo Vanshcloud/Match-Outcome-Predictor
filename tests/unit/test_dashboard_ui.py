@@ -200,6 +200,20 @@ def test_a_card_prefers_the_label_it_is_handed_then_the_name_then_the_id() -> No
     assert "ENG_1" in ui.match_card(fixture())
 
 
+def test_a_card_holds_only_inline_elements_so_the_browser_keeps_it_one_link() -> None:
+    """Streamlit's markdown wraps a card in ``<p>``, and a ``<p>`` cannot hold a
+    block element: a ``<div>`` inside it closes the anchor, and the browser
+    re-opens one around every block, so the card renders as separate fragments.
+    Every test that read the card's text passed while every browser showed it
+    broken."""
+    card = ui.match_card(
+        fixture(status=MatchStatus.LIVE, minute=10, home_goals=1, away_goals=0),
+        probabilities={"home": 0.5, "draw": 0.3, "away": 0.2},
+    )
+    assert not re.search(r"<(div|p|h[1-6]|ul|ol|li|table|section)\b", card)
+    assert card.count("<a ") == 1
+
+
 def test_probabilities_turn_a_result_card_into_a_forecast_card() -> None:
     card = ui.match_card(fixture(), probabilities={"home": 0.5, "draw": 0.3, "away": 0.2})
     assert "mop-bar" in card
@@ -223,3 +237,69 @@ def test_a_form_string_ignores_a_letter_that_is_not_a_result() -> None:
 
 def test_a_link_stays_inside_the_tab() -> None:
     assert 'target="_self"' in ui.link("Open", "competitions?competition=ENG_1")
+
+
+def test_the_kick_off_time_moves_to_its_own_line_whole_rather_than_breaking() -> None:
+    """A narrow card used to break "Sun 13 Sep 2026 · 00:30 IST" mid-time. The
+    header may wrap, but only between its pieces."""
+    assert '<span class="mop-when">' in ui.match_card(fixture())
+    assert ".mop-card-top .mop-when { white-space: nowrap; }" in theme.STYLESHEET
+    assert "flex-wrap: wrap;" in theme.STYLESHEET
+
+
+def test_the_card_grid_sizes_its_columns_to_the_width_rather_than_a_fixed_count() -> None:
+    """Three fixed Streamlit columns at 1024px were 143px cards. The grid is
+    one element whose column count follows the width."""
+    assert "repeat(\n    auto-fill,\n    minmax(max(var(--mop-min)," in theme.STYLESHEET
+
+
+def test_the_card_grid_carries_its_column_limit_and_minimum_width(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    written: list[str] = []
+    monkeypatch.setattr(ui.st, "markdown", lambda body, **_: written.append(body))
+    ui.card_grid(['<a class="mop-card"></a>'], columns=4, min_rem=11)
+    assert written == [
+        '<span class="mop-grid" style="--mop-cols:4;--mop-min:11.0rem"><a class="mop-card"></a></span>'
+    ]
+
+
+def test_a_competition_name_wraps_rather_than_being_cut_off() -> None:
+    assert (
+        "text-overflow: ellipsis"
+        not in theme.STYLESHEET.split(".mop-title {", 1)[1].split("}", 1)[0]
+    )
+
+
+def test_an_anchor_pill_is_styled_or_the_browser_draws_it_blue_and_underlined() -> None:
+    """`ui.link` wears the pill class, and Streamlit styles every anchor inside
+    markdown as a document link. Without an `a.mop-pill` rule the "Open" on
+    Competitions and the shortcuts on Search render underlined and blue inside
+    a pill border — which no test that read their text could see."""
+    assert "mop-pill" in ui.link("Open", "competitions?competition=ENG_1")
+    assert "a.mop-pill {" in theme.STYLESHEET
+
+
+# ---- the competition tile ----------------------------------------------------
+
+
+def test_a_competition_tile_is_one_link_to_that_competitions_page() -> None:
+    card = ui.competition_card("Premier League", "ENG_1", 1, "competitions?competition=ENG_1")
+    assert card.count("<a ") == 1
+    assert 'href="competitions?competition=ENG_1"' in card
+    assert 'target="_self"' in card
+
+
+def test_a_competition_tile_holds_only_inline_elements_like_every_other_card() -> None:
+    card = ui.competition_card("Premier League", "ENG_1", 1, "competitions?competition=ENG_1")
+    assert not re.search(r"<(div|p|h[1-6]|ul|ol|li|table|section)\b", card)
+
+
+def test_a_competition_tile_names_its_tier_and_says_cup_when_there_is_none() -> None:
+    assert "tier 2" in ui.competition_card("Championship", "ENG_2", 2, "#")
+    assert "cup" in ui.competition_card("Copa de la Liga", "ARG_CUP", None, "#")
+
+
+def test_a_competition_name_is_escaped_before_it_reaches_the_markup() -> None:
+    card = ui.competition_card("<script>x</script>", "X_1", 1, "#")
+    assert "<script>" not in card

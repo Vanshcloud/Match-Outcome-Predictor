@@ -8,8 +8,8 @@
 # Unknown keys are an error, not a shrug: every section sets extra="forbid", so
 # a typo fails at load with the key name rather than being silently ignored.
 #
-# Sections arrive with the milestone that first reads them. Milestone 1 is the
-# foundation, so there are four.
+# Sections arrive with the code that first reads them; one declared before
+# anything reads it would look configurable and not be.
 
 paths:
   # Only the two roots are configurable. raw/, processed/, features/ and

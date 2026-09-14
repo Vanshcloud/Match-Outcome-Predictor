@@ -52,7 +52,7 @@ def test_the_bookmakers_price_is_not_a_feature() -> None:
 
 
 def test_the_columns_are_derived_from_the_registries() -> None:
-    """A feature added in Milestone 5's registry is a column the zoo sees
+    """A feature added to the feature registry is a column the zoo sees
     without anyone editing a second list."""
     assert set(BLOCKS) == {"form", "schedule", "head_to_head", "elo", "dixon_coles"}
     assert sum(len(columns) for columns in BLOCKS.values()) == len(DESIGN_COLUMNS)

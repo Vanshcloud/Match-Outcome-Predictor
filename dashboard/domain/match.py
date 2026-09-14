@@ -5,17 +5,17 @@ Nothing renders a dictionary from an HTTP response or a row of a DataFrame, and
 that is the point: this project has three sources of matches and a page written
 against one of them is a page that has to be rewritten when the second arrives.
 
-Milestone 17 added two value types rather than a third source of matches:
+Two value types sit beside it rather than a third source of matches:
 :class:`MarketPrice` is what the bookmaker said about a fixture, and
 :class:`ExpectedGoals` is what a fitted goal-rate model expects from each side.
 Both are *about* a match rather than being one, which is why neither is a
 field on :class:`Fixture` — a card has no use for either, and a type that grew
 every optional fact anybody might want is a type every source has to fill.
 
-Milestone 18 adds two more of the same kind. :class:`Player` and
+Two more are of the same kind. :class:`Player` and
 :class:`Squad` are *about* a club rather than a match, and a squad is who is
-registered rather than who is fit — the one distinction that milestone is
-mostly about.
+registered rather than who is fit — the one distinction the squad
+panel is mostly about.
 
 Pure value types. No provider, no network, no file, no Streamlit — everything
 that fetches lives in :mod:`dashboard.providers` and everything that renders in
@@ -74,6 +74,15 @@ class MatchStatus(StrEnum):
     """
 
 
+FEED_ONLY_PREFIX = "fdorg-"
+"""The id prefix of a fixture that exists only in the live fixture feed.
+
+Such a fixture has a score and a kick-off and no row in the match table, so
+the service has no forecast for it. Declared here so the provider that mints
+these ids and the page that has to explain them agree on one string.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class Fixture:
     """One match, as a card renders it.
@@ -82,9 +91,9 @@ class Fixture:
     kick-off minute is a different source from the one that has the final
     score, and a page that required both would be a page neither can feed.
 
-    ``crest_url`` is unset by every source in this repository and is read by
-    :func:`dashboard.ui.crest_html`, which draws initials instead. It is the
-    single field a badge provider has to start filling.
+    ``crest_url`` is read by :func:`dashboard.ui.crest_html`. Only the
+    football-data.org feed fills it; every other source leaves it unset and
+    the card draws the club's initials instead.
     """
 
     match_id: str
@@ -137,6 +146,12 @@ class Prediction:
     model: str
     model_version: str
     in_sample: bool
+    # Who the service says is playing. An upcoming fixture is in no table the
+    # dashboard reads, so these are what its page can put in the title.
+    home_team: str = ""
+    away_team: str = ""
+    competition_id: str = ""
+    date: dt.date | None = None
 
     @property
     def outcome(self) -> str:
@@ -158,7 +173,7 @@ class Prediction:
 class MarketPrice:
     """What the bookmaker said, as a page shows it beside what the model said.
 
-    Milestone 17. Three decimal prices, the probabilities they imply once the
+    Three decimal prices, the probabilities they imply once the
     overround is removed, and the overround itself — because the removal is an
     assumption about *how* the margin is spread across three outcomes, and a
     reader who can see its size can judge how much that assumption matters.
@@ -180,8 +195,8 @@ class MarketPrice:
 class ExpectedGoals:
     """How many goals a fitted goal-rate model expects from each side.
 
-    Milestone 17, and the label matters more than the numbers. These are the
-    Poisson rates Milestone 4's Dixon-Coles model fits — ``dc_home_lambda`` and
+    The label matters more than the numbers. These are the
+    Poisson rates the Dixon-Coles model fits — ``dc_home_lambda`` and
     ``dc_away_lambda`` in the ratings table — not shot-quality xG. Nothing in
     this project has ever seen a shot map: the ingested feed carries shots and
     shots on target and no expected-goals column, so a panel labelled "xG"
@@ -213,7 +228,7 @@ class ExpectedGoals:
 class Player:
     """One name on a club's registered list, as the source gave it.
 
-    Milestone 18. Everything but the name is optional because everything but
+    Everything but the name is optional because everything but
     the name is optional on the wire: football-data.org records a position for
     most players and leaves it null for some, and a squad list that dropped
     those rows would report a smaller squad than the club has.
@@ -247,7 +262,7 @@ class Player:
 class Squad:
     """A club's registered players, which is not the same thing as its available ones.
 
-    Milestone 18, and the distinction in the first line is the whole milestone.
+    The distinction in the first line is the whole point.
     A squad is who is *registered*: it is an upper bound on who can play and it
     says nothing about who is injured, suspended or left out. No source this
     project can reach answers the second question — see

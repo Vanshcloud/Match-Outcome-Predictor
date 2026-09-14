@@ -1,8 +1,8 @@
 """The honest answer while no fixture feed is connected.
 
 Not a stub that pretends. It returns nothing, reports ``available = False``,
-and the views render that as a sentence naming what is missing and which
-milestone connects it.
+and the views render that as a sentence naming what is missing and what
+would connect it.
 
 **Nothing here invents a fixture.** Plausible-looking generated matches would
 put a game on the screen that is not being played, and that is the one failure

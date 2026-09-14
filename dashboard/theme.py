@@ -68,7 +68,13 @@ the largest of three probabilities — is bounded below by a third and a reader
 reading a continuous scale over that range reads it as "0 to 1".
 """
 
-LIVE: Final = "#ef4444"
+LIVE: Final = "#dc2626"
+"""The live pill, which is white text on this colour.
+
+A step darker than the obvious red: white on ``#ef4444`` is 3.8:1, and the pill
+is small bold text, which WCAG AA asks 4.5:1 of. This is 4.8:1, and still 3.9:1
+against the page behind it — a pill is a graphic, and 3:1 is the bar for one.
+"""
 
 STYLESHEET: Final = f"""
 <style>
@@ -111,15 +117,37 @@ a.mop-card:hover {{
    focus ring does not reach an anchor written into markdown. */
 a.mop-card:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2px; }}
 
+/* Up to --mop-cols columns, none narrower than --mop-min: for match cards,
+   three beside the sidebar on a wide screen, two at 1280px and 1024px, one on
+   a phone. `auto-fill` keeps empty tracks, so a country with one competition
+   gets one tile rather than one stretched across the page. A row's cards
+   stretch to the same height, so a header that needs two lines does not
+   stagger the row. */
+.mop-grid {{
+  --mop-cols: 3;
+  --mop-min: 17rem;
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(var(--mop-min), calc((100% - (var(--mop-cols) - 1) * 0.7rem) / var(--mop-cols))), 1fr)
+  );
+}}
+.mop-grid > a.mop-card {{ margin-bottom: 0; }}
+
+/* When the competition, the live pill and the kick-off do not fit on one line,
+   the kick-off moves to the next line whole rather than breaking mid-time. */
 .mop-card-top {{
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.3rem 0.5rem;
   font-size: 0.72rem;
   color: var(--muted);
   margin-bottom: 0.6rem;
 }}
 .mop-card-top .spacer {{ flex: 1; }}
+.mop-card-top .mop-when {{ white-space: nowrap; }}
 
 .mop-side {{
   display: flex;
@@ -174,6 +202,19 @@ a.mop-card:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2px;
   color: var(--muted);
   white-space: nowrap;
 }}
+/* `ui.link` is an anchor wearing the pill class, and Streamlit styles every
+   anchor inside markdown blue and underlined — so without this the "Open →"
+   on Competitions and the shortcuts on Search render as raw links inside a
+   pill border instead of as the quiet chips every other pill is. */
+a.mop-pill {{
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--surface);
+  transition: background 120ms ease, border-color 120ms ease;
+}}
+a.mop-pill:hover {{ background: var(--raised); border-color: #33456d; }}
+a.mop-pill:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2px; }}
+
 .mop-pill.live {{
   color: #fff;
   background: var(--live);
@@ -191,7 +232,18 @@ a.mop-card:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2px;
 /* A reader who has asked their system for less motion is asking about this. */
 @media (prefers-reduced-motion: reduce) {{
   .mop-pill.live::before {{ animation: none; }}
-  a.mop-card {{ transition: none; }}
+  a.mop-card, a.mop-pill {{ transition: none; }}
+}}
+
+/* The competition tile: the same card, without the two team rows to give it
+   height. Fixed so that a country with one competition and a country with five
+   read as the same kind of row. */
+/* Wraps rather than truncating: "Copa de la Liga Profesional" is the name. */
+.mop-title {{
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }}
 
 /* ---- probability bar ------------------------------------------------------ */
@@ -244,7 +296,7 @@ a.mop-card:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2px;
   padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--line);
 }}
-.mop-section h3 {{ margin: 0; font-size: 1.02rem; font-weight: 700; }}
+.mop-section h3 {{ margin: 0; font-size: 1.15rem; font-weight: 700; }}
 .mop-section span {{ font-size: 0.76rem; color: var(--muted); }}
 
 /* ---- placeholder ---------------------------------------------------------- */

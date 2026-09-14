@@ -26,7 +26,7 @@ the least interesting thing in it.
 Every fold trains on matches strictly earlier than the ones it is scored
 on, and the boundary is a date rather than a row — two matches played on
 the same afternoon are never split across it. The inputs are the twenty
-features and ten rating columns from earlier milestones. **The
+features and ten rating columns from the ratings table. **The
 bookmaker's odds are not among them**: they are the benchmark this
 project measures itself against, and a model given the closing line
 learns to copy it.

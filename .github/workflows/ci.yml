@@ -145,8 +145,8 @@ jobs:
 
       - name: No removed or deprecated APIs
         # Each of these still *runs* and merely warns, which is why a grep is
-        # worth more here than a code review. The list grows as milestones
-        # introduce the libraries that have them.
+        # worth more here than a code review. The list grows as new
+        # libraries that have them are introduced.
         #
         # Every pattern is anchored to CODE, never to prose. The unanchored
         # version failed on src/utils/config.py's own docstring — the one
@@ -200,7 +200,7 @@ jobs:
           echo "provider confined to src/ingestion"
 
       - name: The canonical table is read through the storage layer
-        # Milestone 3's seam. Every module downstream asks a store for rows
+        # The storage seam. Every module downstream asks a store for rows
         # rather than opening a path, so the day the matches stop living in a
         # file, a caller that asked a store keeps working and a caller that
         # opened a path has to be rewritten. src/pipelines writes the file, so
@@ -262,7 +262,7 @@ jobs:
         # truthful answer — a model that went to disk for the rest of the
         # history would pass every fold check while training on the future.
         #
-        # Milestone 8 added `feature_engineering.registry` to the permitted
+        # `feature_engineering.registry` is on the permitted
         # list. It is a schema module like `ingestion.base` and `ratings.base`:
         # the design matrix is *derived* from the feature registry rather than
         # written out again, so a feature added there is a column the zoo sees
@@ -304,7 +304,7 @@ jobs:
           echo "api depends on src; src does not depend on api"
 
       - name: The API reaches no further than the pipeline layer
-        # The one shortcut that would undo Milestone 6. A design row is thirty
+        # The one shortcut that would undo the leakage suite. A design row is thirty
         # columns built by producers the leakage suite walks and probes;
         # rebuilding one inside a request handler would be a second, unprobed
         # implementation of the feature layer sitting on the request path.
@@ -323,7 +323,7 @@ jobs:
           echo "api depends only on pipelines, models, storage, evaluation and utils"
 
       - name: The dashboard is a client of the service, not a second copy of it
-        # Milestone 12. `dashboard` talks to `api` over HTTP and must never
+        # `dashboard` talks to `api` over HTTP and must never
         # import it: the moment it can call a handler directly, "what does the
         # model say" has two implementations in one process and the day they
         # disagree the disagreement is invisible, because nothing compares
@@ -352,7 +352,7 @@ jobs:
         # reliability functions the card uses), the model layer (for the
         # shipped model's name) and utils. It may not reach `src.ratings` or
         # `src.feature_engineering` — a dashboard that recomputed a feature
-        # would be an unprobed copy of the layer Milestone 6 exists to guard,
+        # would be an unprobed copy of the layer the leakage suite guards,
         # and one that recomputed a metric would be a second number to
         # reconcile with the model card.
         #
@@ -362,8 +362,8 @@ jobs:
         # competition catalogue). The registry is a YAML file and the pydantic
         # models that validate it — no provider, no network, no fetch — and it
         # is where a league is *added* to this project. A dashboard with its
-        # own copy of the league names would be a second list, and the first
-        # league added in a later milestone would be added to one of them.
+        # own copy of the league names would be a second list, and the next
+        # league added would be added to only one of them.
         run: |
           offenders=$(grep -rEn --exclude-dir=__pycache__ '^[[:space:]]*(from|import) src\.' dashboard \
                       | grep -vE 'src\.(pipelines|models|evaluation|utils)\.|src\.ingestion\.(base|registry)' || true)
@@ -373,7 +373,7 @@ jobs:
           echo "dashboard depends only on pipelines, models, evaluation, the schema and utils"
 
       - name: The dashboard's layers point one way
-        # Milestone 12's own shape, and the reason Milestone 13 is one class.
+        # The dashboard's shape, and the reason a new feed is one class.
         #
         #   views -> services -> providers -> domain
         #
@@ -403,9 +403,9 @@ jobs:
         # The property the whole provider layer exists for. A view asks the
         # context for a source and renders whatever answers; it must not import
         # a concrete one, because the day a view does, connecting the next
-        # feed stops being one class and becomes a search. Milestone 13
-        # connected football-data.org under exactly this rule and moved no
-        # view, and Milestone 15 added a webhook transport the same way — a
+        # feed stops being one class and becomes a search. football-data.org
+        # was connected under exactly this rule and moved no
+        # view, and the webhook transport was added the same way — a
         # view toasts an event and hands it to `ctx.notifier`, without knowing
         # whether that posts to Slack or drops it on the floor. Both modules
         # are named here so the rule keeps covering them.
@@ -422,18 +422,17 @@ jobs:
           echo "views name no provider; the context and the services do"
 
       - name: Session state is never touched by a view
-        # Milestone 12 claimed that swapping the favourites store for an
-        # account store would touch four accessors and no view. Milestone 14
-        # spent that claim, and this is what keeps it spendable.
+        # Swapping the favourites store for an account store touched four
+        # accessors and no view, and this is what keeps that true.
         #
-        # The rule was written at Milestone 14 as "exactly one module", which
-        # was stricter than the property it protects. Milestone 15 needs a
+        # The rule was once "exactly one module", which
+        # was stricter than the property it protects. Live tracking needs a
         # per-tab snapshot of what the live feed said last time, which is
         # per-*session* state by definition, so the check now names the
         # property: `dashboard/views/` never touches session state, and outside
         # the views only the two modules whose whole job is per-reader state
         # may. A view that reaches for it is a view that has to be rewritten by
-        # the milestone after this one.
+        # the next change to storage.
         #
         # The pattern matches a *use* — a subscript or an attribute — rather
         # than the bare name, because three modules explain in prose what they
@@ -513,7 +512,7 @@ jobs:
           # The limitations have to be reachable from the service itself, not
           # only from a document in a repository nobody serving it has open.
           curl -fsS http://127.0.0.1:8000/model-card/limitations | grep -q 'Betting'
-          # Milestone 16. A scrape target that only works on a laptop is one
+          # A scrape target that only works on a laptop is one
           # discovered to be missing by the alert that was supposed to fire.
           # `service_ready 0` is the assertion, not just the family name: a
           # degraded process must say so to the scraper as well as to /health.
@@ -532,7 +531,7 @@ jobs:
           docker rm -f api
 
       - name: Build the dashboard
-        # Milestone 12. Its own stage in the same Dockerfile, and worth
+        # Its own stage in the same Dockerfile, and worth
         # building here for the reason the serving image is: deployment code
         # that is only ever built by hand is broken on the morning it is
         # needed.

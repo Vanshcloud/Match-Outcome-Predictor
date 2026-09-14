@@ -6,7 +6,7 @@
 # to be active, which is how a green local run and a red CI run stop being
 # contradictory information.
 
-.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card archive fixtures price model api docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck invariants quality clean
+.PHONY: help setup hooks install install-dev data refresh revalidate leagues validate reproduce ratings ratings-elo features feature-list audit backtest train ablation ensemble correlations explain card archive fixtures price model api dashboard docker-build docker-run docker-stop validate-strict test test-int test-cov lint format format-check typecheck invariants quality clean
 
 PYTHON := python3.13
 VENV   := .venv
@@ -15,7 +15,7 @@ IMAGE  := match-outcome-predictor:local
 
 # Directories that hold first-party Python. Kept in one variable so a new
 # package is wired into lint, format and type-check by editing one line instead
-# of six. `api/` joined it in Milestone 11 and `dashboard/` in Milestone 12.
+# of six.
 CODE := src api dashboard tests scripts
 
 help: ## Show this help message
@@ -56,7 +56,7 @@ leagues: ## List the competition registry
 # set and `make -j` may run a set in any order, but this is a sequence —
 # features read the ratings table, the zoo reads the feature table — so the
 # ordering has to be the recipe rather than a hope.
-reproduce: ## Rebuild every reported number from a clean checkout (~60 min)
+reproduce: ## Rebuild every report from a clean checkout, on the data current when it runs (~60 min)
 	$(MAKE) setup
 	$(MAKE) data
 	$(MAKE) ratings
@@ -101,13 +101,13 @@ explain: ## What each feature block is worth, by SHAP and by permutation (~2 min
 card: ## Regenerate docs/MODEL_CARD.md for the shipped model (~5 min)
 	$(BIN)/python scripts/model_card.py
 
-# Milestone 19. Its own target rather than part of `card`, because its input is
+# Its own target rather than part of `card`, because its input is
 # the prediction log rather than the ingested data: `make reproduce` rebuilds
 # every other report byte for byte and cannot rebuild this one.
 archive: ## Score what the service served against what happened (needs PREDICTION_LOG_DSN)
 	$(BIN)/python scripts/archive.py
 
-# Milestone 20, and the two halves of the loop the archive needs. `fixtures`
+# The two halves of the loop the archive needs. `fixtures`
 # builds design rows for matches that have not been played; `price` asks the
 # running service about them, so the prediction log fills with out-of-sample
 # forecasts instead of with whatever a browser happened to look at. The service
@@ -125,7 +125,7 @@ api: ## Serve the API on http://127.0.0.1:8000/docs, reloading on edit
 	$(BIN)/uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
 
 dashboard: ## Serve the dashboard at http://127.0.0.1:8501 (run `make api` too, for forecasts)
-	$(BIN)/streamlit run dashboard/app.py
+	$(BIN)/streamlit run dashboard/app.py --server.address 127.0.0.1
 
 docker-build: ## Build the serving image
 	docker build -t $(IMAGE) .

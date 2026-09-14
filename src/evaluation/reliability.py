@@ -23,7 +23,7 @@ overconfidence a calibration layer exists to remove actually lives.
 **One class at a time, when that is the question.** ``classes=("D",)`` bins the
 draw column alone. Pooling all three answers "are this model's probabilities
 honest"; splitting them answers "which of the three is it dishonest about",
-and those are different questions with, as Milestone 10 measured, different
+and those are different questions with, as the model card's by-class table shows, different
 answers.
 
 **Equal-width bins, and empty ones are dropped.** Ten bins of 0.1 rather than

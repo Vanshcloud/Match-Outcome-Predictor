@@ -250,7 +250,7 @@ def _fixtures_are_not_duplicated(matches: pd.DataFrame) -> str | None:
     check can see it, and a rolling feature quietly averages a team's form over
     fixtures it played once.
 
-    Found in Milestone 5 by an assumption check for the feature layer: five of
+    Found by an assumption check for the feature layer: five of
     the provider's early files are copies of `SP1.csv` served under another
     name, which put 380 Spanish matches into Portugal's first season and
     duplicated 1,222 more into Spain's second division. The adapter now trusts
@@ -437,14 +437,18 @@ def _registry_checks(registry: Registry) -> tuple[Check, ...]:
         provider's file itself, 213 days outside the widest defensible window.
         One misfiled row does not justify refusing the dataset; silently
         carrying it into a season-level aggregate does not either, so it is
-        reported and left in place.
+        reported and left in place. docs/DATA_SOURCES.md (quirk 18) has the
+        evidence. The message names the competition, so the card says where.
         """
         stray: list[str] = []
         for label, rows in matches.groupby("season", observed=True):
             start, end = _season_window(str(label))
             outside = rows[(rows["date"] < start) | (rows["date"] > end)]
             if not outside.empty:
-                stray.append(f"{label}: {len(outside)} row(s), e.g. {outside['date'].max().date()}")
+                where = ", ".join(sorted(set(outside["competition_id"].astype(str))))
+                stray.append(
+                    f"{label} ({where}): {len(outside)} row(s), e.g. {outside['date'].max().date()}"
+                )
         return f"matches outside their season window: {stray[:5]}" if stray else None
 
     @check("recent matches carry the statistics their feed promises", min_rows=5_000)

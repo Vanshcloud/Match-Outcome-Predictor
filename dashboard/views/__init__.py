@@ -10,6 +10,6 @@ be run directly by ``AppTest.from_function``. Each view calls
 **A view composes; it does not fetch.** No module here constructs a client,
 opens a file or names a provider class. They lay :mod:`dashboard.ui` over what
 :mod:`dashboard.services` assembled from :mod:`dashboard.providers`, which is
-what let Milestone 13 connect a fixture feed with no file in this package
-changing — bar one caption, which had been naming the milestone.
+what let a fixture feed be connected with no file in this package changing
+bar one caption.
 """

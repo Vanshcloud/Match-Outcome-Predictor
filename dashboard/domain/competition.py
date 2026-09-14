@@ -3,8 +3,8 @@
 **The catalogue is the registry, not a second list.** ``configs/leagues.yaml``
 is where a competition is added to this project, and it is asserted by
 ``tests/unit/test_registry.py`` to be the only place. A dashboard with its own
-copy of the league names would be a second list to keep in step, and the first
-league added in Milestone 13 would be added to one of them.
+copy of the league names would be a second list to keep in step, and the next
+league added would be added to only one of them.
 
 That is why this module reaches into :mod:`src.ingestion.registry` and CI
 permits it by name. The registry is a *schema* module — a YAML file and the
@@ -53,9 +53,21 @@ def label(competition_id: str) -> str:
 
 
 def short_label(competition_id: str) -> str:
-    """The competition's own name, without the country. What a card shows."""
+    """What a card shows: the competition's own name, without the country.
+
+    Unless another country's competition shares that name — Italy's and
+    Brazil's "Serie A", England's and Russia's "Premier League" — in which case
+    the name alone would tell a reader nothing, and the id's country code is
+    appended: ``"Serie A · BRA"``. A code rather than the country, because the
+    label shares a card's top line with the live pill and the kick-off time.
+    """
     competition = by_id().get(competition_id)
-    return competition.name if competition is not None else competition_id
+    if competition is None:
+        return competition_id
+    shared = sum(1 for other in competitions() if other.name == competition.name)
+    if shared == 1:
+        return competition.name
+    return f"{competition.name} · {competition.id.split('_')[0]}"
 
 
 def by_country() -> dict[str, list[Competition]]:

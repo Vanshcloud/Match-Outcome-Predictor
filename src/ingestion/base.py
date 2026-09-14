@@ -255,8 +255,8 @@ MATCHES_FILENAME = "matches.parquet"
 Here rather than in :mod:`src.pipelines.ingest`, which writes it, because
 several readers need the name and only one writer needs the pipeline. Importing
 it from the pipeline meant importing the provider adapter, the registry, the
-cache and — through them — ``requests``, which is how the Milestone 11 serving
-image came to need an HTTP library to look up a string. This module is the
+cache and — through them — ``requests``, which is how the serving
+image once came to need an HTTP library to look up a string. This module is the
 schema: the columns, the classes, and the name of the file they live in.
 
 :mod:`src.pipelines.ingest` re-exports it, so the fifteen call sites that

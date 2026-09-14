@@ -4,10 +4,9 @@
 # Dockerfiles install from it. Two lists of pins drift, and the one nobody
 # installs from is always the wrong one.
 #
-# This list GROWS ONE MILESTONE AT A TIME. A dependency appears here in the
-# milestone that first imports it, not in advance — an unused pin is a
-# supply-chain surface with no upside, and it makes CI slower for nothing.
-# Milestone 1 (foundation) imports exactly four things.
+# A dependency appears here with the code that first imports it, not in
+# advance — an unused pin is a supply-chain surface with no upside, and it
+# makes CI slower for nothing.
 
 # ---- Configuration ----
 # YAML defaults, .env overlay, validated into a frozen typed object.
@@ -35,7 +34,7 @@ numpy>=2.0,<3
 # Dixon-Coles is a maximum-likelihood fit — two strengths per team plus a home
 # term and the low-score correction — refitted every thirty days per
 # competition. scipy.optimize.minimize (L-BFGS-B) is the whole reason this is
-# a dependency. Milestone 9 added a second caller, minimize_scalar, for the one
+# a dependency. A second caller, minimize_scalar, is for the one
 # temperature the calibration layer fits per fold.
 scipy>=1.14
 
@@ -60,7 +59,7 @@ requests>=2.32
 urllib3>=2.0
 
 # ---- Modelling ----
-# Milestone 8. Six families were asked for and six are installed; what each is
+# Six model families are installed; what each is
 # worth is measured in docs/MODELS.md rather than assumed here.
 #
 # scikit-learn covers three of them and, just as importantly, the imputer and
@@ -83,14 +82,14 @@ optuna>=4.0
 mlflow>=3.0
 
 # ---- Explainability ----
-# Milestone 10, and only the tree explainer. It reads a boosted forest's own
+# Only the tree explainer. It reads a boosted forest's own
 # structure, which is exact and takes seconds; the general-purpose explainer
 # that would cover the three pipeline-wrapped families costs hours for a number
 # src/explainability/permutation.py produces exactly, for every family, from
 # arithmetic that is already here.
 #
-# matplotlib was listed here in the plan and is not installed. Every figure
-# this milestone would have drawn is a five-row table, and a PNG in a
+# matplotlib is not installed. Every explainability figure would be a
+# five-row table, and a PNG in a
 # repository is a number that goes stale without a diff to show for it.
 shap>=0.46
 
@@ -106,9 +105,8 @@ uvicorn[standard]>=0.32
 # listed explicitly because src/pipelines/serving.py imports it by name.
 joblib>=1.4
 # The served-prediction log. psycopg 3, no ORM: one table, created if absent,
-# with every value bound. SQLAlchemy was in the plan for this milestone and is
-# not installed — see the Milestone 11 deviations in
-# plans/IMPLEMENTATION_PLAN.md.
+# with every value bound. SQLAlchemy is deliberately not
+# installed — see "No SQLAlchemy" in CHANGELOG.md.
 psycopg[binary]>=3.2
 
 # ---- Dashboard (M12) ----
@@ -117,13 +115,9 @@ psycopg[binary]>=3.2
 # second implementation of a metric is a second number to reconcile, which is
 # the one thing a dashboard over a forecasting project must not add.
 streamlit>=1.40
-# Plotly rather than matplotlib, and this is the milestone that reverses the
-# note above: a reliability diagram is the one figure in this project that a
+# Plotly rather than matplotlib, and the one exception to the note above: a reliability diagram is the one figure in this project that a
 # table genuinely cannot replace — the diagonal is the claim being tested, and
 # a reader checks a forecast against it by eye in a way no column of gaps
 # supports. Interactive, so it is drawn in the browser rather than committed
 # as a PNG that goes stale without a diff.
 plotly>=5.24
-
-# ---- Added in later milestones (recorded so the order is deliberate) --------
-# M13 mlops .............. (drift monitoring, retraining)

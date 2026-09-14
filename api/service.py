@@ -98,7 +98,7 @@ class PredictionCache:
     re-stamped on every response, because it says when this service answered
     and not when it last did the multiplication. The prediction log would
     otherwise fill with rows claiming a forecast was made at a moment no
-    request existed, and Milestone 19 scores that log — an archive whose
+    request existed, and `make archive` scores that log — an archive whose
     timestamps are a cache's eviction pattern is an archive that answers the
     wrong question.
 

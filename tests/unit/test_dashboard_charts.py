@@ -76,6 +76,23 @@ def test_the_bookmaker_bar_is_coloured_as_the_benchmark() -> None:
     assert colours[0] == BOOKMAKER and colours[1] != BOOKMAKER
 
 
+def test_the_score_axis_frames_the_scores_rather_than_starting_at_zero() -> None:
+    """Every score lies near 1.0. From zero, 0.9993 and 1.0751 are the same
+    length and the chart says nothing; the axis is framed around them and the
+    marks are dots, which claim a position rather than a length."""
+    table = pd.DataFrame(
+        {
+            "forecaster": ["bookmaker", "class_prior"],
+            "n": [100, 100],
+            "log_loss": [0.9993, 1.0751],
+        }
+    )
+    figure = score_bars(table, labels={"bookmaker": "Closing line"})
+    low, high = figure.layout.xaxis.range
+    assert 0.9 < low < 0.9993 and 1.0751 < high < 1.2
+    assert list(figure.data[0].y) == ["Closing line", "class_prior"]
+
+
 def test_an_infinite_score_is_dropped_rather_than_breaking_the_axis() -> None:
     """`home_always` scores infinite log loss and is not clipped. A bar chart
     cannot draw infinity, and clipping it here would state a number the

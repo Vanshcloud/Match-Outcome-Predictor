@@ -8,8 +8,8 @@
 
 A full run takes a few seconds: every feature is a window over a sorted array,
 not a fit. That is why features and ratings are separate commands — the feature
-set will churn through the modelling milestones and a ten-minute rebuild each
-time would make it churn less.
+set changes with modelling work and a ten-minute rebuild each time would
+discourage that.
 
 Exits non-zero if a causality probe fails. A feature that can see its own match
 does not produce a worse model; it produces a better-looking one.

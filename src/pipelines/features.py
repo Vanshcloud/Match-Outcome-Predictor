@@ -7,8 +7,8 @@ checks to run over what they produce.
 Features are cheap where ratings are expensive: a full build is a few seconds
 against ten minutes, because every feature here is a window over a sorted array
 rather than a maximum-likelihood fit. That difference is why they are separate
-artefacts — the feature set will churn through the modelling milestones and the
-ratings will not.
+artefacts — the feature set changes with modelling work and the
+ratings do not.
 """
 
 from __future__ import annotations

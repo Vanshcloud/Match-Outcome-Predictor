@@ -1,8 +1,8 @@
 """The one figure a table cannot replace, and two that earn their place.
 
-`requirements.txt` recorded, at Milestone 10, that matplotlib was left out
-because every figure that milestone would have drawn was a five-row table. This
-is the milestone that reverses it for exactly one figure and no more.
+Most results in this project are five-row tables, which is why no plotting
+library was installed for the model reports. Plotly is here for the few
+figures a table genuinely cannot replace, and no more.
 
 **The reliability diagram.** Its claim is a diagonal: a forecast stated at 0.61
 should happen 61% of the time, and the y = x line *is* the hypothesis. A reader
@@ -10,8 +10,10 @@ checks a model against it by eye in a way that a column of signed gaps does not
 support, because the question is not "how big is the largest gap" but "does the
 curve bend, and where". Nothing else here has that property.
 
-The other two are a bar chart of scores and one of per-competition error, and
-both are honest conveniences: they order things a table already contains.
+The other two are a dot plot of scores and a bar chart of per-competition
+error, and both are honest conveniences: they order things a table already
+contains. The scores are dots rather than bars because they all lie near 1.0,
+where a bar from zero says nothing and a bar on a cut axis misstates a length.
 
 Every figure is built from a frame a panel hands it and computes nothing. A
 chart that aggregated would be a third place a metric lives, after the pipeline
@@ -19,6 +21,8 @@ and the card.
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -112,8 +116,16 @@ def _marker_sizes(counts: pd.Series, *, largest: int = 38, smallest: int = 6) ->
     return smallest + (counts / peak) * (largest - smallest)
 
 
-def score_bars(table: pd.DataFrame, *, metric: str = "log_loss") -> go.Figure:
-    """Every forecaster's score, ordered, with the bookmaker marked.
+def score_bars(
+    table: pd.DataFrame, *, metric: str = "log_loss", labels: Mapping[str, str] | None = None
+) -> go.Figure:
+    """Every forecaster's score as a dot, ordered, with the bookmaker marked.
+
+    Dots on an axis framed around the scores, not bars from zero. Every score
+    here lies between about 0.99 and 1.08, so bars from zero come out the same
+    length and hide the differences the table is about. A bar's length claims a
+    quantity from zero, so a bar on a cut axis would misstate it; a dot's
+    position does not.
 
     The benchmark is coloured rather than annotated: it is the number this
     project measures itself against, and a reader should not have to find it in
@@ -121,23 +133,29 @@ def score_bars(table: pd.DataFrame, *, metric: str = "log_loss") -> go.Figure:
     """
     rows = table[table[metric].notna() & (table[metric] != float("inf"))]
     colours = [BOOKMAKER if name == "bookmaker" else BARS for name in rows["forecaster"]]
+    names = [(labels or {}).get(name, name) for name in rows["forecaster"]]
     figure = go.Figure(
-        go.Bar(
+        go.Scatter(
             x=rows[metric],
-            y=rows["forecaster"],
-            orientation="h",
-            marker_color=colours,
+            y=names,
+            mode="markers",
+            marker={"color": colours, "size": 14, "line": {"color": "white", "width": 1}},
             customdata=rows[["n"]].to_numpy(),
             hovertemplate="%{y}<br>"
             + metric
             + " %{x:.4f}<br>%{customdata[0]:,} matches<extra></extra>",
         )
     )
+    if not rows.empty:
+        low, high = float(rows[metric].min()), float(rows[metric].max())
+        pad = max((high - low) * 0.08, 0.001)
+        figure.update_xaxes(range=[low - pad, high + pad])
     figure.update_yaxes(autorange="reversed")
+    readable = metric.replace("_", " ")
     return _style(
         figure,
-        title=f"{metric} over the matches every forecaster could price",
-        x_title=metric,
+        title=f"{readable} over the matches every forecaster could price — lower is better",
+        x_title=readable,
         y_title="",
     )
 

@@ -9,7 +9,7 @@ Two measurements, per block, over the most recent fold:
 
   permutation  break the block at prediction time and see what the log loss
                loses. Model-agnostic, so every family gets a number, and it is
-               in the same units as Milestone 8's ablation.
+               in the same units as the ablation.
   shap         decompose the model's own arithmetic. Exact and fast for the
                three boosted families; the other three are pipelines that
                `TreeExplainer` refuses, and permutation already covers them.

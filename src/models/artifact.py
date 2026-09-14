@@ -1,6 +1,6 @@
 """The shipped model as a *fitted* object, for a process that serves it.
 
-Every forecaster up to Milestone 10 fits inside its own ``forecast(train,
+Every backtested forecaster fits inside its own ``forecast(train,
 evaluate)``. That is what makes the backtest causal by construction — a model
 cannot see a match it was not handed, and the split layer decides what it is
 handed — and it is exactly the wrong shape for a service, which has one process

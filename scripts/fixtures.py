@@ -6,10 +6,10 @@
     python scripts/fixtures.py --days 3          # a shorter window
     python scripts/fixtures.py --dry-run         # print it, write nothing
 
-Milestone 20, and the first half of the loop the archive needs. Every milestone
-before this one priced matches that had already been played, because the
+The first half of the loop the archive needs. Without it the service only
+priced matches that had already been played, because the
 canonical table holds results and the service prices what is in the table. So
-every forecast Milestone 19 scored was in-sample, and the drift column was
+every forecast the archive scored was in-sample, and the drift column was
 empty for a structural reason rather than a broken one.
 
 This asks :mod:`src.ingestion.fixtures` for the published fixture list — the

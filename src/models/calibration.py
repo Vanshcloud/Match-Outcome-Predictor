@@ -2,15 +2,16 @@
 
 A model can rank matches well and still state the wrong numbers. Gradient
 boosting on a log-loss objective comes out slightly overconfident here, and so
-does an average of several such models — the temperatures fitted over the
-reported folds run from 0.99 to 1.12, all but one of them above one. The defect
+does an average of several such models — the ten temperatures fitted over the
+reported folds, five for XGBoost and five for the blend, run from 0.99 to 1.12
+and eight of them are above one (docs/MODELS.md tabulates them). The defect
 is a forecast whose stated probability is not the rate at which the thing
 happens, and one scalar removes most of it.
 
 **It buys reliability, not loss.** Measured over 59,001 matches, the scalar
 halves the gap between what the model says and what happens — 0.0037 to 0.0020
 for the best single family — and moves log loss by 0.00008, in the wrong
-direction. That is the answer to the question the milestone asked rather than a
+direction. That is the answer to the question calibration asks rather than a
 disappointment: these models were already close to proper, and a layer that
 made the score better *and* the probabilities honest would have meant the
 score was the thing that was wrong.

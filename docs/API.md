@@ -1,6 +1,6 @@
 # The inference service
 
-Milestone 11. One fixture in, three calibrated probabilities out, with the
+One fixture in, three calibrated probabilities out, with the
 model card's limitations reachable from the response rather than buried in a
 repository.
 
@@ -20,12 +20,12 @@ Recomputing a design row inside a request handler would be the wrong move.
 Those thirty columns are produced by builders that `src/validation/leakage.py`
 finds by walking the packages and probes on every build; a second
 implementation living on the request path would sit outside every one of those
-probes. The whole Milestone 6 argument is that a leak is invisible in the
+probes. The whole leakage argument is that a leak is invisible in the
 output — it just makes the model look better — so the service reads the row the
 audited pipeline wrote.
 
-**Milestone 20 changed which fixtures are in the table, not that rule.** Until
-it, the batch build wrote a row per *played* match and nothing else, so every
+**Pricing upcoming fixtures changed which fixtures are in the table, not that
+rule.** Before it, the batch build wrote a row per *played* match and nothing else, so every
 fixture the service could price was one the shipped artefact had trained on and
 `in_sample` was `true` on every response. `make fixtures` now appends the
 published fixture list to the canonical frame, runs the same ratings and
@@ -139,7 +139,7 @@ mentioned it would also be the wrong call.
 
 ### `GET /metrics`
 
-Milestone 16. Prometheus text exposition, `text/plain; version=0.0.4`, and no
+Prometheus text exposition, `text/plain; version=0.0.4`, and no
 client library — the format is a `# HELP` line, a `# TYPE` line and samples,
 which is cheaper to write than `prometheus-client`'s global registry,
 multiprocess mode and platform collectors are to justify on a service that
@@ -317,9 +317,10 @@ controlled) and a configurable bind is one a health probe on loopback can be
 configured out of. `API_PORT` *is* honoured, by both the server and the health
 check, so `-e API_PORT=9000` moves them together.
 
-`PREDICTION_LOG_DSN` is the one secret in this project and is **environment
-only**: `configs/config.yaml` is committed, and a setting with no line in that
-file is one nobody can commit by accident.
+`PREDICTION_LOG_DSN` is the service's one secret, and is **environment only**:
+`configs/config.yaml` is committed, and a setting with no line in that file is
+one nobody can commit by accident. The dashboard's secrets are listed in
+[SECURITY.md](../SECURITY.md).
 
 ## Caching
 
@@ -348,7 +349,7 @@ the cache removes the pass rather than forty-nine of them.
 **`predicted_at` is never cached.** It is re-stamped on every response, because
 it says when this service answered and not when it last did the multiplication.
 The prediction log would otherwise fill with rows claiming a forecast was made
-at a moment no request existed — and Milestone 19 scores that log, so an
+at a moment no request existed — and `make archive` scores that log, so an
 archive whose timestamps are a cache's eviction pattern answers the wrong
 question.
 

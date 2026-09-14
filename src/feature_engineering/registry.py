@@ -1,7 +1,7 @@
 """What features exist, what each one reads, and which side of kick-off it draws from.
 
-Milestone 3 wrote down which canonical columns are knowable before a match and
-which are not. That was a comment. This is the enforcement.
+The canonical schema records which columns are knowable before a match and
+which are not. This registry is the enforcement.
 
 Every feature declares the canonical columns it consults. From that, one thing
 follows automatically: a feature whose ``reads`` touch
@@ -50,7 +50,7 @@ class Feature:
     dtype: str
     group: str
     """Which family it belongs to. Used for reporting, and by the model
-    milestone to switch a whole block on or off in an ablation."""
+    layer to switch a whole block on or off in an ablation."""
 
     reads: frozenset[str]
     """The canonical columns this feature consults, directly or through a

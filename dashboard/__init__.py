@@ -2,7 +2,7 @@
 
 ``streamlit run dashboard/app.py``
 
-Milestone 12. What this package is *for* is stated in one line: it presents.
+What this package is *for* is stated in one line: it presents.
 Every probability is answered by the service over HTTP, every measurement of
 the model is read from a report a pipeline wrote, and every result is read from
 the canonical match table. Nothing here fits, scores, or recomputes — a
@@ -31,9 +31,9 @@ the model.
     a React client reading the same API.
 
 The arrows point one way: ``views → services → providers → domain``, and
-``domain`` imports none of them. That is what made Milestone 13 one provider
-class, and what makes Milestone 14 one favourites store and Milestone 17 one
-more protocol.
+``domain`` imports none of them. That is what makes the fixture feed one provider
+class, the favourites store one module and the market price one more
+protocol.
 
 ``dashboard`` imports ``src``. It does not import ``api``: it is a *client* of
 that service, over the network, and CI enforces both halves.

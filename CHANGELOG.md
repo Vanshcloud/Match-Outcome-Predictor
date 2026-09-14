@@ -10,6 +10,114 @@ extra steps.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The match page no longer crashes on matches with no recorded kick-off.**
+  Every match before July 2019 has none, and `str(pd.NA or "")` raised.
+- **`make dashboard` runs again.** It was missing from `.PHONY`, and a
+  `dashboard/` directory made `make` treat it as up to date. It now binds to
+  127.0.0.1, which the dashboard's lack of authentication requires.
+- **A webhook URL can no longer reach the log.** Errors keep only its host,
+  and urllib3's DEBUG request lines are switched off.
+- **Unplayed fixtures no longer reach a Dixon-Coles refit.** A null goal count
+  stalled the optimiser, and a club seen only in a fixture was given
+  strengths. Training and the backtest are unaffected: the match table has no
+  such rows.
+- **A local `.streamlit/secrets.toml` can no longer be built into the dashboard
+  image.** The image copies `.streamlit/` for its config, and `.dockerignore`
+  did not exclude the sign-in secrets beside it. Images built by CI from a
+  clean checkout were never affected.
+- **A developer docstring no longer appears on every dashboard page.**
+  Streamlit renders bare string literals in the script it runs.
+- **Match cards render as one card in a browser.** Streamlit wraps markdown in
+  a `<p>`, which cannot hold a `<div>`, so the browser split every card into
+  separate fragments on Home, Live, Competitions and Search. The tests read the
+  text and never saw it. A card is now built from inline elements, and a test
+  keeps it that way.
+- **An unknown match id no longer suggests starting a running service.** A
+  service that answers 404 gets one error and its reason; `make api` is
+  suggested only when the service is not answering.
+- **An upcoming fixture's page is titled by its clubs,** from the service's
+  answer, instead of "A fixture the match table does not hold". Its reliability
+  panel uses its own competition instead of all of them.
+- **In-app link pills are styled.** `ui.link` writes an anchor wearing the pill
+  class, and Streamlit styles every anchor inside markdown blue and underlined,
+  so "Open" on Competitions and the shortcuts on Search rendered as raw links
+  inside a pill border. A test now asserts the rule exists.
+- **The competition browser is a card grid.** Each competition is the same
+  anchor a match card is, in four fixed lanes — a country with one competition
+  was getting one tile stretched across the full width, and each tile was three
+  Streamlit blocks tall.
+- **An infinite log loss is written `∞` on the Model scoreboard** rather than
+  left blank. Streamlit's `NumberColumn` renders an infinity as an empty cell,
+  and a blank where every other row has a number reads as a missing value.
+- **`docs/MODELS.md` said the blend beats XGBoost in 28 of 39 competitions.**
+  Recomputed from `data/reports/`, it is **27**, under both n-weighted and
+  unweighted pooling of the folds.
+- **The two temperature ranges in the source now say whose they are.**
+  `calibration.py` quotes 0.99–1.12 over all ten fitted temperatures (and eight
+  of them, not four of five, are above one); `ensemble.py` quotes 0.99–1.09 for
+  the blend's own five. Both were right about different sets and read as a
+  contradiction.
+- **Cards and pickers no longer show two competitions under one name.** Eight
+  names are shared by seventeen competitions — Italy's and Brazil's "Serie A",
+  England's and Russia's "Premier League" — so a shared name now carries the
+  country code ("Serie A · BRA") on cards, in the sidebar's follow list and in
+  the match picker.
+- **The Model page's By competition tab names competitions** instead of
+  showing ids such as `ARG_CUP`, in the chart and in both tables.
+- **An upcoming fixture's empty Expected goals panel gives the real reason:**
+  the ratings table it reads holds played matches only. It used to blame a
+  Dixon-Coles fit that did not exist yet.
+- **Docstrings and `docs/DASHBOARD.md` said no source fills a club crest.**
+  The football-data.org feed does; its crest URLs are loaded by the browser
+  and no badge is stored in the repository.
+- **Match cards size their columns to the screen.** The grid was three fixed
+  Streamlit columns, so beside an open sidebar at 1024px each card was 143px
+  wide, club names were truncated and the kick-off time broke mid-time. It is
+  now one CSS grid of up to three columns no narrower than 17rem; a kick-off
+  that does not fit moves to its own line whole. The competition browser uses
+  the same grid, and a long name such as "Copa de la Liga Profesional" wraps
+  instead of being cut off.
+- **Forecaster ids no longer reach the page.** `ensemble-calibrated` and the
+  other report keys are shown by their labels in the per-competition table,
+  the Reliability tab, the drift panel and the match page caption. The ids are
+  unchanged in every report, the API and the artefact.
+- **The drift panel no longer dumps its raw report.** The table showed
+  snake_case columns and `None` for figures not yet measured, and repeated
+  what the per-version panel beneath it already says. That panel now also
+  gives the dates the version was served.
+- **The season-window warning names its competition,** and
+  `docs/DATA_SOURCES.md` records the one row it fires on (quirk 18): an
+  Argentine match the provider files under 2013-14 but dates January 2015.
+  The row is kept as published.
+- **Opening a live-feed card explains itself instead of showing an error.**
+  Those fixtures are not joined to the match table, so the service has no
+  forecast for them; the page now says that and points to Search, and the Home
+  introduction no longer promises a forecast behind every card.
+
+### Changed
+
+- **The Model page opens with its headline numbers** (out-of-sample forecasts,
+  model and closing-line log loss, pooled calibration error) and has a
+  **Limitations** tab. Forecasters have readable names, and the scoreboard is a
+  dot plot on an axis framed around the scores.
+- **The home page says what the dashboard is,** and that the live centre polls
+  about once a minute. Streamlit's developer toolbar is hidden.
+- **The README has screenshots** of the Home, Match and Model pages.
+- **The README leads with four verified numbers** (out-of-sample forecasts,
+  model and closing-line log loss, pooled calibration error), and its
+  Reproducibility section states what each stage costs, what it needs, and that
+  **no credential is required to reproduce any reported number**.
+- **`docs/DEVELOPMENT_HISTORY.md` describes the experiment branch properly:**
+  the write-up is `experiments/README.md` on that branch, the branch forks at
+  Milestone 11 so its root README is not a current description of `main`, and
+  the leaked candidate the probe caught is named.
+- **Documentation.** The security docs list every secret; the ensemble
+  comparison is stated with paired standard errors; reproducibility is tied to
+  a data snapshot; an unsourced bookmaker benchmark was removed. The README is
+  rewritten, and the milestone roadmap moved to `docs/DEVELOPMENT_HISTORY.md`.
+
 ### Added
 
 - **Milestone 20 — the loop closed: fixtures priced before they are played.**
@@ -1115,9 +1223,10 @@ Five yearly folds, the same 59,001 matches every forecaster could price:
 | XGBoost, calibrated | 1.01622 | 0.2084 | 0.0020 |
 | XGBoost | 1.01614 | 0.2084 | 0.0037 |
 
-- **The blend beats every family that went into it, and the one that did not**
-  — 0.0005 over its best member, 0.0002 over CatBoost. Per competition it beats
-  XGBoost in 28 of 39, not 39.
+- **The blend is the best row: 0.0005 better than its best member (about 2.4
+  standard errors, paired over fold × competition cells) and 0.0003 better than
+  CatBoost (about 1.4 — within noise).** Per competition it beats XGBoost in 28
+  of 39, not 39.
 - **Calibration halves the calibration error and does not move the log loss.**
   On XGBoost the loss is 0.00008 worse; on the blend, 0.00005 better. Both are
   noise. That is the answer to the question rather than a disappointment: log

@@ -4,10 +4,10 @@ Every test here SKIPS when the data is absent, so a clean checkout stays green
 and CI needs no network. Run `python scripts/fetch_data.py` first to enable
 them, then `pytest -m integration`.
 
-**What is deliberately not here any more.** Milestone 2 spelled out its data
-assertions in this file — the result agrees with the score, the table is
+**What is deliberately not here any more.** The data assertions used to live
+in this file — the result agrees with the score, the table is
 chronological, home advantage is plausible. Those moved into
-:mod:`src.validation.matches` in Milestone 3 and are now run by the pipeline
+:mod:`src.validation.matches` and are now run by the pipeline
 itself on every ingest. Restating them here would be the same rule in two
 places, which is the kind of duplication that ends with the two disagreeing and
 nobody noticing. What is left is the part a unit test genuinely cannot reach:

@@ -1,8 +1,7 @@
 """Design rows for matches that have not been played.
 
-Milestone 20, and the half of it that had to be right. :mod:`src.ingestion.fixtures`
-gets the fixture list; this turns each fixture into the thirty columns the model
-prices, and the entire design is one sentence:
+:mod:`src.ingestion.fixtures` gets the fixture list; this turns each fixture
+into the thirty columns the model prices, and the entire design is one sentence:
 
 **The same builders, over the same history, with the fixtures on the end.**
 
@@ -11,7 +10,7 @@ and :func:`~src.pipelines.features.build_features` are handed the canonical
 table with the fixture rows appended, and the rows they produce for those
 fixtures are kept. The alternative — a function that computes a team's form
 from its last five matches for a fixture — is a second implementation of
-Milestone 5, living outside every probe Milestone 6 wrote to guard the first,
+the feature layer, living outside every leakage probe that guards the first,
 and the day the two disagree the service is quietly pricing on different
 arithmetic than the backtest was scored on. ``src/pipelines/serving.py`` refused
 to rebuild a design row inside a request handler for exactly this reason; this

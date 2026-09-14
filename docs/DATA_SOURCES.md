@@ -19,7 +19,7 @@ no browser automation. Two file layouts, both behind one adapter.
 | Odds | yes, many books | closing only | pre-match, and deliberately not read |
 | Season encoding | in the URL, always split | a column, split *or* calendar | **absent** — see quirk 17 |
 
-The third column is Milestone 20's, and it is the same provider on purpose.
+The third column is the upcoming-fixtures file, and it is the same provider on purpose.
 A fixture has to carry the `match_id` its played row will carry a week later,
 or the forecast made about it can never be joined to the result; every part of
 that key — the competition, the date, the club names *as this provider spells
@@ -37,10 +37,11 @@ data are marked `integration` and skip when it is absent.
 
 ## Discovered quirks
 
-Sixteen, all load-bearing. Where a fix lives in code, the module is named.
-The last three were found only by running a full ingest and asserting
+Eighteen, all load-bearing. Where a fix lives in code, the module is named.
+Quirks 14 to 16 were found only by running a full ingest and asserting
 invariants over all 303,517 resulting matches — the last of them by an
-assumption check written two milestones later, for the feature layer.
+assumption check written later, for the feature layer. Quirk 18 is one row the
+validation suite reports on every ingest.
 
 ### 1. A missing file returns HTTP 300, not 404
 
@@ -206,7 +207,7 @@ The worst of them, because every row is individually perfect.
 **1,982 matches, 0.65% of the table.** Barcelona, Real Madrid and Athletic
 Bilbao appeared in Portugal's and Scotland's first seasons wearing `por:` and
 `sco:` team ids — forty phantom clubs whose entire history was one season, and
-which the rename detector duly reported as one-season teams for two milestones
+which the rename detector duly reported as one-season teams for weeks
 without anyone asking why.
 
 Nothing per-row could catch it. Every copy has the right teams, the right date
@@ -245,6 +246,25 @@ Measured over every ingested match by handing each one its predecessor: **19 of
 more than a month. The rule that counts months instead gets 2,175 wrong, and
 743 of those are the 2019-20 season running into July 2020 across fifteen
 competitions — which is exactly the case asking the data survives.
+
+### 18. One Argentine match filed under a season that had ended
+
+The provider's `ARG.csv` carries a row labelled `2013/2014`, dated
+`29/01/2015`: Boca Juniors 1-0 Velez Sarsfield, with closing odds. It sits
+after the season's last rows (24 and 25 May 2014), eight months after the
+season ended and five months after the 2014 season had begun. Both 2013-14
+league meetings between the two clubs are already in the file (1 September
+2013 and 1 March 2014), and the 2014 season has its own (31 August 2014).
+Each club therefore has 39 matches in 2013-14, where the other clubs who
+played no extra fixtures have 38.
+
+The row is not a 2013-14 league match. The file gives no evidence of what it
+is, so this project does not guess: the row is ingested as the provider
+publishes it, and the "matches fall inside the season they are labelled with"
+check reports it as a warning on every ingest, which is why the
+[dataset card](DATASET_CARD.md) shows 23 passed and 1 failed. Deleting it would
+change the ratings and every number built on them, to remove one row out of
+303,517 dated seven years before the first evaluation fold.
 
 ### A note on the Swiss "Challenge League"
 

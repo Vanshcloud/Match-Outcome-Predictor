@@ -5,8 +5,8 @@
     python scripts/archive.py --dry-run           # print it, write nothing
     python scripts/archive.py --limit 5000        # read fewer rows from the log
 
-Milestone 19. Every served prediction has been written to PostgreSQL since
-Milestone 11 with the model, the version and the moment it was served; this
+Every served prediction is written to PostgreSQL with the model, the version
+and the moment it was served; this
 reads them back, joins the matches that have since been played, scores them
 with the same function the backtest uses, and compares the result to what the
 walk-forward folds said the same model does.

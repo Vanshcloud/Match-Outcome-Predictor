@@ -9,8 +9,8 @@ asked a store for rows does not.
 **Read-shaped on purpose.** There is no ``write_matches`` here, because nothing
 but :mod:`src.pipelines.ingest` writes matches, and a protocol method with no
 caller is a promise nobody is holding anyone to. The writing counterpart is
-:class:`PredictionLog`, added by Milestone 11 — the milestone that first has
-something to persist. It is a *separate* protocol rather than two more methods
+:class:`PredictionLog`, for the serving layer — the one part of the project
+with something to persist. It is a *separate* protocol rather than two more methods
 on this one: a served prediction is application state with a different shape,
 a different lifetime and a different store, and a store that had to implement
 both to satisfy either would be a store nobody could write.

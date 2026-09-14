@@ -31,7 +31,9 @@ import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+from dashboard import ui
 from dashboard.context import Context
+from dashboard.domain import competition as catalogue
 from dashboard.domain import identity, store
 from dashboard.domain.match import Fixture, MatchEvent, MatchStatus, Player, Prediction, Squad
 from dashboard.providers import football_data_org
@@ -139,12 +141,17 @@ class StubPredictions:
     def predict(self, match_id: str) -> Prediction | None:
         if not self.available:
             return None
+        fixture = self._answer.get("fixture", {})
         return Prediction(
             match_id=match_id,
             probabilities=self._answer["probabilities"],
             model=str(self._answer["model"]),
             model_version=str(self._answer["model_version"]),
             in_sample=bool(self._answer["in_sample"]),
+            home_team=fixture.get("home_team", ""),
+            away_team=fixture.get("away_team", ""),
+            competition_id=fixture.get("competition_id", ""),
+            date=fixture.get("date"),
         )
 
 
@@ -163,7 +170,7 @@ class Recorder:
 
 
 class ConnectedFeed:
-    """The fixture feed Milestone 13 registers, stubbed."""
+    """A connected fixture feed, stubbed."""
 
     name = "stub-feed"
     available = True
@@ -213,6 +220,7 @@ def write_data(
     reports: bool = True,
     ratings: bool = True,
     archive: pd.DataFrame | None = None,
+    league: pd.DataFrame = LEAGUE,
 ) -> None:
     """A data directory holding whichever tables the test wants present.
 
@@ -223,7 +231,7 @@ def write_data(
     """
     if matches:
         (root / "processed").mkdir(parents=True, exist_ok=True)
-        LEAGUE.to_parquet(root / "processed" / "matches.parquet", index=False)
+        league.to_parquet(root / "processed" / "matches.parquet", index=False)
     if ratings:
         (root / "features").mkdir(parents=True, exist_ok=True)
         ratings_frame().to_parquet(root / "features" / "ratings.parquet", index=False)
@@ -251,6 +259,7 @@ def _stub_context(
     reports: bool = True,
     ratings: bool = True,
     archive: pd.DataFrame | None = None,
+    league: pd.DataFrame = LEAGUE,
 ) -> None:
     """Point the dashboard at a temporary data directory and stub providers.
 
@@ -260,7 +269,9 @@ def _stub_context(
     the one place in the package that names a concrete one — which is the
     architecture being asserted as much as it is a convenience here.
     """
-    write_data(tmp_path, matches=matches, reports=reports, ratings=ratings, archive=archive)
+    write_data(
+        tmp_path, matches=matches, reports=reports, ratings=ratings, archive=archive, league=league
+    )
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
     def resolve() -> Context:
@@ -295,6 +306,7 @@ def run(
     ratings: bool = True,
     archive: pd.DataFrame | None = None,
     query: dict[str, str] | None = None,
+    league: pd.DataFrame = LEAGUE,
 ) -> AppTest:
     """Render one page against a temporary data directory and stub providers.
 
@@ -314,6 +326,7 @@ def run(
         reports=reports,
         ratings=ratings,
         archive=archive,
+        league=league,
     )
     prelude = "".join(
         f"import streamlit as st\nst.query_params['{key}'] = {value!r}\n"
@@ -345,7 +358,7 @@ def run_shell(
 
 
 def followed(**lists: list[str]) -> dict[str, list[str]]:
-    """Seed the default profile's favourites, where Milestone 14 keeps them.
+    """Seed the default profile's favourites, where the store keeps them.
 
     Tests used to write ``st.session_state`` directly, which asserted the
     storage mechanism rather than the behaviour — and that is exactly the thing
@@ -403,6 +416,16 @@ def test_every_page_renders_on_a_clean_checkout(
     assert app.exception == []
 
 
+def test_the_shell_shows_no_source_code_text_to_the_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Streamlit "magic" writes every bare string literal in the script it runs
+    to the page. A docstring left in ``app.py`` was on every page as prose."""
+    said = text_of(run_shell(tmp_path, monkeypatch))
+    assert "sidebar lists them" not in said
+    assert "``" not in said
+
+
 def test_the_shell_says_which_of_the_two_data_paths_are_answering(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -420,9 +443,9 @@ def test_the_shell_says_which_of_the_two_data_paths_are_answering(
 def test_the_shell_names_the_fixture_feed_that_is_connected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Milestone 13. The line used to name the milestone; it now names the
-    feed, because a status bar that cites an unshipped milestone after it ships
-    is the kind of small lie a reader stops checking the rest of against."""
+    """The status line names the connected feed, because a status bar that is
+    wrong about its sources is the kind of small lie a reader stops checking
+    the rest of against."""
     app = run_shell(tmp_path, monkeypatch, feed=ConnectedFeed())
     said = " ".join(str(one.value) for one in app.sidebar.caption)
     assert "✓ Fixture feed · stub-feed" in said
@@ -465,6 +488,16 @@ def test_home_says_why_there_are_no_live_matches_rather_than_showing_none(
     assert "Live now" in said
 
 
+def test_home_says_what_the_dashboard_is_before_anything_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A first-time reader lands here. It has to say what these cards are and
+    that the live centre polls rather than streams."""
+    said = text_of(run("home", tmp_path, monkeypatch))
+    assert "walk-forward against the bookmaker's closing line" in said
+    assert "polled about once a minute" in said
+
+
 def test_home_shows_finished_matches_from_the_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -483,7 +516,7 @@ def test_home_names_the_command_that_builds_a_missing_match_table(
 def test_a_connected_feed_fills_the_two_forward_sections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Milestone 13, rehearsed: one class, and the empty states fill up with no
+    """A connected feed: one class, and the empty states fill up with no
     other change anywhere."""
     said = text_of(run("home", tmp_path, monkeypatch, feed=ConnectedFeed()))
     assert "mop-pill live" in said
@@ -607,7 +640,7 @@ def test_a_fixture_page_shows_the_forecast_the_form_and_the_head_to_head(
 ) -> None:
     app = run("match", tmp_path, monkeypatch, query={"match": match_id()})
     assert app.exception == []
-    # First occurrence of each label, not last: Milestone 17 put a second
+    # First occurrence of each label, not last: there is a second
     # Home/Draw/Away trio on this page — what the market said — under its own
     # heading, and the forecast is the one rendered first.
     labels: dict[str, str] = {}
@@ -617,6 +650,29 @@ def test_a_fixture_page_shows_the_forecast_the_form_and_the_head_to_head(
     assert labels["Draw"] == "24.1%"
     assert labels["Away"] == "58.1%"
     assert "Head to head" in text_of(app)
+
+
+def test_a_match_with_no_recorded_kickoff_renders_its_date_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every match before 2019-07 has a null kick-off in the real table, and
+    ``bool(pd.NA)`` raises — this page used to crash for most of the history."""
+    league = LEAGUE.copy()
+    league.loc[league["match_id"] == match_id(), "kickoff"] = pd.NA
+    assert league["kickoff"].isna().any()
+
+    app = run("match", tmp_path, monkeypatch, query={"match": match_id()}, league=league)
+    assert app.exception == []
+    header = app.caption[0].value
+    assert "15:00" not in header
+    assert "season" in header
+
+
+def test_a_recorded_kickoff_still_appears_beside_the_date(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = run("match", tmp_path, monkeypatch, query={"match": match_id()})
+    assert ", 15:00" in app.caption[0].value
 
 
 def test_a_fixture_the_model_was_fitted_on_carries_the_in_sample_warning(
@@ -687,6 +743,50 @@ def test_a_fixture_in_neither_the_table_nor_the_service_says_so(
         query={"match": "nothing-like-this"},
     )
     assert any("nothing-like-this" in one.value for one in app.error)
+
+
+@pytest.mark.parametrize(("days", "status"), [(3, "upcoming"), (0, "upcoming"), (-3, "make data")])
+def test_a_priced_fixture_outside_the_table_is_titled_by_its_clubs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, days: int, status: str
+) -> None:
+    """An upcoming fixture is in no table the dashboard reads. Its page used to
+    be titled "A fixture the match table does not hold", with no clubs in it."""
+    fixture = {
+        "home_team": "Mechelen",
+        "away_team": "Anderlecht",
+        "competition_id": "BEL_1",
+        "date": dt.date.today() + dt.timedelta(days=days),
+    }
+    answer = {**ANSWER, "in_sample": False, "fixture": fixture}
+    app = run(
+        "match",
+        tmp_path,
+        monkeypatch,
+        predictions=StubPredictions(answer=answer),
+        query={"match": "not-in-the-table"},
+    )
+    assert app.exception == []
+    assert app.title[0].value == "Mechelen v Anderlecht"
+    assert status in app.caption[0].value
+
+
+def test_an_unknown_match_on_a_running_service_is_not_told_to_start_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A service that is up and answers 404 was asked about a fixture it does
+    not hold. The page used to stack a warning to run `make api` on top of the
+    error — advice about the wrong problem."""
+
+    class NotFound(StubPredictions):
+        def predict(self, match_id: str) -> Prediction | None:
+            self.error = f"the service answered 404: no fixture {match_id} in the table"
+            return None
+
+    app = run("match", tmp_path, monkeypatch, predictions=NotFound(), query={"match": "nope"})
+    assert app.exception == []
+    assert [one.value for one in app.warning] == []
+    assert len(app.error) == 1 and "nope" in app.error[0].value
+    assert "make api" not in text_of(app)
 
 
 def test_a_fixture_the_service_can_price_but_the_table_lacks_still_renders(
@@ -776,8 +876,90 @@ def test_the_model_page_reports_over_everything_by_default(
 ) -> None:
     app = run("model", tmp_path, monkeypatch)
     labels = {one.label: one.value for one in app.metric}
-    assert labels["Model"] == SHIPPED
+    assert labels["Model"] == "Blend, calibrated (shipped)"
     assert labels["Matches"] == "600"
+
+
+def test_no_model_page_table_or_metric_shows_a_forecaster_id_that_has_a_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ids such as ``ensemble-calibrated`` are report keys, not words. Every
+    table header, table cell, metric and heading on the Model page says the
+    label instead — including the drift panel's per-version heading."""
+    app = run("model", tmp_path, monkeypatch, archive=archive_frame())
+    ids = set(ui.FORECASTER_LABELS)
+    for frame in app.dataframe:
+        shown = {str(column) for column in frame.value.columns}
+        shown |= {str(cell) for column in frame.value.columns for cell in frame.value[column]}
+        assert not ids & shown, ids & shown
+    assert not ids & {str(one.value) for one in app.metric}
+    said = text_of(app)
+    assert f"**{SHIPPED}**" not in said
+    assert "**Blend, calibrated (shipped)** · version 0.13.0 · served 01 Sep 2026" in said
+
+
+def test_the_match_page_names_the_model_by_its_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
+    assert "Blend, calibrated (shipped) · version 0.12.0" in said
+    assert f"{SHIPPED} v" not in said
+
+
+def test_the_competition_tables_name_competitions_rather_than_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = run("model", tmp_path, monkeypatch)
+    shown = pd.concat([one.value for one in app.dataframe if "competition" in one.value.columns])
+    assert not shown.empty
+    assert "competition_id" not in {column for one in app.dataframe for column in one.value.columns}
+    assert shown["competition"].isin({one.id for one in catalogue.competitions()}).sum() == 0
+
+
+def test_the_model_page_leads_with_its_headline_numbers_and_its_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What it predicts, how it was scored and against what, before any tab —
+    and what it must not be read as saying, in a tab of its own."""
+    app = run("model", tmp_path, monkeypatch)
+    labels = {one.label: one.value for one in app.metric}
+    assert labels["Out-of-sample forecasts"] == "600"
+    assert {"Model log loss", "Closing-line log loss", "Pooled calibration error"} <= set(labels)
+    said = text_of(app)
+    assert "walk-forward folds" in said
+    assert "does not beat the closing line" in said
+
+
+def test_report_files_with_no_rows_leave_the_summary_out_rather_than_raise(
+    tmp_path: Path,
+) -> None:
+    """A write interrupted after the header: the files exist and hold nothing.
+    The summary reads the first row of the scoreboard, so it must not run."""
+    from dashboard.services.reports import Reports
+    from dashboard.views.performance import summary_panel
+
+    empty = pd.DataFrame()
+    summary_panel(
+        Reports(scores=empty, forecasts=empty, market=None, archive=None, reports_dir=tmp_path)
+    )
+
+
+def test_a_forecaster_the_scores_never_held_is_a_dash_not_a_crash() -> None:
+    from dashboard.views.performance import _score
+
+    table = pd.DataFrame({"log_loss": [1.0156]}, index=pd.Index(["ensemble-calibrated"]))
+    assert _score(table, "ensemble-calibrated") == "1.0156"
+    assert _score(table, "bookmaker") == "—"
+
+
+def test_an_infinite_log_loss_is_written_out_rather_than_left_blank() -> None:
+    """`home_always` scores infinite log loss. Streamlit's NumberColumn renders
+    an infinity as an empty cell, and a blank where every other row carries a
+    number reads as a value this project failed to compute."""
+    from dashboard.views.performance import _log_loss_text
+
+    assert _log_loss_text(1.0156) == "1.0156"
+    assert _log_loss_text(float("inf")) == "∞"
 
 
 def test_filtering_to_one_competition_changes_the_matches_it_is_over(
@@ -882,7 +1064,7 @@ def test_a_fixture_in_a_competition_the_backtest_never_covered_says_so(
     app = run("match", tmp_path, monkeypatch, query={"match": unscored_match_id()})
     said = text_of(app)
     assert app.exception == []
-    assert "No scored forecasts for Bundesliga" in said
+    assert "No scored forecasts for Germany · Bundesliga" in said
     assert "Head to head" in said
 
 
@@ -986,7 +1168,7 @@ def test_the_entry_point_imports_with_only_its_own_directory_on_the_path() -> No
     assert "ImportError" not in finished.stderr, finished.stderr[-2000:]
 
 
-# ---- who the favourites belong to (Milestone 14) ------------------------------
+# ---- who the favourites belong to -------------------------------------------
 
 
 def test_the_sidebar_offers_the_profiles_the_store_already_holds(
@@ -1003,7 +1185,7 @@ def test_the_sidebar_offers_the_profiles_the_store_already_holds(
 def test_switching_profile_switches_which_favourites_are_shown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The milestone's point, through the chrome a reader actually uses."""
+    """Profiles, through the chrome a reader actually uses."""
     store.save(f"{identity.PROFILE_PREFIX}Vansh", leagues=["ESP_1"], teams=[])
     followed(leagues=["ENG_1"])
     app = run_shell(tmp_path, monkeypatch)
@@ -1088,7 +1270,7 @@ def test_signing_in_is_wired_to_streamlits_own_login(
     assert called == ["login"]
 
 
-# ---- what changed while the reader was looking (Milestone 15) -----------------
+# ---- what changed while the reader was looking ------------------------------
 
 
 class ChangingFeed:
@@ -1128,7 +1310,7 @@ def test_the_first_look_at_the_live_strip_toasts_nothing(
 def test_a_goal_while_the_page_is_open_is_a_toast_and_a_post(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The milestone, end to end through the view: one change, one toast, one
+    """Notifications, end to end through the view: one change, one toast, one
     delivery to whatever transport is configured."""
     recorder = Recorder()
     feed = ChangingFeed([_live()], [_live(home_goals=1)])
@@ -1159,15 +1341,15 @@ def test_with_no_transport_configured_a_goal_is_still_a_toast(
     assert app.exception == []
 
 
-# ---- Milestone 17: the market, and what a gap from it means -------------------
+# ---- the market, and what a gap from it means ------------------------------
 
 
 def test_the_match_page_shows_the_closing_line_beside_the_forecast(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Milestone 12 kept the odds off this page because showing both invites
-    the comparison to be made without the folds. Milestone 17 makes the
-    comparison *with* the folds and shows the answer instead."""
+    """Showing both prices bare invites the comparison to be made without the
+    folds. The page makes the comparison *with* the folds and shows the
+    answer instead."""
     said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
     assert "What the market said" in said
     assert "overround" in said
@@ -1224,7 +1406,7 @@ def test_with_no_ratings_table_the_page_names_the_command(
     assert "make ratings" in said
 
 
-# ---- Milestone 18: who is registered ------------------------------------------
+# ---- who is registered -------------------------------------------------------
 
 
 class StubSquads:
@@ -1271,7 +1453,7 @@ def teams_of(match: str) -> tuple[str, str]:
 def test_the_match_page_shows_both_registered_squads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Milestone 18, and the caption is as much of it as the numbers: a squad
+    """The caption is as much of it as the numbers: a squad
     is who is registered, which is an upper bound on who is available."""
     home, away = teams_of(match_id())
     source = StubSquads(known={home: 3, away: 4})
@@ -1314,15 +1496,14 @@ def test_with_no_squad_source_the_section_says_what_would_configure_one(
     assert "DASHBOARD_SQUAD_PROVIDER" in said
 
 
-def test_injuries_are_now_named_as_having_no_source_rather_than_a_milestone(
+def test_injuries_are_named_as_having_no_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Milestone 18 shipped the squad and found the rest has nowhere to come
-    from — no injury endpoint at any tier, and an empty lineup on this plan."""
+    """The squad is shown and the rest has nowhere to come from — no injury endpoint at any tier, and an empty lineup on this plan."""
     said = text_of(run("match", tmp_path, monkeypatch, query={"match": match_id()}))
     assert "no injury endpoint at any tier" in said
-    # The heading no longer promises a milestone that has been spent.
-    assert "Milestone 18" not in {milestone for _, milestone, _ in match_page.FUTURE_SECTIONS}
+    # The heading says so too, rather than promising future work.
+    assert "no source" in {status for _, status, _ in match_page.FUTURE_SECTIONS}
 
 
 def test_a_fixture_outside_the_match_table_has_no_competition_to_look_up_in(
@@ -1341,6 +1522,24 @@ def test_a_fixture_outside_the_match_table_has_no_competition_to_look_up_in(
         )
     )
     assert "no competition to look a squad up in" in said
+    assert "which holds matches in the match table, and this one is not in it yet" in said
+
+
+def test_a_live_feed_card_explains_why_it_has_no_forecast_rather_than_erroring(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Most cards on a match day come from the live feed, whose ids the service
+    cannot price. Opening one is not a mistake the reader made, so it is an
+    explanation and a way on, not an error."""
+    app = run(
+        "match",
+        tmp_path,
+        monkeypatch,
+        predictions=StubPredictions(available=False),
+        query={"match": "fdorg-497821"},
+    )
+    assert app.error == []
+    assert "not joined to this project's match table" in text_of(app)
 
 
 def test_when_neither_club_is_found_the_reason_is_said_once_not_twice(
@@ -1357,7 +1556,7 @@ def test_when_neither_club_is_found_the_reason_is_said_once_not_twice(
     assert [one.value for one in app.metric if one.label == "Registered"] == []
 
 
-# ---- Milestone 19: what the service actually served ---------------------------
+# ---- what the service actually served ---------------------------------------
 
 
 def test_with_no_prediction_log_the_drift_panel_names_the_three_things_it_needs(
@@ -1375,7 +1574,7 @@ def test_with_no_prediction_log_the_drift_panel_names_the_three_things_it_needs(
 def test_a_young_archive_is_reported_as_not_evidence_rather_than_as_drift(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The finding this milestone is mostly about. A difference under the noise
+    """The archive's central finding. A difference under the noise
     floor at the archive's size is not a small drift — it is no measurement,
     and the page has to say the second thing."""
     app = run("model", tmp_path, monkeypatch, archive=archive_frame())

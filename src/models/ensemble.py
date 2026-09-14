@@ -4,8 +4,8 @@ An ensemble is worth building when its members are wrong about different
 matches. Averaging four models that fail together produces a fifth model that
 fails on exactly those matches with slightly less confidence, and reports a
 number that says more about the averaging than about the models — which is why
-Milestone 8 deliberately did not build one on top of a ranking whose top four
-sat within 0.0003 of each other.
+no blend was built on the zoo ranking alone, whose top four sat within 0.0003
+of each other.
 
 So the members are chosen on **the correlation of their per-match errors**, not
 on their individual scores. The scores decide the order candidates are
@@ -23,13 +23,16 @@ already built and removed one thing for.
 candidates this close together, weights fitted on any holdout small enough to
 be honest are noise with three decimal places. Not a log pool either, which
 would sharpen a blend that measurement says is already slightly too confident —
-the fitted temperatures over the reported folds run from 0.99 to 1.09, all but
-one of them above one.
+the blend's own fitted temperatures over the reported folds run from 0.99 to
+1.09, all but one of them above one.
 
-What it is worth, measured: 1.0156 against the best single family's 1.0159, on
-the same 59,001 matches. Real, repeatable, and about a fiftieth of what the
-model layer bought over the rating it replaced. docs/MODELS.md says so in those
-words, because a milestone whose honest answer is "barely" is worth more
+What it is worth, measured on the same 59,001 matches: 1.0156 against 1.0161
+for XGBoost, its best member, and 1.0159 for CatBoost, the best single family.
+Paired over the 193 fold × competition cells, the first gap is about 2.4
+standard errors and the second about 1.4 — so the blend is measurably better
+than its members and level with CatBoost, and either way it is about a
+fiftieth of what the model layer bought over the rating it replaced. docs/MODELS.md says so in those
+words, because a measurement whose honest answer is "barely" is worth more
 written down than rerun by the next person who assumes otherwise.
 """
 
@@ -55,7 +58,7 @@ FORECAST_COLUMNS: tuple[str, str, str] = ("prob_home", "prob_draw", "prob_away")
 """The three probabilities, in :data:`~src.evaluation.metrics.CLASSES` order."""
 
 KEY_COLUMN = "match_id"
-"""What a forecast is *about*, carried on every row from Milestone 17.
+"""What a forecast is *about*, carried on every row.
 
 Declared here rather than imported, matching what `src/ratings`,
 `src/pipelines`, `src/feature_engineering` and `src/validation` each do. Those
@@ -70,12 +73,14 @@ MAX_ERROR_CORRELATION = 0.99
 Read off a gap in the measured matrix rather than chosen in advance. Every pair
 in this zoo correlates above 0.91 — they read the same thirty columns about the
 same matches, so they agree about which fixtures are hard — but the pairs are
-not evenly spread: the four tree-based families sit at 0.9934 to 0.9960 against
-each other, logistic regression at 0.9857 against the nearest of them, and the
-MLP at 0.92 against everything. The threshold sits in the empty band between
-0.9857 and 0.9934, so it separates the substitutes from the rest and nothing
-else. `python scripts/train.py --correlations` reprints the matrix;
-docs/MODELS.md holds it.
+not evenly spread. Admission is greedy and best-first, so the column that
+decides is the one against XGBoost, which goes in first: the other three trees
+sit at 0.9934 to 0.9960 against it, logistic regression at 0.9857, the MLP at
+0.92. The threshold sits in the empty band between those last two, so it
+separates the substitutes from the rest and nothing else. (Among themselves the
+trees spread wider, to 0.9860, but no two of them are ever both in the blend.)
+`python scripts/train.py --correlations` reprints the matrix; docs/MODELS.md
+holds it.
 """
 
 BEST = "xgboost"
@@ -83,7 +88,7 @@ BEST = "xgboost"
 
 Chosen on the **tuning slice**, where it is the best of the six, and not on the
 reported folds, where CatBoost leads it by 0.0002. That difference is smaller
-than the one Milestone 8 called indistinguishable, and picking the subject of a
+than the one the zoo comparison calls indistinguishable, and picking the subject of a
 measurement by looking at the folds it is then measured on is the mistake this
 module's selection rule is arranged to avoid — it would be odd to avoid it for
 three members and commit it for one.
@@ -92,13 +97,13 @@ three members and commit it for one.
 SHIPPED = "ensemble-calibrated"
 """The model this project ships, by the name it is scored under.
 
-The blend of three, with the temperature applied — the best row in Milestone
-9's table, by 0.0005 over the best single family and by very little over the
-blend alone. Named rather than inferred from whichever row scored best, because
+The blend of three, with the temperature applied — the best row in the ensemble
+table — 0.0005 over its best member, 0.0003 over CatBoost (within noise),
+and by very little over the blend alone. Named rather than inferred from whichever row scored best, because
 it is a decision and a decision should be reviewable in a diff.
 
-It lives here rather than beside the card that describes it because Milestone
-11 serves it: the model layer names the model, and the reporting layer and the
+It lives here rather than beside the card that describes it because the
+API serves it: the model layer names the model, and the reporting layer and the
 API both read the name from one place instead of agreeing about a string.
 """
 
@@ -110,7 +115,7 @@ whose errors correlate at 0.9915 and up. The rule takes the best of that
 cluster and then the two families that disagree with it — logistic regression,
 and the MLP, which is the worst single model here and the only one wrong about
 different matches. A blend of near-substitutes reports the averaging rather
-than the models, which is the reason Milestone 8 refused to build one.
+than the models, which is the reason the zoo ranking alone was not blended.
 """
 
 
@@ -158,24 +163,24 @@ def fold_forecasts(
     The diagnostic pass. :mod:`src.pipelines.backtest` deliberately persists
     means rather than rows — one score per fold, competition, forecaster and
     subset — which is the right thing for a report and the wrong thing for the
-    two questions this milestone asks: whether two models are wrong about the
+    two questions this module asks: whether two models are wrong about the
     same matches, and whether a stated probability happens at the rate it
     states. Both need the matches back.
 
     Columns: ``fold``, ``match`` (the row's position within its evaluation
     half, which is what makes two forecasters' rows line up), ``match_id``,
     ``competition_id``, ``forecaster``, the three probabilities, and the
-    outcome. The competition is carried because Milestone 10 asks where a model
+    outcome. The competition is carried because the reliability report asks where a model
     is reliable rather than whether it is, and that is a grouping this frame
     can answer and the scored table cannot — the backtest keeps competition and
     fold, but only as means.
 
-    ``match_id`` joined it at Milestone 17, and ``match`` stays beside it
+    ``match_id`` is carried as well, and ``match`` stays beside it
     rather than being replaced. They answer different questions: ``match``
     lines two forecasters up within a fold, which is what the error
     correlations need, and ``match_id`` names the fixture, which is what
     anything joining these rows back to the canonical table needs — the closing
-    odds, in that milestone's case. Reconstructing the second from the first
+    odds, for the market comparison. Reconstructing the second from the first
     means re-deriving the fold split somewhere else and trusting it to produce
     the same order, which is a silent, plausible-looking wrong answer waiting
     for the day a split parameter changes.

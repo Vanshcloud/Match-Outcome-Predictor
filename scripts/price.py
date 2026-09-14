@@ -5,11 +5,11 @@
     python scripts/price.py --url http://api:8000    # a service somewhere else
     python scripts/price.py --dry-run                # say what it would ask for
 
-Milestone 20, and the second half of the loop. `make fixtures` puts the design
+The second half of the loop. `make fixtures` puts the design
 rows where the service can index them; this is the part that *asks*. Nothing
 before it did: the API answers when a page or a caller happens to want a
 number, and a deployment nobody browses on a Friday night serves nothing, logs
-nothing, and gives Milestone 19's archive nothing to score.
+nothing, and gives the archive nothing to score.
 
 **Over HTTP, like every other client.** This does not import the model and does
 not import :mod:`api`. There is exactly one process in this system that holds
@@ -22,7 +22,7 @@ serving it, which is the same path a browser's request takes.
 every forecast this sends is for a match that has not been played — which is
 what makes it out-of-sample, which is the entire reason the archive was empty.
 The service stamps ``in_sample`` from the artefact's own training window; it
-will say false for these, and it said true for all 25 rows Milestone 19 found.
+will say false for these, and it said true for all 25 rows the first archive run found.
 
 Exits non-zero when the service is not reachable or is not ready. An empty
 upcoming table is not an error — it is a week with no football in it, or a

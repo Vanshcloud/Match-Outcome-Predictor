@@ -1,6 +1,6 @@
 """Events, posted to a URL somebody else owns.
 
-Milestone 15's transport, and the whole of it: one class satisfying
+The notification transport, and the whole of it: one class satisfying
 :class:`~dashboard.providers.base.Notifier`, one registry entry, two
 environment variables. Slack, Discord, ntfy, Zapier and a script behind
 ``nc -l`` all accept the same thing — a POST with a JSON body — so this speaks
@@ -30,6 +30,8 @@ import os
 from dataclasses import dataclass, field
 
 import requests
+from urllib3.exceptions import LocationParseError
+from urllib3.util import parse_url
 
 from dashboard.domain.match import MatchEvent
 from src.utils.http import HttpClient
@@ -89,7 +91,7 @@ class WebhookNotifier:
         try:
             client.post(self.url, json=payload(event))
         except requests.RequestException as failure:
-            self.error = _describe(failure)
+            self.error = _describe(failure, self.url)
             logger.info("webhook refused %s: %s", event.kind, self.error)
             return False
         else:
@@ -113,9 +115,28 @@ def payload(event: MatchEvent) -> dict[str, object]:
     return {"text": event.message, "content": event.message, **event.as_payload()}
 
 
-def _describe(failure: requests.RequestException) -> str:
-    """Why the post did not land, in a sentence a caption can carry."""
+def _describe(failure: requests.RequestException, url: str) -> str:
+    """Why the post did not land, in a sentence a caption or a log can carry.
+
+    **Never the URL.** A Slack, Discord or ntfy webhook URL *is* the credential
+    — the token is its path — and ``str()`` of a ``requests`` connection error
+    embeds the full URL, query string included. So only the host and the
+    exception's class survive, which is enough to tell a DNS failure from a
+    refused connection without handing the log a working webhook.
+    """
     response = failure.response
     if response is not None:
         return f"the webhook answered {response.status_code}: {response.reason or 'no detail'}"
-    return f"the webhook could not be reached: {failure}"
+    return f"the webhook at {_host(url)} could not be reached ({type(failure).__name__})"
+
+
+def _host(url: str) -> str:
+    """The host alone — never the path, query or credentials in the URL.
+
+    A URL too malformed to parse is the likeliest reason a post failed, and
+    naming it here must not become a second failure.
+    """
+    try:
+        return parse_url(url).host or "the configured host"
+    except LocationParseError:
+        return "the configured host"

@@ -13,7 +13,7 @@ floor: a model that cannot beat it has learned nothing about *which* match it
 is looking at. Counted per fold rather than taken from a constant, because a
 prior read off the whole table is a prior that has seen the future.
 
-**Dixon-Coles.** Milestone 4's rating, already three-class and already causal.
+**Dixon-Coles.** The goal-rate rating, already three-class and already causal.
 The model zoo's real opponent — it is a fitted model, and beating it is the
 first evidence that features add something ratings do not.
 
@@ -106,7 +106,7 @@ class ClassPrior:
 
 
 class DixonColes:
-    """Milestone 4's rating, read from the ratings table.
+    """The Dixon-Coles rating, read from the ratings table.
 
     The rating was fitted over the whole history, which sounds like a leak and
     is not: every row of it depends only on matches strictly earlier than its
@@ -132,7 +132,7 @@ class Bookmaker:
     """The closing line, with the overround removed.
 
     The arithmetic moved to :func:`~src.evaluation.market.implied_probabilities`
-    at Milestone 17 and is not repeated here. Three callers now need "what did
+    and is not repeated here. Three callers now need "what did
     the market say" — this benchmark, the disagreement table, and the
     dashboard's match page — and three implementations of removing a margin is
     three chances to publish a number that is not the one this benchmark was

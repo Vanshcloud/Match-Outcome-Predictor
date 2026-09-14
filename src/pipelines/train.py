@@ -2,8 +2,7 @@
 
 Orchestration only, and deliberately thin: a trained model is a
 :class:`~src.models.baselines.Forecaster` that happens to fit inside its own
-``forecast``, so **the evaluation pipeline is used exactly as Milestone 7 left
-it**. Nothing in :mod:`src.pipelines.backtest` knows an estimator exists. That
+``forecast``, so **the evaluation pipeline is used unchanged**. Nothing in :mod:`src.pipelines.backtest` knows an estimator exists. That
 is what keeps a model's score comparable with a baseline's: the same folds, the
 same two subsets, the same weighting, the same file format.
 
@@ -14,11 +13,11 @@ one block withheld — and runs them **in a single backtest**. Every variant is
 then scored on identical matches, and the difference between two rows is the
 block, not the subset.
 
-Milestone 9's ensemble and calibration layer arrive the same way: both are
+The ensemble and calibration layer arrive the same way: both are
 :class:`~src.models.baselines.Forecaster` implementations, so the blend, the
 calibrated model and the four baselines are one more list handed to the same
-unchanged backtest, and the 0.0166 that is left of Milestone 7's gap is
-measured on the same matches throughout.
+unchanged backtest, and the gap to the closing line is measured on the same
+matches throughout.
 
 **Reliability costs a second pass, on purpose.** The backtest persists means —
 one score per fold, competition, forecaster and subset — which is right for a
@@ -114,7 +113,7 @@ def run_training(
         reports_dir: Parent of :data:`ZOO_SUBDIR`.
         models: Model names. Defaults to the whole zoo.
         columns: The design matrix. Defaults to all thirty.
-        baselines: Score Milestone 7's four baselines in the same run. On by
+        baselines: Score the four baselines in the same run. On by
             default: a model's log loss means nothing without the class prior
             beside it, computed on the same matches.
         folds: Walk-forward steps.
@@ -219,8 +218,8 @@ def ablation_table(scores: pd.DataFrame, model: str) -> pd.DataFrame:
 
     Positive is a block that earns its place: withholding it made the model
     worse. Negative is a block the model would rather not have had, which is a
-    result and not a bug — Milestone 5 shipped rest days knowing they carried
-    no marginal signal, and said so at the time.
+    result and not a bug — rest days were added knowing they carried no
+    marginal signal, and docs/FEATURES.md says so.
     """
     pooled = pooled_table(scores, COMMON).set_index("forecaster")
     control = f"{model}-{ALL_BLOCKS}"
@@ -245,7 +244,7 @@ def ensemble_forecasters(
     members: Sequence[str] = MEMBERS,
     columns: Sequence[str] = DESIGN_COLUMNS,
 ) -> tuple[Forecaster, ...]:
-    """The four rows Milestone 9 exists to compare.
+    """The four rows the ensemble report compares.
 
     The best single family, that family calibrated, the blend, and the blend
     calibrated — in one list, so one backtest scores them on identical matches

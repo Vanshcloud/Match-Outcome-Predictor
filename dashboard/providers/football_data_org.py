@@ -1,10 +1,10 @@
 """Fixtures and live scores, from football-data.org.
 
-Milestone 13, and the whole of it: one class satisfying
+The whole of it: one class satisfying
 :class:`~dashboard.providers.base.FixtureProvider`, one entry in
 :data:`~dashboard.providers.FIXTURE_PROVIDERS`, one environment variable. No
-view moved and no card changed to add it, which was the claim Milestone 12's
-shape was making.
+view moved and no card changed to add it, which is the claim the provider
+layer's shape makes.
 
 **A second provider, not a second ingestion source.** Nothing here is written
 to a table, joined to one, or read by a model. This feed answers "what is on
@@ -21,8 +21,8 @@ United"). An id built here would look like a canonical one and match nothing,
 which is worse than an id that plainly says where it came from. The
 consequence is visible and deliberate: a card from this feed opens a match page
 that has neither a table row nor a forecast, and that page already says so —
-the model in this repository is fitted on finished matches and cannot price a
-fixture it has no history for.
+the service prices by canonical id, and a feed id is not one. Upcoming
+fixtures *are* priced, under canonical ids, by `make fixtures`.
 
 **Two clocks, and only one of them reaches the rest of the application.**
 The feed indexes by UTC and stamps every kick-off ``utcDate``; the dashboard's
@@ -62,7 +62,7 @@ from typing import Any
 
 import requests
 
-from dashboard.domain.match import Fixture, MatchStatus, Player, Squad
+from dashboard.domain.match import FEED_ONLY_PREFIX, Fixture, MatchStatus, Player, Squad
 from src.utils.http import HttpClient
 from src.utils.logging import get_logger
 
@@ -436,7 +436,7 @@ def as_fixture(row: Mapping[str, Any]) -> Fixture | None:
         return None
     score = _mapping(_mapping(row.get("score")).get("fullTime"))
     return Fixture(
-        match_id=f"fdorg-{row.get('id')}",
+        match_id=f"{FEED_ONLY_PREFIX}{row.get('id')}",
         competition_id=ours,
         date=when.date(),
         home_team=_team(home),
@@ -523,7 +523,7 @@ def _as_int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-# ---- squads: Milestone 18 ----------------------------------------------------
+# ---- squads --------------------------------------------------------------------
 
 
 SQUAD_CACHE_SECONDS = 3600
@@ -547,7 +547,7 @@ club, and the difference is a convention rather than a name.
 class FootballDataOrgSquads:
     """football-data.org's ``/v4/competitions/{code}/teams``, as a squad provider.
 
-    Milestone 18, and the same shape Milestone 13 established: one class
+    The same shape as the fixture feed: one class
     satisfying one protocol, one entry in a registry, one environment variable.
     It shares this module with the fixture feed because it shares the key, the
     base URL, the competition codes and the way a failure is described — two
@@ -709,10 +709,9 @@ def pick(team: str, squads: Sequence[Squad]) -> Squad | None:
 
     This project's tables say "Man United", "Nott'm Forest" and "Brighton"; this
     feed says "Manchester United FC", "Nottingham Forest FC" and "Brighton &
-    Hove Albion FC". Milestone 13 needed no mapping between them because nothing
-    it fetched was joined to an ingested row. **Milestone 18 is the first
-    milestone that needs the join**, and this function is the whole of what it
-    cost.
+    Hove Albion FC". The fixture feed needs no mapping between them because nothing
+    it fetches is joined to an ingested row. **The squad panel does need the
+    join**, and this function is the whole of what it costs.
 
     Two rules, in order, and no third:
 

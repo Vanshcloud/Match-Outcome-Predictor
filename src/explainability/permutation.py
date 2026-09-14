@@ -4,7 +4,7 @@ The model-agnostic half of the pair. It needs nothing from the estimator except
 the ability to predict, so it covers all six families — including the three
 :mod:`src.explainability.shapley` cannot read — and it reports in **log loss**,
 which is the unit the ablation reports in and therefore the only one of the two
-methods whose number can be put beside Milestone 8's directly.
+methods whose number can be put beside the ablation's directly.
 
 **A block is shuffled jointly, not column by column.** The fourteen form
 columns are strongly correlated with each other; permuting them independently
@@ -23,7 +23,7 @@ model at nineteen times the cost. That is what
 without a block and answers "would a model built without this be worse". This
 permutes at prediction time and answers "does *this* model use it". A block
 that scores low here and high there is one whose information the model can
-recover from its neighbours — which is exactly what Milestone 8 measured
+recover from its neighbours — which is exactly what the ablation measures
 between Elo and Dixon-Coles, and is a fact about the feature set rather than a
 disagreement between two tools.
 """

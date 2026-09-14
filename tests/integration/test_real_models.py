@@ -10,7 +10,7 @@ beats the class prior, folds that pass the boundary probe. That is what a
 synthetic league cannot prove.
 
 The expensive kind reads the table `make train` wrote, if it is there, and pins
-the numbers this milestone reports. Fitting six families over five folds is ten
+the numbers the model reports quote. Fitting six families over five folds is ten
 minutes and does not belong in a test suite; asserting on its output does.
 """
 
@@ -144,7 +144,7 @@ def test_the_models_are_scored_beside_the_baselines(trained: pd.DataFrame) -> No
 
 
 def test_every_family_beats_the_rating_it_was_built_on(trained: pd.DataFrame) -> None:
-    """The question Milestone 8 exists to answer. A zoo that could not beat
+    """The question the model zoo exists to answer. A zoo that could not beat
     Dixon-Coles would mean the features add nothing to a strength model."""
     pooled = pooled_table(trained, COMMON).set_index("forecaster")
     rating = pooled.loc["dixon_coles", "log_loss"]
@@ -198,7 +198,7 @@ def test_form_is_the_block_the_model_least_wants_to_lose(ablated: pd.DataFrame) 
 def test_the_schedule_and_head_to_head_blocks_are_worth_almost_nothing(
     ablated: pd.DataFrame,
 ) -> None:
-    """Milestone 5 shipped rest days saying they carried no marginal signal and
+    """Rest days were added on the expectation that they carried no marginal signal and
     that this ablation would settle it. It has: 0.0003 of log loss."""
     table = ablation_table(ablated, ABLATED_MODEL).set_index("block")
     assert 0 <= table.loc["schedule", "delta_log_loss"] < 0.001
@@ -207,7 +207,7 @@ def test_the_schedule_and_head_to_head_blocks_are_worth_almost_nothing(
 
 def test_no_block_is_actively_harmful(ablated: pd.DataFrame) -> None:
     """A negative delta would mean the model does better without the block —
-    a result, not a bug, and one worth knowing before Milestone 9 calibrates."""
+    a result, not a bug, and one worth knowing before calibration."""
     assert (ablation_table(ablated, ABLATED_MODEL)["delta_log_loss"] >= -0.001).all()
 
 
@@ -215,7 +215,7 @@ def test_no_block_is_actively_harmful(ablated: pd.DataFrame) -> None:
 
 
 def test_the_zoo_fixes_the_competition_the_rating_failed_on(trained: pd.DataFrame) -> None:
-    """Milestone 7 found Dixon-Coles losing to the class prior on the Argentine
+    """The baseline backtest found Dixon-Coles losing to the class prior on the Argentine
     cup — a narrow field fitted per competition on 610 matches. The models have
     somewhere else to look, and none of them needed telling."""
     table = per_competition_table(trained).set_index("competition_id")
@@ -280,7 +280,7 @@ def test_the_bookmaker_still_wins_after_both_layers(blended: pd.DataFrame) -> No
 
 
 def test_calibration_buys_reliability_and_not_loss(blended: pd.DataFrame) -> None:
-    """The milestone's reportable answer. The scalar moves log loss by less
+    """Calibration's reportable answer. The scalar moves log loss by less
     than a ten-thousandth in either direction — these models were already close
     to proper — and the reliability table is where it shows up."""
     pooled = pooled_table(blended, COMMON).set_index("forecaster")

@@ -90,7 +90,7 @@ class TestToFrame:
         assert frame.loc[0, ["home_goals", "away_goals", "result"]].isna().all()
 
     def test_the_odds_are_left_out_even_when_the_file_carries_them(self) -> None:
-        # The closing line is Milestone 17's benchmark and it is read off the
+        # The closing line is the benchmark and it is read off the
         # played row. A pre-match price under the same column name would be a
         # different number wearing it.
         priced = row() | {"B365H": "2.10", "B365D": "3.40", "B365A": "3.60"}

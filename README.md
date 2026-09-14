@@ -1,8 +1,12 @@
 # Match Outcome Predictor
 
-Calibrated home / draw / away probabilities for 39 professional football
-competitions. The project runs from raw results to a served API and a
-dashboard, and it is benchmarked against the bookmaker's closing line.
+Calibrated home / draw / away probabilities for football's top leagues,
+benchmarked against the bookmaker's closing line. The dashboard covers 10
+competitions — the Premier League, Championship, La Liga, Serie A, Bundesliga,
+Ligue 1, Eredivisie, Primeira Liga and Brazil's Série A with forecasts, and the
+Champions League with fixtures and live scores. The model learns from the match
+history of 39 competitions, and the project runs from raw results to a served
+API and that dashboard.
 
 [![CI](https://github.com/Vanshcloud/Match-Outcome-Predictor/actions/workflows/ci.yml/badge.svg)](https://github.com/Vanshcloud/Match-Outcome-Predictor/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
@@ -23,8 +27,9 @@ dashboard, and it is benchmarked against the bookmaker's closing line.
 - Builds two causal team ratings and twenty pre-match features, and fits six
   model families on walk-forward folds.
 - Serves a calibrated blend over HTTP.
-- Shows the forecasts in a Streamlit dashboard, beside how reliable
-  probabilities of that size have been and what the closing line said.
+- Shows the forecasts in a Streamlit dashboard for the 10 competitions the
+  live feed covers, beside how reliable probabilities of that size have been
+  and what the closing line said.
 
 The problem it addresses: football predictions are usually reported as a hit
 rate, which hides whether the stated probabilities can be trusted, and are
@@ -47,7 +52,7 @@ accuracy.
 | Models | Logistic regression, random forest, XGBoost, LightGBM, CatBoost and an MLP; a blend chosen on error correlation; temperature scaling |
 | Evaluation | Log loss, ranked probability score (RPS) and accuracy on five walk-forward folds, against four baselines including the de-vigged closing line; reliability tables and a generated model card |
 | Serving | FastAPI service with checksum-verified model artefacts, an `in_sample` flag on every response, an LRU cache, Prometheus metrics and an optional PostgreSQL prediction log |
-| Dashboard | Home, live centre, competitions, match detail, search and model pages; saved favourites; live scores and fixtures from football-data.org; webhook notifications |
+| Dashboard | Home, live centre, competitions, match detail, search and model pages for the 10 competitions on football-data.org's free plan; saved favourites; live scores, fixtures and club crests; webhook notifications |
 | Closing the loop | Upcoming fixtures are priced before kick-off, logged, and scored once their results are ingested |
 
 ## Screenshots
@@ -261,8 +266,9 @@ produces it; nothing invents a fixture.
 | Model | Headline numbers; every forecaster on the same matches; a reliability diagram filterable by competition and year; per-competition reliability; the served-forecast archive; limitations |
 
 - **Live and upcoming fixtures** come from the optional
-  [football-data.org](https://www.football-data.org/) provider. It covers 9
-  competitions on the free tier and is polled at most once a minute; there is
+  [football-data.org](https://www.football-data.org/) provider. It covers 10
+  competitions on the free tier — 9 leagues with forecasts and the Champions
+  League without — and is polled at most once a minute; there is
   no push feed and no minute-by-minute data.
 - **Notifications.** When a tab is open, goals, kick-offs and full-times in the
   matches you follow appear in the page and can also be posted to a webhook.
@@ -361,8 +367,9 @@ dashboard, and the week of fixtures `make fixtures` prices, do:
    export DASHBOARD_FIXTURE_PROVIDER=football-data.org
    ```
 3. Covered competitions on the free plan: Premier League, Championship,
-   Bundesliga, Serie A, La Liga, Ligue 1, Eredivisie, Primeira Liga, and Brazil
-   Série A.
+   Bundesliga, Serie A, La Liga, Ligue 1, Eredivisie, Primeira Liga, Brazil
+   Série A, and the Champions League (fixtures and scores only: no match
+   history for it is ingested, so it has no forecasts).
 
 Requests are split into windows of at most 10 days and cached for 60 s. Retries honour `Retry-After`. If the key is invalid or the feed
 is down, the affected section shows the feed's own error message and the rest

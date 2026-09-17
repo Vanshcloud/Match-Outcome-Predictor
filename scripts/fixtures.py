@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n(dry run: nothing built, nothing written)")
         return 0
 
-    report = run_upcoming(matches, fixtures, settings.paths.features_dir)
+    report = run_upcoming(matches, fixtures, settings.paths.features_dir, sources=[tables.matches])
     print(f"\n{report.summary()}")
     if report.already_played:
         print(f"{report.already_played} fixture(s) already in the match table, dropped")

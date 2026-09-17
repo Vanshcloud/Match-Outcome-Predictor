@@ -32,8 +32,7 @@ the model.
 
 The arrows point one way: ``views → services → providers → domain``, and
 ``domain`` imports none of them. That is what makes the fixture feed one provider
-class, the favourites store one module and the market price one more
-protocol.
+class and the favourites store one module.
 
 ``dashboard`` imports ``src``. It does not import ``api``: it is a *client* of
 that service, over the network, and CI enforces both halves.

@@ -366,15 +366,16 @@ from 0.0059 to 0.0615, with a median of 0.0154 — against Dixon-Coles' median o
 the median competition, which is the same share it took overall.
 
 The blend does not change that picture: 39 of 39 against the rating and the
-prior, 0 of 39 against the bookmaker, and a median gap of 0.0153 against
-LightGBM's 0.0154. It beats its own best member in 28 of the 39, which is worth
-knowing before anyone reads 0.0005 as a property of every competition.
+prior, 0 of 39 against the bookmaker, and a median gap of 0.0146 against
+LightGBM's 0.0154. It beats XGBoost, its best member, in 27 of the 39, which is
+worth knowing before anyone reads 0.0005 as a property of every competition.
 
-The widest remaining gap is the Chinese Super League at 0.0615, and the
-narrowest is the Russian Premier League at 0.0059. Neither is a competition
-this project has any reason to model differently; what the spread says is that
-the market's advantage is not uniform, only that it does not track team
-strength — which was the baseline backtest's finding and survives the zoo.
+LightGBM's widest remaining gap is the Chinese Super League at 0.0615, and its
+narrowest is the Russian Premier League at 0.0059; the blend is ordered the
+same way, at 0.0602 and 0.0057. Neither is a competition this project has any
+reason to model differently; what the spread says is that the market's
+advantage is not uniform, only that it does not track team strength — which was
+the baseline backtest's finding and survives the zoo.
 
 ---
 

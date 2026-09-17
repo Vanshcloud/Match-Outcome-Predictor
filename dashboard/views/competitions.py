@@ -41,9 +41,14 @@ def _browser() -> None:
 
     # Country, then tier, so a country's top flight leads. A row is short, so
     # the Champions League drops its "UEFA" there; its id still says it.
+    #
+    # Named with `short_label`, the same call every card makes, so the two
+    # "Serie A" rows read "Serie A — Italy" and "Serie A — Brazil" here as well.
+    # The flag alone distinguished them for anyone who could see it, and left
+    # the list contradicting every card that names the country in text.
     tiles = sorted(
         [
-            (one.country, one.tier or 99, one.name, one.id)
+            (one.country, one.tier or 99, catalogue.short_label(one.id), one.id)
             for one in catalogue.competitions()
             if one.id in matchday.COVERED
         ]
@@ -68,11 +73,11 @@ def _competition_page(ctx: context.Context, competition_id: str) -> None:
     if chosen is not None:
         st.title(chosen.name)
         tier = f"tier {chosen.tier}" if chosen.tier else "cup competition"
-        st.caption(f"{chosen.country} · {tier} · `{chosen.id}`")
+        st.caption(f"{chosen.country} · {tier}")
     else:
         st.title(matchday.FEED_ONLY_NAMES[competition_id])
         st.caption(
-            f"{FEED_ONLY_COUNTRY} · cup competition · `{competition_id}` · no match history "
+            f"{FEED_ONLY_COUNTRY} · cup competition · no match history "
             "here, so its fixtures show kick-offs and scores without a forecast"
         )
 

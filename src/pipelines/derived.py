@@ -123,11 +123,21 @@ def persist(
     destination: Path,
     *,
     extra: dict[str, object],
+    sources: Sequence[Path] = (),
 ) -> Path:
     """Write ``table`` as Parquet with a manifest beside it.
 
     The manifest is named from the table, so two derived tables can share a
     directory without one overwriting the other's provenance.
+
+    Args:
+        table: What to write.
+        destination: Where to write it.
+        extra: Provenance for the manifest.
+        sources: The tables this one was built from. Their checksums go into
+            the manifest's ``inputs``, so "these features were built from that
+            match table" is a claim a later command can check rather than
+            infer from two row counts.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
     table.to_parquet(destination, index=False)
@@ -135,6 +145,7 @@ def persist(
         destination.with_suffix(".manifest.json"),
         destination.parent,
         [destination],
+        sources=sources,
         extra=extra,
     )
     return destination

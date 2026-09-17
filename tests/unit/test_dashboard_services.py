@@ -252,6 +252,33 @@ def test_the_upcoming_window_is_taken_from_the_date_it_is_given() -> None:
     assert Recording.asked["until"] == dt.date(2026, 9, 8)
 
 
+class FailingWindow(StubFixtures):
+    """A feed whose availability check passed, and whose next request was refused."""
+
+    error: str | None = None
+
+    def scheduled(self, **_filters: object) -> list[Fixture]:
+        self.error = "football-data.org answered 429: You reached your request limit."
+        return []
+
+    def live(self, **_filters: object) -> list[Fixture]:
+        return self.scheduled()
+
+
+def test_a_refused_window_is_the_feeds_reason_not_an_empty_week() -> None:
+    """An empty list from a failed request is not "no fixtures scheduled"."""
+    section = matchday.upcoming_section(FailingWindow(), ["ENG_1"])
+    assert section.unavailable is not None
+    assert "429" in section.unavailable
+
+
+def test_a_refused_live_request_is_the_feeds_reason_not_nothing_in_play() -> None:
+    feed = FailingWindow()
+    assert "429" in str(matchday.live_section(feed, ["ENG_1"]).unavailable)
+    # The home strip passes the watcher's (empty) answer in, after it failed.
+    assert "429" in str(matchday.live_section(feed, fixtures=[]).unavailable)
+
+
 def test_a_feed_card_is_matched_to_the_table_fixture_across_two_spellings() -> None:
     day = dt.date(2026, 9, 14)
     card = played(match_id="fdorg-1", home_team="Como 1907", away_team="Parma", date=day)
@@ -421,11 +448,25 @@ def test_feed_cards_get_the_forecast_of_the_fixture_they_are() -> None:
     assert (asked[0]["since"], asked[0]["until"]) == (day - dt.timedelta(1), day + dt.timedelta(1))
 
 
-def test_a_section_with_no_cards_or_no_service_is_left_as_it_is() -> None:
+def test_a_section_with_no_cards_is_left_as_it_is() -> None:
     empty = matchday.Section("Today and next")
     assert matchday.with_forecasts(empty, StubPredictions()) is empty
-    full = matchday.Section("Today and next", fixtures=(played(),))
-    assert matchday.with_forecasts(full, StubPredictions(available=False)) is full
+
+
+def test_cards_that_lost_their_bars_say_why_on_every_page_that_builds_a_section() -> None:
+    """The note belongs to the call, not to the home page that first needed it.
+
+    The competition page and Search build their own sections through
+    `with_forecasts`. While the sentence lived in `home_page`, those two pages
+    dropped every probability bar with nothing on the page saying the service
+    was down.
+    """
+    full = matchday.Section("Today and next", note="the next 7 days", fixtures=(played(),))
+    without = matchday.with_forecasts(full, StubPredictions(available=False))
+    assert without.fixtures == full.fixtures, "the cards are still football"
+    assert without.probabilities == {}
+    assert "no forecasts:" in without.note
+    assert "the next 7 days" in without.note
 
 
 def test_filtering_an_empty_frame_by_club_gives_an_empty_frame(table: str) -> None:

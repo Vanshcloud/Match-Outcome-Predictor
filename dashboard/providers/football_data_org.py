@@ -181,6 +181,11 @@ seconds later."""
 
 UPCOMING = (MatchStatus.SCHEDULED, MatchStatus.LIVE)
 
+NOW_AHEAD_DAYS = MAX_WINDOW_DAYS - 2
+"""How far past today the live window reaches: the home page asks for a week
+from today, which :meth:`FootballDataOrgFixtures.scheduled` widens by a day at
+each end — ten days, one request, and the same one."""
+
 ONE_DAY = dt.timedelta(days=1)
 """The most the feed's calendar and the host's can differ. Every real offset is
 under 24 hours, so a window widened by this at each end contains every match
@@ -293,11 +298,15 @@ class FootballDataOrgFixtures:
     def _now_window(self, competitions: Sequence[str] | None) -> tuple[Fixture, ...]:
         """Everything the feed has around *now*, in the feed's own calendar.
 
-        Yesterday and today in **UTC**, which is the smallest window certain to
-        contain every match currently in play whatever the host's timezone.
+        From yesterday in **UTC**, which is certain to include every match
+        currently in play whatever the host's timezone, to
+        :data:`NOW_AHEAD_DAYS` ahead. Only the first two days are needed; the
+        rest makes this the same request the home page's week of fixtures
+        sends, so a cold page asks the feed once rather than twice.
         """
         utc_today = dt.datetime.now(dt.UTC).date()
-        return self._window(utc_today - ONE_DAY, utc_today, competitions)
+        ahead = dt.timedelta(days=NOW_AHEAD_DAYS)
+        return self._window(utc_today - ONE_DAY, utc_today + ahead, competitions)
 
     def _window(
         self,
@@ -306,9 +315,15 @@ class FootballDataOrgFixtures:
         competitions: Sequence[str] | None,
     ) -> tuple[Fixture, ...]:
         """The window, as inclusive days: one memoised request per ten of them,
-        merged, with any failure kept in :attr:`error` rather than raised."""
-        codes = _codes(competitions)
-        if codes is None:
+        merged, with any failure kept in :attr:`error` rather than raised.
+
+        The request is never filtered by competition; the answer is. Each
+        request takes the feed several seconds, and a filtered one would be a
+        second cache entry for the same window — ``available`` and ``live``
+        asking for the same two days would cost two requests instead of one.
+        """
+        wanted = _wanted(competitions)
+        if wanted is not None and not wanted:
             self.error = (
                 "None of the competitions you follow are on this feed's plan. "
                 f"It covers {', '.join(sorted(COMPETITION_CODES))}."
@@ -320,8 +335,6 @@ class FootballDataOrgFixtures:
                 ("dateFrom", start.isoformat()),
                 ("dateTo", (end + ONE_DAY).isoformat()),
             )
-            if codes:
-                params += (("competitions", codes),)
             try:
                 answered = _fetch(self.base_url, self.api_key, params, self.http, _bucket())
             except (requests.RequestException, ValueError) as failure:
@@ -332,7 +345,8 @@ class FootballDataOrgFixtures:
             # instant the feed includes in both, so a midnight kick-off — every
             # Brazilian evening match is one — would otherwise be two cards.
             for one in answered:
-                found.setdefault(one.match_id, one)
+                if wanted is None or one.competition_id in wanted:
+                    found.setdefault(one.match_id, one)
         self.error = None
         return tuple(found.values())
 
@@ -410,20 +424,17 @@ def _client(http: HttpClient | None) -> Iterator[HttpClient]:
         yield made
 
 
-def _codes(competitions: Sequence[str] | None) -> str | None:
-    """The feed's codes for the competitions asked for.
+def _wanted(competitions: Sequence[str] | None) -> frozenset[str] | None:
+    """The asked-for competitions this plan covers.
 
-    Three answers, and they are all different: ``""`` is "no filter, everything
-    the plan covers", a comma-joined string is the filter, and ``None`` is
-    "every competition asked for is outside this plan" — which is a sentence
-    for the page rather than an unfiltered request for competitions the reader
-    did not ask about.
+    ``None`` is "no filter, everything the plan covers"; an empty set is "every
+    competition asked for is outside this plan", which is a sentence for the
+    page rather than a request.
     """
     if not competitions:
-        return ""
+        return None
     known = {**COMPETITION_CODES, **FEED_ONLY_CODES}
-    codes = [known[one] for one in competitions if one in known]
-    return ",".join(codes) if codes else None
+    return frozenset(one for one in competitions if one in known)
 
 
 def _chunks(since: dt.date, until: dt.date) -> list[tuple[dt.date, dt.date]]:
@@ -463,7 +474,7 @@ def _describe(failure: Exception) -> str:
     response = getattr(failure, "response", None)
     if response is not None:
         return f"football-data.org answered {response.status_code}: {_message(response)}"
-    return f"football-data.org could not be reached: {failure}"
+    return f"football-data.org could not be reached ({type(failure).__name__})"
 
 
 def _message(response: Any) -> str:

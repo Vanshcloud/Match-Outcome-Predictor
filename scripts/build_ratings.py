@@ -125,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output or settings.paths.features_dir,
         models=select_models(args.model),
         verify=not args.no_verify,
+        sources=[matches_path],
     )
 
     print(f"\n{report.summary()}")

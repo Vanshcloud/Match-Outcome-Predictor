@@ -212,6 +212,7 @@ def run_backtest(
     forecasters: Sequence[Forecaster] | None = None,
     folds: int = DEFAULT_FOLDS,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
+    sources: Sequence[Path] = (),
 ) -> BacktestReport:
     """Walk forward, score every baseline, and persist the result.
 
@@ -222,6 +223,9 @@ def run_backtest(
         forecasters: Defaults to every baseline the table can support.
         folds: How many walk-forward steps.
         horizon_days: How much time each step is scored over.
+        sources: The tables this run read, checksummed into the manifest's
+            ``inputs``. A score is a claim about a particular match table, and
+            a report that does not name which one is a number nobody can place.
     """
     chosen = tuple(forecasters if forecasters is not None else default_forecasters(matches))
     report = BacktestReport(forecasters=tuple(one.name for one in chosen))
@@ -251,6 +255,7 @@ def run_backtest(
             "matches": report.matches,
             "coverage": report.coverage,
         },
+        sources=sources,
     )
     logger.info("wrote %s — %s", report.output.name, report.summary())
     return report

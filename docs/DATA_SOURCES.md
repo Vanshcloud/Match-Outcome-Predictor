@@ -337,7 +337,15 @@ competitions are ingested in, because the table is sorted by
 | `data/raw/manifest.json` | Checksum of every cached provider file — provenance of the **inputs** |
 | `data/processed/manifest.json` | Checksum, row count and date range of the canonical table — provenance of the **output** |
 
-Both manifests are verified by the integration suite. A changed checksum is
+Every derived table and report written downstream — ratings, features, the
+upcoming-fixture rows, the backtests, the per-match forecasts, the market
+bands — carries its own manifest with an `inputs` block: the file name and
+SHA-256 of each table it was built from. That is what makes "these features
+were built from *that* match table" a comparison rather than an inference from
+two row counts, and it is how a feature table left behind by a later `make
+data` is caught before the numbers on top of it are quoted.
+
+Both ingest manifests are verified by the integration suite. A changed checksum is
 *reported*, never raised on: the provider genuinely does revise files, and
 whether that is corruption or a correction is the caller's judgement.
 

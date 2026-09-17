@@ -21,7 +21,7 @@ import requests
 from requests.adapters import BaseAdapter
 from requests.structures import CaseInsensitiveDict
 
-from dashboard.client import PredictionClient, ServiceError
+from dashboard.client import MAX_RETRIES, PredictionClient, ServiceError
 from src.utils.http import HttpClient
 
 BASE = "http://service.test"
@@ -130,7 +130,9 @@ def test_predict_posts_the_fixture_and_returns_the_answer() -> None:
 
 
 def test_a_service_that_is_not_running_is_one_error_with_a_sentence() -> None:
-    with pytest.raises(ServiceError, match="could not be reached"):
+    with pytest.raises(
+        ServiceError, match=r"^the service could not be reached \(ConnectionError\)$"
+    ):
         client_with(_Refusing()).health()
 
 
@@ -189,7 +191,10 @@ def test_without_an_injected_client_one_is_built_and_closed(
     with client._client() as made:
         assert isinstance(made, HttpClient)
 
-    assert built == [{"timeout_seconds": 3.0}]
+    # Few retries: HttpClient's download defaults made each call to a service that
+    # is not running take fifteen seconds, inside a page that makes several.
+    assert built == [{"timeout_seconds": 3.0, "max_retries": MAX_RETRIES}]
+    assert MAX_RETRIES <= 1
     assert closed == [True]
 
 

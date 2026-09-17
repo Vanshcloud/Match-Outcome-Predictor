@@ -111,6 +111,20 @@ the sidebar caption, which names the connected feed or the provider's own
 reason — a status bar that is wrong about its sources is a small lie a reader
 stops checking the rest of the page against.
 
+### What it costs a cold page
+
+A feed request takes the provider 3–6 s on the free plan, and Streamlit renders
+a page top-down: the title and caption are on screen immediately, then the
+script blocks on the call and nothing else appears until it returns. The match
+picker is the slowest, at about ten seconds, because it asks for a crest list
+per competition before it can draw a card.
+
+There is no spinner, and that is a gap rather than a decision — the layering
+rule that keeps views from naming providers (`views → services → providers`)
+also means the layer that knows a call is in flight is not the layer that can
+draw. Answers are cached for 60 s, so only the first load of each window pays
+it. The README lists it under Limitations.
+
 ### What it is not
 
 - **Not a second ingestion source.** Nothing this feed returns is written to a
@@ -122,14 +136,15 @@ stops checking the rest of the page against.
   hashes the team names *as the source spells them* and this feed says
   "Manchester United FC" where the ingested table says "Man United". An id that
   looked canonical and matched nothing would be worse than one that plainly
-  names where it came from. The consequence is deliberate and visible: a card
-  from this feed opens a match page with no table row and no forecast, and that
-  page already says so — the shipped model is fitted on finished matches and
-  has no history for a fixture that has not been played.
+  names where it came from. A card is instead matched by club names and date to
+  the service's fixture in the same competition; when one fixture matches, the
+  card opens that fixture's forecast, and otherwise the match page says why
+  there is none.
 - **Not every competition.** Nine of the thirty-nine in `configs/leagues.yaml`,
-  which is what the free tier serves. A followed competition outside them is
-  dropped from the filter — there is no code here to send for it — and a reader
-  following only such competitions is told so in a sentence.
+  plus the Champions League, which is what the free tier serves. Requests are
+  not filtered by competition — the answer is, so the live strip and the week
+  of fixtures share one cached request — and a reader following only
+  competitions outside the plan is told so in a sentence.
 - **Not on the feed's clock.** The feed indexes by UTC; the dashboard asks
   about the host's today. On a machine at UTC+05:30 those are different days
   for five and a half hours out of every twenty-four, so a live centre asking
@@ -177,13 +192,15 @@ service down the cards stay and the section says there are no forecasts.
 
 ### Live centre
 The same feed given the whole screen, for the weekend with forty matches
-running at once, repainting itself every sixty seconds. Plus a short note on
-what this page is and is not: in-play probabilities are a *different model*
-from the one this repository measures, not a rendering change.
+running at once, repainting itself every sixty seconds. A short note says
+where scores come from and that probabilities do not change during a match:
+the model is pre-match only.
 
 ### Competitions
 The nine leagues the live fixture feed covers, plus the Champions League, on one
-grid with the country on each tile. A league's page lists the coming week's
+two-column list, each row a country flag and the competition's name — with the
+country appended where two competitions share a name, so Italy's and Brazil's
+Serie A read apart without relying on the flag. A league's page lists the coming week's
 fixtures, each with the model's probabilities; the Champions League's page lists
 its fixtures without them, because no match history for it is ingested.
 
@@ -195,8 +212,7 @@ tables the model card is generated from. A stated probability with no measured
 reliability beside it is the number this project exists to stop people quoting.
 
 Then form and head-to-head from the match table, for a match already played.
-Panels that can only ever be empty for an upcoming fixture — the closing line,
-the goal-rate model's expectation and registered squads — are not on the page.
+There is no closing-line panel: the feed's upcoming fixtures carry no odds.
 
 ### Search
 Clubs and their recent matches from one box, limited to the leagues the fixture
@@ -381,6 +397,11 @@ set of contrast ratios to check.
   the outcome labels invite — which is the most common way a football
   visualisation becomes unreadable for one viewer in twelve. The three differ
   in lightness, so the probability bar survives greyscale.
+- **A colour that carries a letter carries its own foreground.** The three are
+  chosen for a chart, where 3:1 against the page is the bar; the W, D and L
+  squares of a form run write on them, and small bold text is asked 4.5:1.
+  `tests/unit/test_dashboard_ui.py` computes the ratios rather than trusting
+  that the swatch that looked dark enough is.
 - **No club badges ship in this repository**, and there is no licence to ship
   any. Cards from the football-data.org feed show the crest URL that feed
   returns, loaded by the browser from football-data.org; every other card

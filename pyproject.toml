@@ -19,7 +19,19 @@ license = {text = "MIT"}
 dynamic = ["version", "dependencies"]
 authors = [{name = "Vansh Tomar", email = "vanshwar@gmail.com"}]
 maintainers = [{name = "Vansh Tomar", email = "vanshwar@gmail.com"}]
-keywords = ["football", "soccer", "machine-learning", "forecasting", "calibration", "mlops", "time-series"]
+# "mlops" and "time-series" were here and are not accurate: there is no
+# retraining system (the served model is rebuilt by hand, and the README says
+# so), and the estimator is a tabular classifier over pre-match features — the
+# walk-forward protocol is how it is *validated*, not what it is.
+keywords = [
+  "football",
+  "soccer",
+  "machine-learning",
+  "probabilistic-forecasting",
+  "calibration",
+  "sports-analytics",
+  "model-evaluation",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",

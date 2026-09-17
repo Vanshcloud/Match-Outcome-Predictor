@@ -24,7 +24,8 @@ services:
       target: runtime
     image: match-outcome-predictor:local
     ports:
-      - "8000:8000"
+      # Localhost only, like the database below: the API has no authentication.
+      - "127.0.0.1:8000:8000"
     environment:
       # A DSN, not a set of PG* variables. One string is one thing to inject
       # from a secret store, and the code has one setting to read.
@@ -58,7 +59,8 @@ services:
       target: dashboard
     image: match-outcome-predictor-dashboard:local
     ports:
-      - "8501:8501"
+      # Localhost only: the dashboard is unauthenticated (see SECURITY.md).
+      - "127.0.0.1:8501:8501"
     environment:
       # By service name, not by localhost. The dashboard asks the API for a
       # probability over the compose network, which is the whole reason the URL

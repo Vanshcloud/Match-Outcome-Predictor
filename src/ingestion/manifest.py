@@ -15,6 +15,11 @@ What a manifest actually buys:
 - **Change awareness.** The provider revises files — a corrected scoreline, a
   late-added referee. A changed checksum on a season believed settled is worth
   knowing about.
+- **Staleness detection.** A manifest also records the checksum of what its
+  output was *built from*, under ``inputs``. Without it, a feature table built
+  before the last ingest and a match table built after it are two files that
+  look equally current, and the mismatch surfaces as a validation failure
+  several commands later rather than as a hash that does not match.
 """
 
 from __future__ import annotations
@@ -62,6 +67,26 @@ class FileEntry:
         return {"path": self.path, "sha256": self.sha256, "bytes": self.bytes}
 
 
+def source_entries(paths: Iterable[Path]) -> tuple[FileEntry, ...]:
+    """Checksum the inputs an output was built from, recorded by file name.
+
+    By name rather than relative to a root, which is what
+    :func:`build_entries` does: a report in ``data/reports/ensemble`` is built
+    from a table in ``data/processed``, and the only root both share is the
+    filesystem's. The name is enough to say *which* table, and the checksum is
+    the part that answers whether it is still that one.
+
+    A path that is not on disk is skipped rather than raising. The caller is
+    recording what it read, and a caller that read nothing from a file has
+    nothing to record.
+    """
+    return tuple(
+        FileEntry(path=path.name, sha256=checksum(path), bytes=path.stat().st_size)
+        for path in sorted(paths)
+        if path.is_file()
+    )
+
+
 def build_entries(root: Path, paths: Iterable[Path]) -> tuple[FileEntry, ...]:
     """Checksum ``paths``, recording each relative to ``root``."""
     entries = [
@@ -80,6 +105,7 @@ def write_manifest(
     root: Path,
     paths: Iterable[Path],
     *,
+    sources: Iterable[Path] = (),
     extra: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Write a manifest describing ``paths`` and return it.
@@ -88,15 +114,23 @@ def write_manifest(
         destination: Where the JSON is written.
         root: Base directory paths are recorded relative to.
         paths: Files to record.
+        sources: Files these outputs were built from. Checksummed into an
+            ``inputs`` block, which is what makes a stale derived table
+            detectable without re-running the pipeline that would replace it.
         extra: Provenance to embed — row counts, competitions, the provider.
     """
     entries = build_entries(root, paths)
+    inputs = source_entries(sources)
     manifest: dict[str, object] = {
         "manifest_version": MANIFEST_VERSION,
         "created_at": datetime.now(tz=UTC).isoformat(timespec="seconds"),
         "file_count": len(entries),
         "total_bytes": sum(entry.bytes for entry in entries),
         "files": [entry.to_json() for entry in entries],
+        # Omitted rather than written empty: a manifest from a pipeline that
+        # records no input and one whose input was missing should not read the
+        # same.
+        **({"inputs": [entry.to_json() for entry in inputs]} if inputs else {}),
         **(extra or {}),
     }
     destination.parent.mkdir(parents=True, exist_ok=True)

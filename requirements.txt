@@ -14,7 +14,7 @@ PyYAML>=6.0
 python-dotenv>=1.0
 pydantic>=2.9
 
-# ---- Data (M2) ----
+# ---- Data ----
 # pandas is pinned below 3.0 deliberately. Unpinned it resolves to 3.0.x, which
 # changes the default string dtype from `object` to `str` and makes
 # Copy-on-Write permanent. Both are silent behaviour changes rather than
@@ -27,7 +27,7 @@ pandas>=2.2,<3
 # nobody pins.
 pyarrow>=17.0
 
-# ---- Ratings (M4) ----
+# ---- Ratings ----
 # numpy is listed even though pandas already pulls it in: src/ratings imports
 # it by name, and a dependency you import is one you pin, not one you inherit.
 numpy>=2.0,<3
@@ -38,7 +38,7 @@ numpy>=2.0,<3
 # temperature the calibration layer fits per fold.
 scipy>=1.14
 
-# ---- Storage (M3) ----
+# ---- Storage ----
 # The analytical store. Reads Parquet in place, so there is no load step and no
 # second copy of the data — the aggregates this project asks for (coverage per
 # competition, class balance per season) are column scans over the same bytes
@@ -93,7 +93,7 @@ mlflow>=3.0
 # repository is a number that goes stale without a diff to show for it.
 shap>=0.46
 
-# ---- Serving (M11) ----
+# ---- Serving ----
 # The API. FastAPI's request models are pydantic, which is already here for the
 # config, so the schemas and the OpenAPI document cost one dependency rather
 # than three. `uvicorn[standard]` pulls httptools and uvloop; both are wheels
@@ -106,10 +106,10 @@ uvicorn[standard]>=0.32
 joblib>=1.4
 # The served-prediction log. psycopg 3, no ORM: one table, created if absent,
 # with every value bound. SQLAlchemy is deliberately not
-# installed — see "No SQLAlchemy" in CHANGELOG.md.
+# installed — see "No SQLAlchemy" in docs/history/MILESTONE_LOG.md.
 psycopg[binary]>=3.2
 
-# ---- Dashboard (M12) ----
+# ---- Dashboard ----
 # Streamlit renders the reporting tables the pipelines already produce and
 # posts a fixture to the API for a live probability. It computes nothing: a
 # second implementation of a metric is a second number to reconcile, which is

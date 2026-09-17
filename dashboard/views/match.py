@@ -11,9 +11,7 @@ The page a card links to. It answers the questions a forecast raises:
    people quoting.
 3. **For a match already played: form and head-to-head**, from the match table.
 
-Panels that could only ever be empty for an upcoming fixture — the closing
-line, the goal-rate model's expectation and the registered squads — are not
-here: every one of them reads a played match.
+There is no closing-line panel: the feed's upcoming fixtures carry no odds.
 """
 
 from __future__ import annotations
@@ -66,11 +64,15 @@ def render() -> None:
         _picker(ctx)
         return
     if row is None and prediction is None:
-        st.error(
-            f"There is no match `{match_id}`: it is not in the match table, and the "
-            "service has no forecast for it. Pick one below."
-        )
-        st.caption(str(answer))
+        if ctx.predictions.available:
+            st.error(
+                f"There is no match `{match_id}`: it is not in the match table, and the "
+                "service has no forecast for it. Pick one below."
+            )
+        else:
+            # Not found here, and the service that might know it is not answering.
+            st.error(f"There is no match `{match_id}` in the match table.")
+            st.caption(str(answer))
         _picker(ctx)
         return
     if prediction is None:
@@ -110,7 +112,11 @@ def _price(ctx: context.Context, match_id: str) -> Prediction | str:
         return prediction
     reason = ctx.predictions.error or "no detail given"
     if ctx.predictions.available:
-        return f"The prediction service is running but has no forecast for this fixture ({reason})."
+        return (
+            f"The prediction service is running but has no forecast for this fixture ({reason}). "
+            "A match ingested after the feature table was built is not indexed until "
+            "`make ratings features` and an API restart."
+        )
     return f"No forecast: {reason}. Start the service with `make api`, or set `DASHBOARD_API_URL`."
 
 
@@ -200,7 +206,7 @@ def _forecast(ctx: context.Context, row: pd.Series | None, prediction: Predictio
     """The probabilities, what they were produced by, and what they are worth."""
     ui.section("The forecast", "three calibrated probabilities, answered by the service")
     if prediction is None:
-        st.caption("No forecast: the service did not answer.")
+        st.caption("No forecast for this fixture; the note above says why.")
         return
 
     probabilities = prediction.probabilities
@@ -315,7 +321,18 @@ def _history(ctx: context.Context, row: pd.Series) -> None:
     columns[1].metric("Drawn", draws)
     columns[2].metric(f"{away} won", away_wins)
     st.dataframe(
-        meetings[["date", "competition_id", "home_team", "home_goals", "away_goals", "away_team"]],
+        pd.DataFrame(
+            {
+                "Date": pd.to_datetime(meetings["date"]).dt.strftime("%d %b %Y"),
+                "Competition": meetings["competition_id"].map(catalogue.label),
+                "Home": meetings["home_team"],
+                "Score": [
+                    f"{int(h)}–{int(a)}" if pd.notna(h) and pd.notna(a) else "–"
+                    for h, a in zip(meetings["home_goals"], meetings["away_goals"], strict=True)
+                ],
+                "Away": meetings["away_team"],
+            }
+        ),
         width="stretch",
         hide_index=True,
     )

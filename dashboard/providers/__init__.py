@@ -9,8 +9,8 @@ renders whatever comes back, including nothing.
 :class:`~dashboard.providers.football_data_org.FootballDataOrgFixtures` is one
 class implementing :class:`~dashboard.providers.base.FixtureProvider`, one
 entry below, and one environment variable. No view moved, no card changed, and
-the two forward sections stop being empty. The same shape takes the odds
-provider and the webhook notifier.
+the two forward sections stop being empty. The webhook notifier is registered
+the same way.
 
 **An unknown name falls back rather than failing.** A dashboard that refused to
 start because of a typo in an environment variable, on a page whose live

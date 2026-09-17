@@ -14,6 +14,7 @@ it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,6 +85,7 @@ def run_ratings(
     *,
     models: tuple[RatingModel, ...] | None = None,
     verify: bool = True,
+    sources: Sequence[Path] = (),
 ) -> RatingsReport:
     """Build, verify, check and persist the ratings table.
 
@@ -95,6 +97,10 @@ def run_ratings(
         models: Defaults to Elo and Dixon-Coles.
         verify: Run the causality probes. On by default; the only reason to
             turn it off is a run whose output is going to be thrown away.
+        sources: The tables this run read, checksummed into the manifest's
+            ``inputs``. Left empty, the output records what it is but not what
+            it was built from — which is how a derived table outlives the
+            ingest that should have replaced it.
     """
     chosen = models if models is not None else default_models()
     report = RatingsReport(matches=len(matches), producers=tuple(m.name for m in chosen))
@@ -140,6 +146,7 @@ def run_ratings(
             "causality_verified_on": report.verified_on,
             "causal": report.causal if report.verified_on else None,
         },
+        sources=sources,
     )
     logger.info("wrote %s — %s", report.output.name, report.summary())
     return report

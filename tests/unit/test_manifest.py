@@ -14,6 +14,7 @@ from src.ingestion.manifest import (
     build_entries,
     checksum,
     read_manifest,
+    source_entries,
     verify_manifest,
     write_manifest,
 )
@@ -57,6 +58,57 @@ def test_manifest_records_provenance(tmp_path: Path) -> None:
     assert manifest["file_count"] == 2
     assert manifest["provider"] == "football-data"
     assert manifest["total_bytes"] == sum(f.stat().st_size for f in files)
+
+
+# ---- inputs: what an output was built from ----------------------------------
+
+
+def test_inputs_are_recorded_by_name_with_their_checksum(tmp_path: Path) -> None:
+    """A report and the table behind it share no root but the filesystem's."""
+    source = tmp_path / "processed" / "matches.parquet"
+    source.parent.mkdir()
+    source.write_text("rows", encoding="utf-8")
+    entries = source_entries([source])
+    assert [entry.path for entry in entries] == ["matches.parquet"]
+    assert entries[0].sha256 == checksum(source)
+    assert entries[0].bytes == source.stat().st_size
+
+
+def test_a_source_that_is_not_on_disk_is_skipped_rather_than_raising(tmp_path: Path) -> None:
+    """The caller records what it read; a path it never read has nothing to say."""
+    present = tmp_path / "there.parquet"
+    present.write_text("rows", encoding="utf-8")
+    entries = source_entries([present, tmp_path / "gone.parquet"])
+    assert [entry.path for entry in entries] == ["there.parquet"]
+
+
+def test_a_manifest_records_the_checksum_of_what_its_output_was_built_from(
+    tmp_path: Path,
+) -> None:
+    """Without this, a stale derived table and a current one look the same.
+
+    A feature table built before an ingest and a match table written after it
+    are two files with two timestamps and no relationship a later command can
+    check. The input checksum is that relationship.
+    """
+    files = make_tree(tmp_path)
+    source = tmp_path / "matches.parquet"
+    source.write_text("the snapshot", encoding="utf-8")
+    manifest = write_manifest(tmp_path / "m.json", tmp_path, files, sources=[source])
+    assert manifest["inputs"] == [
+        {"path": "matches.parquet", "sha256": checksum(source), "bytes": source.stat().st_size}
+    ]
+
+    source.write_text("a later snapshot", encoding="utf-8")
+    assert manifest["inputs"] != [  # type: ignore[comparison-overlap]
+        {"path": "matches.parquet", "sha256": checksum(source), "bytes": source.stat().st_size}
+    ]
+
+
+def test_a_manifest_with_no_sources_has_no_inputs_block(tmp_path: Path) -> None:
+    """An empty list and an absent one would read as the same claim."""
+    manifest = write_manifest(tmp_path / "m.json", tmp_path, make_tree(tmp_path))
+    assert "inputs" not in manifest
 
 
 def test_manifest_round_trips(tmp_path: Path) -> None:

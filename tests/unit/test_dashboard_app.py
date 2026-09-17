@@ -569,6 +569,21 @@ def test_the_browser_lists_every_registered_competition(
     assert said.index("competition=ENG_1") < said.index("competition=ENG_2")
 
 
+def test_two_competitions_with_one_name_are_told_apart_in_the_list_not_only_by_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The browser names a shared name the way every card does.
+
+    Italy's and Brazil's "Serie A" are one string apart in the registry. A list
+    that printed both as "Serie A" left the country to the flag image alone,
+    and read as a duplicate row beside cards that spell it out.
+    """
+    said = text_of(run("competitions", tmp_path, monkeypatch))
+    assert "Serie A — Italy" in said
+    assert "Serie A — Brazil" in said
+    assert ">Serie A<" not in said
+
+
 def test_the_champions_league_page_shows_its_fixtures_and_says_why_there_is_no_forecast(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -595,6 +610,8 @@ def test_a_competition_page_looks_forward_and_shows_no_past_results(
     assert "Results" not in said
     assert "Season 2025-26" not in said
     assert "Standings" not in said
+    assert "England · tier 1" in [caption.value for caption in app.caption]
+    assert not any("ENG_1" in caption.value for caption in app.caption)
 
 
 def test_a_competition_pages_cards_carry_the_models_forecast(
@@ -612,6 +629,42 @@ def test_a_competition_pages_cards_carry_the_models_forecast(
         )
     )
     assert "mop-bar" in said
+
+
+def test_a_competition_page_says_why_its_cards_have_no_bars_when_the_service_is_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Home said so; this page and Search did not, and they build the same section."""
+    said = text_of(
+        run(
+            "competitions",
+            tmp_path,
+            monkeypatch,
+            feed=ConnectedFeed(),
+            predictions=StubPredictions(available=False, error="the service could not be reached"),
+            query={"competition": "ENG_1"},
+        )
+    )
+    assert "mop-card" in said, "the fixtures are still football"
+    assert "mop-bar" not in said
+    assert "no forecasts:" in said
+    assert "the service could not be reached" in said
+
+
+def test_search_says_why_its_cards_have_no_bars_when_the_service_is_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    said = text_of(
+        run(
+            "search",
+            tmp_path,
+            monkeypatch,
+            feed=ConnectedFeed(),
+            predictions=StubPredictions(available=False, error="the service could not be reached"),
+            query={"q": CLUB},
+        )
+    )
+    assert "no forecasts:" in said
 
 
 def test_an_unknown_competition_falls_back_to_the_browser(
@@ -669,9 +722,6 @@ def test_a_fixture_page_shows_the_forecast_the_form_and_the_head_to_head(
 ) -> None:
     app = run("match", tmp_path, monkeypatch, query={"match": match_id()})
     assert app.exception == []
-    # First occurrence of each label, not last: there is a second
-    # Home/Draw/Away trio on this page — what the market said — under its own
-    # heading, and the forecast is the one rendered first.
     labels: dict[str, str] = {}
     for one in app.metric:
         labels.setdefault(one.label, one.value)
@@ -679,6 +729,22 @@ def test_a_fixture_page_shows_the_forecast_the_form_and_the_head_to_head(
     assert labels["Draw"] == "24.1%"
     assert labels["Away"] == "58.1%"
     assert "Head to head" in text_of(app)
+    # The meetings read like the rest of the page: names and dates, not ids and timestamps.
+    (meetings,) = [one.value for one in app.dataframe]
+    assert list(meetings.columns) == ["Date", "Competition", "Home", "Score", "Away"]
+    assert not meetings["Competition"].isin({one.id for one in catalogue.competitions()}).any()
+    assert not meetings["Date"].astype(str).str.contains("00:00").any()
+
+
+def test_a_meeting_with_no_recorded_score_reads_as_a_dash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    league = LEAGUE.copy()
+    league.loc[league["match_id"] == match_id(), ["home_goals", "away_goals"]] = pd.NA
+    app = run("match", tmp_path, monkeypatch, query={"match": match_id()}, league=league)
+    assert app.exception == []
+    (meetings,) = [one.value for one in app.dataframe]
+    assert "–" in set(meetings["Score"])
 
 
 def test_a_match_with_no_recorded_kickoff_renders_its_date_alone(
@@ -816,6 +882,9 @@ def test_an_unknown_match_on_a_running_service_is_not_told_to_start_it(
     assert [one.value for one in app.warning] == []
     assert len(app.error) == 1 and "nope" in app.error[0].value
     assert "make api" not in text_of(app)
+    # Regression: advice about re-indexing a recently ingested match contradicted
+    # the error, which says the match is not in the table at all.
+    assert "make ratings features" not in text_of(app)
 
 
 def test_a_fixture_the_service_can_price_but_the_table_lacks_still_renders(

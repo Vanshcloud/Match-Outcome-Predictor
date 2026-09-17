@@ -178,10 +178,10 @@ def main(argv: list[str] | None = None) -> int:
     # computed and thrown away — so the dashboard would have had to spend the
     # same five minutes on every page load.
     scores_path = args.scores or settings.paths.reports_dir / ENSEMBLE_SUBDIR / BACKTEST_FILENAME
-    recorded = write_forecasts(forecasts, scores_path.parent)
+    recorded = write_forecasts(forecasts, scores_path.parent, sources=tables.inputs())
     print(f"\n{len(forecasts):,} forecasts written to {recorded}")
 
-    compared = write_market(market, scores_path.parent)
+    compared = write_market(market, scores_path.parent, sources=tables.inputs())
     print(f"{len(market)} disagreement band(s) written to {compared}")
 
     written = write_model_card(card, args.docs or PROJECT_ROOT / DOCS_DIRNAME)

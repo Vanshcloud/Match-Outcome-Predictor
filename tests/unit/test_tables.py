@@ -87,6 +87,13 @@ def test_every_absent_table_is_named_at_once(tmp_path: Path) -> None:
     assert nothing.missing() == ("match table", "ratings", "features")
 
 
+def test_the_inputs_a_manifest_records_are_the_three_a_model_is_a_function_of(
+    tables: TablePaths,
+) -> None:
+    """`upcoming` is deliberately not one: nothing reported is built from it."""
+    assert tables.inputs() == (tables.matches, tables.ratings, tables.features)
+
+
 def test_the_defaults_come_from_the_configured_directories() -> None:
     paths = load_settings().paths
     resolved = resolve_tables(paths)

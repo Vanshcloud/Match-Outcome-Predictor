@@ -63,12 +63,24 @@ coverage.xml
 htmlcov/
 .ipynb_checkpoints/
 
-# ---- Editors / OS ----
+# ---- Editors / OS / agent tooling ----
 .vscode/
 .idea/
 .claude/
+# Coding agents check a second copy of the tree out here to work in. It is a
+# whole duplicate repository inside this one, and it was excluded only by
+# .git/info/exclude — which is local to one clone and not something a rule can
+# be relied on to survive.
+.kilo/
+.kilocode/
 .DS_Store
 *.swp
+
+# Local audit and review notes. They are working documents about the
+# repository rather than part of it, and the same patterns are in
+# .dockerignore so they cannot reach a build context either.
+*_AUDIT_REPORT.md
+*_PUBLICATION_REPORT.md
 
 # uv.lock is committed on purpose: requirements*.txt pins the direct
 # dependencies, and the lockfile pins the transitive closure with hashes, which

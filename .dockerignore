@@ -8,6 +8,10 @@ venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
+# A coding agent's worktree: a second checkout of this repository inside it.
+# Nothing COPYs it, but it was half of the 2.5 MB context every build uploaded.
+.kilo/
+.kilocode/
 
 # data/ and models/ are mounted at run time, never built in. An image with a
 # model baked in has to be rebuilt to retrain; one with the match table inside
@@ -17,7 +21,6 @@ models/
 mlruns/
 mlartifacts/
 notebooks/
-plans/
 docs/
 tests/
 scripts/
@@ -33,8 +36,8 @@ htmlcov/
 # The dashboard image copies .streamlit/ for its config.toml; the optional
 # sign-in's OIDC client secret and cookie secret must not ride along with it.
 .streamlit/secrets.toml
-# Local audit notes, kept out of the repository by .git/info/exclude. No COPY
-# reaches them, and they have no business in a build context either.
+# Local audit notes, kept out of the repository by .gitignore. No COPY reaches
+# them, and they have no business in a build context either.
 *_AUDIT_REPORT.md
 *_PUBLICATION_REPORT.md
 .DS_Store

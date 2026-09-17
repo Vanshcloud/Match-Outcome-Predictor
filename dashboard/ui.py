@@ -247,9 +247,18 @@ def placeholder(title: str, body: str) -> None:
     A rendered, deliberate sentence rather than an empty column. Live fixtures
     need an optional provider, and a screen that was simply blank without one
     would read as a bug rather than as a boundary.
+
+    ``body`` is escaped like every other string here, and for a sharper reason
+    than the club names above: a live provider's reason is the *feed's* own
+    sentence, read out of a JSON ``message`` it sent — text from off this
+    machine, interpolated into markup. Unescaped it was also why the default
+    no-feed reason reached the screen with its ``**`` still in it: this is an
+    HTML block, so Markdown inside it is never processed. Reasons are plain
+    sentences, and this renders them as such.
     """
     st.markdown(
-        f'<div class="mop-placeholder"><b>{html.escape(title)}</b><br>{body}</div>',
+        f'<div class="mop-placeholder"><b>{html.escape(title)}</b><br>'
+        f"{html.escape(body)}</div>",
         unsafe_allow_html=True,
     )
 

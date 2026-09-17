@@ -79,19 +79,12 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${API_PORT:-8000}/health" || exit 1
 
-# `sh -c` with an explicit `exec`, so `$API_PORT` is expanded *and* uvicorn
-# still replaces the shell as PID 1 and receives SIGTERM directly. Plain exec
-# form does not expand variables, which is how the port came to be hardcoded
-# here while the HEALTHCHECK above read the variable — set API_PORT and the app
-# served on 8000 while the probe asked the new port and failed forever. Without
-# the `exec`, the shell stays PID 1, every stop takes the full grace period and
-# ends in a SIGKILL.
+# `sh -c` with an explicit `exec`, so `$API_PORT` is expanded (exec form does
+# not expand variables, and the HEALTHCHECK reads the same variable) *and*
+# uvicorn replaces the shell as PID 1 and receives SIGTERM directly.
 #
-# The host is fixed at 0.0.0.0 and is deliberately *not* a variable. Binding a
-# container to anything narrower is a mistake — the published port is how
-# exposure is controlled — and a configurable bind address is one a health
-# probe on 127.0.0.1 can be configured out of, which is the failure this change
-# exists to remove rather than reintroduce.
+# The host is fixed at 0.0.0.0 inside the container; exposure is controlled by
+# the published port (docker-compose.yml binds it to 127.0.0.1).
 CMD ["sh", "-c", "exec uvicorn api.main:app --host 0.0.0.0 --port \"${API_PORT:-8000}\""]
 
 # --- dashboard ---------------------------------------------------------------

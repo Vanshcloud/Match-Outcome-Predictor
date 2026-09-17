@@ -10,7 +10,7 @@ environment, or from Streamlit's own secrets file, and never from
 | Secret | Used for | Supplied by |
 |---|---|---|
 | `PREDICTION_LOG_DSN` | The API's PostgreSQL prediction log; carries a database password | Environment |
-| `FOOTBALL_DATA_API_KEY` | The dashboard's live fixture and squad feed (football-data.org), sent as a request header | Environment |
+| `FOOTBALL_DATA_API_KEY` | The dashboard's live fixture feed (football-data.org), sent as a request header | Environment |
 | `DASHBOARD_WEBHOOK_URL` | Match-event notifications. The URL itself is the credential | Environment |
 | OIDC client secret and cookie secret | Optional Streamlit sign-in | `.streamlit/secrets.toml` (gitignored) |
 
@@ -25,9 +25,10 @@ hosting.** `make dashboard` binds it to 127.0.0.1.
 
 ## Reporting a vulnerability
 
-Open a [private security advisory](https://github.com/Vanshcloud/Match-Outcome-Predictor/security/advisories/new).
-Please do not open a public issue for anything exploitable. A first response
-should arrive within a week.
+Open a [private security advisory](https://github.com/Vanshcloud/Match-Outcome-Predictor/security/advisories/new),
+or email the maintainer, Vansh Tomar, at vanshwar@gmail.com. Please do not open
+a public issue for anything exploitable. A first response should arrive within
+a week.
 
 ## What is in scope
 
@@ -53,11 +54,11 @@ should arrive within a week.
 
 | Property | Enforced by |
 |---|---|
-| No secret in the tree or an image | `.gitignore` and `.dockerignore` both exclude `.env`, `.env.*` and `.streamlit/secrets.toml`; only `.env.example` is committed |
+| No secret in the tree or an image | `.gitignore` and `.dockerignore` both exclude `.env`, `.env.*` and `.streamlit/secrets.toml`; only `.env.example` is committed, and `tests/unit/test_ignore_rules.py` asserts each rule through `git check-ignore` rather than trusting the file to still say what it said |
 | No credential in logs | Webhook errors keep only the host; urllib3's DEBUG request lines are switched off (`src/utils/logging.py`) |
 | No arbitrary object construction from config | `yaml.safe_load`, never `yaml.load` |
 | No SQL built from user input | Every value is a bound parameter; identifiers are matched against `^[a-z_][a-z0-9_]*$` |
 | No outbound HTTP outside one module | CI invariant: `requests` is reachable only from `src/utils/http.py` |
-| No unpinned lint or runtime dependency | `requirements*.txt` plus a committed `uv.lock` |
-| Least-privilege CI | `permissions: contents: read` on the workflow |
+| Pinned tooling, locked runtime resolution | Lint and test tools are pinned exactly in `requirements-lint.txt` / `requirements-dev.txt`; runtime libraries are ranges in `requirements*.txt`, with the exact resolution and hashes in `uv.lock` (`uv sync --frozen`) |
+| Least-privilege CI | `permissions: contents: read` on CI; the tag-only release workflow adds `packages: write` and uses no stored secret |
 | Non-root container | `USER app` in the Dockerfile |

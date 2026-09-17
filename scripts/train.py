@@ -62,7 +62,11 @@ from src.models.tuning import (  # noqa: E402
 )
 from src.models.zoo import FAMILIES, ModelError, default_zoo  # noqa: E402
 from src.pipelines.backtest import COMMON, PRICED, pooled_table  # noqa: E402
-from src.pipelines.tables import load_modelling_frame, resolve_tables  # noqa: E402
+from src.pipelines.tables import (  # noqa: E402
+    TablePaths,
+    load_modelling_frame,
+    resolve_tables,
+)
 from src.pipelines.train import (  # noqa: E402
     ablation_table,
     ensemble_forecasters,
@@ -176,12 +180,21 @@ def render(table: pd.DataFrame, *, markdown: bool, signed: bool = False) -> str:
     return "\n".join(lines)
 
 
-def load_frame(args: argparse.Namespace, settings: Settings) -> pd.DataFrame | None:
-    """The canonical table joined to the ratings and the features, or None."""
-    tables = resolve_tables(
+def frame_tables(args: argparse.Namespace, settings: Settings) -> TablePaths:
+    """Where the three tables this run reads are.
+
+    Resolved here rather than inside :func:`load_frame` so the reporting
+    functions can name the same three files in a manifest's ``inputs`` without
+    the frame carrying its own provenance around.
+    """
+    return resolve_tables(
         settings.paths, matches=args.matches, ratings=args.ratings, features=args.features
     )
-    return load_modelling_frame(tables, competitions=args.competition or None)
+
+
+def load_frame(args: argparse.Namespace, settings: Settings) -> pd.DataFrame | None:
+    """The canonical table joined to the ratings and the features, or None."""
+    return load_modelling_frame(frame_tables(args, settings), competitions=args.competition or None)
 
 
 def run_tuning(frame: pd.DataFrame, args: argparse.Namespace) -> int:
@@ -208,6 +221,7 @@ def report_training(frame: pd.DataFrame, args: argparse.Namespace, settings: Set
         folds=args.folds,
         horizon_days=args.horizon_days,
         model_dir=None if args.no_tracking else paths.model_dir,
+        sources=frame_tables(args, settings).inputs(),
     )
     backtest = report.backtest
     if backtest is None or backtest.scores is None:  # pragma: no cover - see run_training
@@ -235,6 +249,7 @@ def report_ablation(frame: pd.DataFrame, args: argparse.Namespace, settings: Set
         model=args.ablate,
         folds=args.folds,
         horizon_days=args.horizon_days,
+        sources=frame_tables(args, settings).inputs(),
     )
     if report.scores is None:  # pragma: no cover - run_backtest always writes one
         logger.error("nothing was scored")
@@ -268,6 +283,7 @@ def report_ensemble(frame: pd.DataFrame, args: argparse.Namespace, settings: Set
         baselines=not args.no_baselines,
         folds=args.folds,
         horizon_days=args.horizon_days,
+        sources=frame_tables(args, settings).inputs(),
     )
     if report.scores is None:  # pragma: no cover - run_backtest always writes one
         logger.error("nothing was scored")

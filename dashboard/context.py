@@ -58,7 +58,7 @@ class Context:
 
 
 def resolve() -> Context:
-    """Resolve the settings, the five providers and the transport.
+    """Resolve the settings, the four providers and the transport.
 
     Called as ``context.resolve()`` from every view rather than imported by
     name, deliberately: a module attribute is looked up when it is called, so a
@@ -75,9 +75,5 @@ def resolve() -> Context:
         results=HistoricalResults(settings.paths.processed_dir / MATCHES_FILENAME),
         predictions=ApiPredictions(client=client),
         fixtures=providers.fixtures(),
-        # The same file the results come from — the closing price is three
-        # columns of the canonical table — and a separate provider because a
-        # result and a price answer different questions about different
-        # moments. See dashboard/providers/base.py.
         notifier=providers.notifier(),
     )

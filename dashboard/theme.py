@@ -350,7 +350,12 @@ a.mop-league:focus-visible {{ outline: 2px solid var(--home); outline-offset: 2p
   color: #0b1120;
 }}
 .mop-form i.W {{ background: var(--home); }}
-.mop-form i.D {{ background: var(--draw); color: var(--ink); }}
+/* White rather than `--ink` on the draw swatch, for the reason `LIVE` is a
+   step darker than the obvious red: this is 10px bold text, which WCAG AA asks
+   4.5:1 of, and `--ink` on `--draw` is 3.9:1. White on it is 4.8:1. The
+   near-black the other two squares use is 4.0:1 here, so neither inherited
+   colour clears the bar and this one is stated. */
+.mop-form i.D {{ background: var(--draw); color: #fff; }}
 .mop-form i.L {{ background: var(--away); }}
 
 /* ---- section head --------------------------------------------------------- */

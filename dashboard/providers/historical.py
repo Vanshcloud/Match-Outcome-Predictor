@@ -1,11 +1,9 @@
-"""Results and closing prices, from the table this project's pipelines wrote.
+"""Results, from the table this project's pipelines wrote.
 
-The providers that work today: the only source of a scoreline anywhere in this
-application, and the only source of a bookmaker's price.
-Both read the same canonical table, because the closing odds are three columns
-of it; two modules would be two opens of one file. It reads the canonical match table through
-:func:`src.pipelines.tables.read_matches` — through the storage layer, like
-everything else in this project that reads a table.
+The only source of an ingested scoreline in this application. It reads the
+canonical match table through :func:`src.pipelines.tables.read_matches` —
+through the storage layer, like everything else in this project that reads a
+table.
 
 **Why not from the API.** ``/predict`` deliberately returns no scoreline: a
 prediction endpoint that handed back the result beside its forecast would be

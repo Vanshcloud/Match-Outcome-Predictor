@@ -57,9 +57,7 @@ def short_label(competition_id: str) -> str:
 
     Unless another country's competition shares that name — Italy's and
     Brazil's "Serie A", England's and Russia's "Premier League" — in which case
-    the name alone would tell a reader nothing, and the id's country code is
-    appended: ``"Serie A · BRA"``. A code rather than the country, because the
-    label shares a card's top line with the live pill and the kick-off time.
+    the country is appended: ``"Serie A — Brazil"``.
     """
     competition = by_id().get(competition_id)
     if competition is None:
@@ -67,7 +65,7 @@ def short_label(competition_id: str) -> str:
     shared = sum(1 for other in competitions() if other.name == competition.name)
     if shared == 1:
         return competition.name
-    return f"{competition.name} · {competition.id.split('_')[0]}"
+    return f"{competition.name} — {competition.country}"
 
 
 def by_country() -> dict[str, list[Competition]]:

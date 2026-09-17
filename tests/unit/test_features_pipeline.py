@@ -14,7 +14,7 @@ import pytest
 
 from src.feature_engineering.head_to_head import HeadToHeadFeatures
 from src.feature_engineering.registry import FEATURE_SCHEMA, FEATURES, Feature
-from src.ingestion.manifest import read_manifest, verify_manifest
+from src.ingestion.manifest import checksum, read_manifest, verify_manifest
 from src.pipelines.derived import DerivedReport, choose_verification_sample
 from src.pipelines.features import (
     FEATURES_FILENAME,
@@ -122,6 +122,27 @@ def test_coverage_is_reported_per_builder(tmp_path: Path) -> None:
     report = run_features(LEAGUE, tmp_path, verify=False)
     assert report.coverage["team_history"] == 1.0
     assert report.coverage["head_to_head"] == 1.0
+
+
+def test_the_manifest_records_the_match_table_the_features_were_built_from(
+    tmp_path: Path,
+) -> None:
+    """A stale feature table is the failure this makes detectable.
+
+    `make data` adds matches; `make features` is not re-run; the two tables now
+    disagree and nothing on disk says so until a validation check several
+    commands later refuses the pair. The input checksum is what turns that into
+    a comparison anyone can make.
+    """
+    source = tmp_path / "matches.parquet"
+    source.write_text("the snapshot these features were built from", encoding="utf-8")
+    run_features(LEAGUE, tmp_path, verify=False, sources=[source])
+
+    manifest = read_manifest(tmp_path / f"{Path(FEATURES_FILENAME).stem}.manifest.json")
+    inputs = manifest["inputs"]
+    assert isinstance(inputs, list)
+    assert [entry["path"] for entry in inputs] == ["matches.parquet"]
+    assert inputs[0]["sha256"] == checksum(source)
 
 
 def test_the_output_and_its_manifest_verify(tmp_path: Path) -> None:

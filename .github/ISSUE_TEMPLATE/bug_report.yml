@@ -1,0 +1,53 @@
+name: Bug report
+description: Something is wrong: a crash, a wrong number, or documentation the code does not match.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Security issues go through a private advisory, not an issue; see SECURITY.md.
+        Please remove any API keys, database URLs or webhook URLs from what you paste.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Dashboard
+        - API
+        - Data pipeline (ingest, ratings, features)
+        - Models or evaluation
+        - Docker or deployment
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you ran
+      description: The commands, or the page and what you clicked.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the full error text or a screenshot.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: Output of `git rev-parse --short HEAD`, or the version on the API's /version endpoint.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, and whether you used Docker.

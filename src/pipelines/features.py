@@ -13,6 +13,7 @@ ratings do not.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -87,6 +88,7 @@ def run_features(
     *,
     builders: tuple[FeatureBuilder, ...] | None = None,
     verify: bool = True,
+    sources: Sequence[Path] = (),
 ) -> FeaturesReport:
     """Build, verify, check and persist the feature table.
 
@@ -97,6 +99,10 @@ def run_features(
         verify: Run the causality probes. On by default. Features are where
             leakage is most likely and hardest to see by reading, so the only
             reason to skip them is a run whose output is going to be discarded.
+        sources: The tables this run read, checksummed into the manifest's
+            ``inputs``. Left empty, the output records what it is but not what
+            it was built from — which is how a derived table outlives the
+            ingest that should have replaced it.
     """
     chosen = builders if builders is not None else default_builders()
     report = FeaturesReport(
@@ -147,6 +153,7 @@ def run_features(
             "causality_verified_on": report.verified_on,
             "causal": report.causal if report.verified_on else None,
         },
+        sources=sources,
     )
     logger.info("wrote %s — %s", report.output.name, report.summary())
     return report

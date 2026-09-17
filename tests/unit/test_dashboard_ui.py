@@ -17,6 +17,7 @@ import pytest
 from dashboard import theme, ui
 from dashboard.domain import competition as catalogue
 from dashboard.domain.match import Fixture, MatchStatus
+from dashboard.providers.null import NullFixtures
 
 WIDTH = re.compile(r"width:([0-9.]+)%")
 
@@ -54,6 +55,29 @@ def test_a_crest_url_is_escaped_too() -> None:
     """No source fills this field today. It is the one a badge provider starts
     writing, and it will be a URL somebody else chose."""
     assert "&quot;" in ui.crest_html("Arsenal", '"><img onerror=x')
+
+
+def test_a_placeholder_body_is_escaped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The body of a placeholder is a provider's reason, and a live provider's
+    reason is the feed's own sentence out of a JSON `message` — the one string
+    on this page that came from off the machine."""
+    written: list[str] = []
+    monkeypatch.setattr(ui.st, "markdown", lambda body, **_: written.append(body))
+    ui.placeholder("Nothing to show", '<img src=x onerror="alert(1)">')
+    assert "<img" not in written[0]
+    assert "&lt;img" in written[0]
+
+
+def test_no_provider_reason_carries_markdown_that_cannot_render(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reason is rendered inside an HTML block, where Markdown is never
+    processed — `**results**` reached the screen with its asterisks. The
+    default no-feed reason is what every first run without an API key sees."""
+    written: list[str] = []
+    monkeypatch.setattr(ui.st, "markdown", lambda body, **_: written.append(body))
+    ui.placeholder("Nothing to show", NullFixtures().reason)
+    assert "**" not in written[0]
 
 
 # ---- the probability bar -----------------------------------------------------
@@ -305,3 +329,57 @@ def test_every_registry_country_has_a_flag() -> None:
 def test_a_competition_name_is_escaped_before_it_reaches_the_markup() -> None:
     row = ui.competition_row("<script>x</script>", "#", country="Italy")
     assert "<script>" not in row
+
+
+# ---- contrast ----------------------------------------------------------------
+
+
+def _luminance(hex_colour: str) -> float:
+    """WCAG 2.1 relative luminance of a ``#rrggbb`` colour."""
+    raw = hex_colour.lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(pair * 2 for pair in raw)
+    channels = [int(raw[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast(foreground: str, background: str) -> float:
+    """The WCAG contrast ratio between two opaque colours."""
+    first, second = _luminance(foreground), _luminance(background)
+    lighter, darker = max(first, second), min(first, second)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_every_coloured_swatch_carries_text_at_wcag_aas_small_text_ratio() -> None:
+    """Each swatch is small bold text on a colour, and AA asks 4.5:1 of that.
+
+    The palette's three outcome colours are chosen for a chart, where 3:1
+    against the page is the bar. Two of them also have a letter written on
+    them, and the letter is the bar that is easier to miss: `--ink` on
+    `--draw` reads at 3.9:1, which is why the draw swatch names its own
+    foreground instead of inheriting one.
+    """
+    on_swatch = {
+        ("W", "#0b1120", theme.HOME),
+        ("D", "#ffffff", theme.DRAW),
+        ("L", "#0b1120", theme.AWAY),
+        ("live pill", "#ffffff", theme.LIVE),
+    }
+    failing = {
+        f"{name}: {contrast(ink, background):.2f}:1"
+        for name, ink, background in on_swatch
+        if contrast(ink, background) < 4.5
+    }
+    assert not failing, failing
+
+
+def test_body_and_muted_text_clear_wcag_aa_against_both_surfaces() -> None:
+    """The two text colours against the two backgrounds they are read on."""
+    failing = {
+        f"{ink} on {ground}: {contrast(ink, ground):.2f}:1"
+        for ink in (theme.INK, theme.MUTED)
+        for ground in (theme.SURFACE, theme.SURFACE_RAISED)
+        if contrast(ink, ground) < 4.5
+    }
+    assert not failing, failing

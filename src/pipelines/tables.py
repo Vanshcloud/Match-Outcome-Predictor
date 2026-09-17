@@ -107,6 +107,16 @@ class TablePaths:
     reporting the calendar as a fault.
     """
 
+    def inputs(self) -> tuple[Path, ...]:
+        """What a manifest records as the tables its output was built from.
+
+        The same three :meth:`missing` names, for the same reason: a model, a
+        score and a reliability table are functions of these and of nothing
+        else on disk. ``upcoming`` is left out because nothing reported is
+        built from it.
+        """
+        return (self.matches, self.ratings, self.features)
+
     def missing(self) -> tuple[str, ...]:
         """The labels of the tables that are not on disk. Empty when all three
         are, which is the only state a model can be built from."""

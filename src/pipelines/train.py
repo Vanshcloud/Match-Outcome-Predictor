@@ -104,6 +104,7 @@ def run_training(
     folds: int = DEFAULT_FOLDS,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     model_dir: Path | None = None,
+    sources: Sequence[Path] = (),
 ) -> TrainingReport:
     """Score every model over the folds, beside the baselines they must beat.
 
@@ -132,6 +133,7 @@ def run_training(
         forecasters=forecasters,
         folds=folds,
         horizon_days=horizon_days,
+        sources=sources,
     )
     report.backtest = backtest
 
@@ -196,6 +198,7 @@ def run_ablation(
     blocks: Sequence[str] | None = None,
     folds: int = DEFAULT_FOLDS,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
+    sources: Sequence[Path] = (),
 ) -> BacktestReport:
     """Score the model with each feature block withheld, all in one backtest.
 
@@ -210,6 +213,7 @@ def run_ablation(
         forecasters=ablation_forecasters(model, blocks),
         folds=folds,
         horizon_days=horizon_days,
+        sources=sources,
     )
 
 
@@ -268,6 +272,7 @@ def run_ensemble(
     baselines: bool = True,
     folds: int = DEFAULT_FOLDS,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
+    sources: Sequence[Path] = (),
 ) -> BacktestReport:
     """Score the blend and the calibration layer beside the model they are made
     of, through the unchanged backtest."""
@@ -279,6 +284,7 @@ def run_ensemble(
         forecasters=forecasters,
         folds=folds,
         horizon_days=horizon_days,
+        sources=sources,
     )
 
 

@@ -235,6 +235,26 @@ So the assertion the suite makes is that a declaration *covers* what was
 observed, never that the two are equal. Over-declaring is safe; under-declaring
 is what reclassifies a leak as safe.
 
+There is a third limit, and it is about the constants rather than the columns.
+**A probe perturbs data, so it can only find a leak that travelled through
+data.** A number a person chose after looking at a result travelled through the
+person. Two in this project did:
+
+- **The Dixon-Coles decay, window and refit interval.** Chosen on the English
+  Premier League by comparing log loss, on matches that overlap the reported
+  folds, then checked against three competitions that had no say in them —
+  where all three improved. [RATINGS](RATINGS.md#do-the-settings-transfer) has
+  the table.
+- **Which Elo refinements to keep.** The same kind of choice, and the same
+  kind of exposure. Elo's three constants are not in this class: they come from
+  a grid over matches before 2005-07-01, which is earlier than every evaluation
+  day here.
+
+Neither is a column a probe can rewrite, so neither is caught below. They are a
+handful of scalars on a flat response surface and the effect is small, but
+"small" is an argument rather than a measurement, and the honest statement is
+that the reported figures are optimistic by an unmeasured amount.
+
 There is also a class of leak none of this reaches: one in the canonical table
 itself. If the provider published a corrected scoreline after the fact and the
 ingest overwrote history with it, every probe here would still pass, because

@@ -169,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output or settings.paths.reports_dir,
             folds=args.folds,
             horizon_days=args.horizon_days,
+            sources=[path for path in (matches_path, ratings_path) if path is not None],
         )
     except SplitError as error:
         logger.error("%s", error)

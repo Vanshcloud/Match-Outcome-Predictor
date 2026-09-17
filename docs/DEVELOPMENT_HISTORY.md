@@ -3,9 +3,9 @@
 The project was built in twenty milestones. This page gives the order they
 ran in. The reasoning, measurements and dead ends behind each one are in:
 
-- [CHANGELOG.md](../CHANGELOG.md): one entry per milestone, covering what
-  changed and why.
-- [plans/IMPLEMENTATION_PLAN.md](../plans/IMPLEMENTATION_PLAN.md): the
+- [history/MILESTONE_LOG.md](history/MILESTONE_LOG.md): one entry per
+  milestone, covering what changed and why.
+- [history/IMPLEMENTATION_PLAN.md](history/IMPLEMENTATION_PLAN.md): the
   decisions agreed before the build started, plus a retrospective for each
   milestone.
 
@@ -30,8 +30,8 @@ the documents in `docs/` describe the system as it stands.
 | 14 | Accounts | Named profiles, optional OIDC sign-in, saved favourites |
 | 15 | Live tracking | Live strip (polled once a minute), event diffing, webhook notifications |
 | 16 | Operations | Published images, Prometheus metrics, prediction cache |
-| 17 | Odds and expected goals | The closing line on the match page, and what a gap from it measures |
-| 18 | Availability | Registered squads; injuries and team sheets have no reachable source |
+| 17 | Odds and expected goals | The closing line on the match page, and what a gap from it measures (panel later removed) |
+| 18 | Availability | Registered squads; injuries and team sheets have no reachable source (panel later removed) |
 | 19 | Prediction archive | Served forecasts scored against outcomes, and the archive size a verdict needs |
 | 20 | Closing the loop | Fixtures priced before kick-off, so the archive gets out-of-sample forecasts |
 

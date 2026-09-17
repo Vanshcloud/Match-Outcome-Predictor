@@ -92,15 +92,12 @@ def home_page(
 ) -> HomePage:
     """The feed's sections, the upcoming cards wearing the model's forecasts.
 
-    A service that is not answering costs the bars, not the cards, and says so
-    beside the section title.
+    A service that is not answering costs the bars, not the cards, and
+    :func:`with_forecasts` says so beside the section title.
     """
-    upcoming = upcoming_section(fixtures, competitions)
-    if upcoming.has_fixtures and not predictions.available:
-        upcoming = replace(upcoming, note=f"{upcoming.note} · no forecasts: {reason(predictions)}")
     return HomePage(
         live=live_section(fixtures, competitions),
-        upcoming=with_forecasts(upcoming, predictions),
+        upcoming=with_forecasts(upcoming_section(fixtures, competitions), predictions),
     )
 
 
@@ -122,6 +119,9 @@ def live_section(
     if not provider.available:
         return Section("Live now", note, unavailable=reason(provider))
     found = provider.live(competitions=competitions) if fixtures is None else fixtures
+    if not found and getattr(provider, "error", None):
+        # `available` checked one request; this answer may come from another that failed.
+        return Section("Live now", note, unavailable=reason(provider))
     return Section(
         "Live now",
         note,
@@ -146,14 +146,15 @@ def upcoming_section(
     if not provider.available:
         return Section("Today and next", note, unavailable=reason(provider))
     start = today or dt.date.today()
+    found = provider.scheduled(
+        since=start, until=start + dt.timedelta(days=days), competitions=competitions
+    )
+    if not found and getattr(provider, "error", None):
+        return Section("Today and next", note, unavailable=reason(provider))
     return Section(
         "Today and next",
         note,
-        fixtures=tuple(
-            provider.scheduled(
-                since=start, until=start + dt.timedelta(days=days), competitions=competitions
-            )
-        ),
+        fixtures=tuple(found),
         empty="No fixtures scheduled in the next week.",
     )
 
@@ -229,10 +230,18 @@ def with_forecasts(
 ) -> Section:
     """The section with each feed card's forecast, for the cards the model has priced.
 
+    A service that is not answering costs the bars, not the cards, and the
+    section says which beside its title. That sentence lives here rather than
+    in the home page that first needed it: the competition page and Search
+    build their own sections through this same call, and without it their
+    cards lost their probability bars with nothing on the page saying why.
+
     ``found`` is :func:`twins` when the caller already has it.
     """
-    if not section.fixtures or not predictions.available:
+    if not section.fixtures:
         return section
+    if not predictions.available:
+        return replace(section, note=f"{section.note} · no forecasts: {reason(predictions)}")
     matched = twins(section.fixtures, predictions) if found is None else found
     probabilities: dict[str, Mapping[str, float]] = {}
     for card in section.fixtures:

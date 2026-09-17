@@ -4,12 +4,9 @@ What is happening in the football this reader follows, in the order they ask:
 what is on now, what is on next, and what the model can price. Every section
 looks forward; past results live on the competition and match pages.
 
-**Two of those four sections have no data source today and say so.** The
-provider behind this project publishes results, so a match that has not been
-played is in no table here. Those sections are not special cases in this file —
-they are :class:`~dashboard.services.matchday.Section` objects carrying the
-provider's own reason, rendered the same way the full ones are. The day a
-fixture feed is registered they fill up and nothing in this module changes.
+**The forward sections need a fixture feed.** Without one — or when the feed
+refuses a request — they are :class:`~dashboard.services.matchday.Section`
+objects carrying the provider's own reason, rendered the same way full ones are.
 """
 
 from __future__ import annotations
@@ -68,17 +65,15 @@ def render_live() -> None:
     )
     live_now(ctx, columns=LIVE_COLUMNS)
 
-    ui.section("What this page is, and what it is not", "with a feed connected")
+    ui.section("About this page")
     st.markdown(
-        "- **Scores and minutes** are the feed's, on the same `Fixture` these "
-        "cards already rendered when there was no feed at all.\n"
-        "- **A card opens the model's pre-match forecast** when `make fixtures` "
-        "has priced that fixture; the feed's club names are matched to the "
-        "table's. A fixture it has not priced yet, or a competition with no "
-        "match history (the Champions League), says so instead.\n"
-        "- **In-play probabilities** are a different model from the one this "
-        "repository measures, and are not a rendering change. The model card "
-        "is explicit that nothing here is fitted on in-play state."
+        "- **Scores and status** come from football-data.org, refreshed at most "
+        "once a minute.\n"
+        "- **A card opens the model's pre-match forecast** when that fixture has "
+        "been priced. A fixture not priced yet, or a competition with no match "
+        "history (the Champions League), says so instead.\n"
+        "- **Probabilities do not change during a match.** The model is fitted on "
+        "pre-match information only; it has no in-play model."
     )
 
 

@@ -36,6 +36,12 @@ FIXTURES_PATH = "/fixtures"
 HEALTH_PATH = "/health"
 VERSION_PATH = "/version"
 
+MAX_RETRIES = 1
+"""Fewer than :class:`~src.utils.http.HttpClient` defaults to, for the reason
+:data:`dashboard.providers.football_data_org.MAX_RETRIES` gives: this runs inside
+a page render, and five retries with backoff made each call to a service that is
+not running take fifteen seconds."""
+
 
 class ServiceError(RuntimeError):
     """The prediction service could not be reached, or refused the request.
@@ -85,7 +91,7 @@ class PredictionClient:
         if self.http is not None:
             yield self.http
             return
-        with HttpClient(timeout_seconds=self.timeout_seconds) as made:
+        with HttpClient(timeout_seconds=self.timeout_seconds, max_retries=MAX_RETRIES) as made:
             yield made
 
     def _json(self, response: requests.Response) -> Any:
@@ -147,4 +153,5 @@ def _describe(error: requests.RequestException) -> str:
         except ValueError:
             detail = None
         return f"the service answered {response.status_code}: {detail or response.reason}"
-    return f"the service could not be reached: {error}"
+    # The exception's name, not its text: urllib3's text is a pool repr a reader cannot act on.
+    return f"the service could not be reached ({type(error).__name__})"

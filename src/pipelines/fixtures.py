@@ -38,6 +38,7 @@ matters, the thing to add is a cached rating *state* — not a second rater.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -155,12 +156,17 @@ def run_upcoming(
     *,
     models: tuple[RatingModel, ...] | None = None,
     builders: tuple[FeatureBuilder, ...] | None = None,
+    sources: Sequence[Path] = (),
 ) -> UpcomingReport:
     """Build the fixture design rows, report them, and write the table.
 
     Written even when it is empty, and that is deliberate: an empty file means
     "there are no fixtures", and leaving yesterday's file in place would mean
     the service went on offering to price matches that have since kicked off.
+
+    ``sources`` are the tables the design rows were built from; their checksums
+    go into the manifest's ``inputs``, which is what says whether the form
+    windows behind a fixture came from the current match table.
     """
     known = set(matches[KEY_COLUMN]) if not matches.empty else set()
     fresh = fixtures[~fixtures[KEY_COLUMN].isin(known)] if not fixtures.empty else fixtures
@@ -190,6 +196,7 @@ def run_upcoming(
             "last": None if report.last is None else report.last.strftime("%Y-%m-%d"),
             "coverage": report.coverage,
         },
+        sources=sources,
     )
     logger.info("wrote %s — %s", report.output.name, report.summary())
     return report

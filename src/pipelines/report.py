@@ -224,7 +224,9 @@ def market_comparison(
     )
 
 
-def write_market(table: pd.DataFrame, destination_dir: Path) -> Path:
+def write_market(
+    table: pd.DataFrame, destination_dir: Path, *, sources: Sequence[Path] = ()
+) -> Path:
     """Persist the disagreement table, with a manifest beside it.
 
     Five rows, and worth writing down for the reason the forecasts are: the
@@ -240,6 +242,7 @@ def write_market(table: pd.DataFrame, destination_dir: Path) -> Path:
             "bands": list(table["band"].astype(str)) if not table.empty else [],
             "rows": len(table),
         },
+        sources=sources,
     )
 
 
@@ -263,7 +266,9 @@ def write_archive(table: pd.DataFrame, destination_dir: Path) -> Path:
     )
 
 
-def write_forecasts(forecasts: pd.DataFrame, destination_dir: Path) -> Path:
+def write_forecasts(
+    forecasts: pd.DataFrame, destination_dir: Path, *, sources: Sequence[Path] = ()
+) -> Path:
     """Persist the per-match diagnostic pass, with a manifest beside it.
 
     The rows the card computes and then throws away. They cost about five
@@ -286,6 +291,8 @@ def write_forecasts(forecasts: pd.DataFrame, destination_dir: Path) -> Path:
             returns it.
         destination_dir: Where to write it. The caller already knows, because
             it read the scores from the same place.
+        sources: The tables the pass was computed from, checksummed into the
+            manifest's ``inputs``.
     """
     return persist(
         forecasts,
@@ -295,6 +302,7 @@ def write_forecasts(forecasts: pd.DataFrame, destination_dir: Path) -> Path:
             "forecasters": sorted(forecasts["forecaster"].unique()),
             "rows": len(forecasts),
         },
+        sources=sources,
     )
 
 

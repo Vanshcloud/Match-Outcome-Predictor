@@ -238,10 +238,16 @@ a change to the rating and needs an ablation to justify it.
 
 ## Where the gap to the closing line actually lives
 
-The project-level number — the shipped model 0.0163 behind the
-bookmaker — is a mean over 61,889 matches, and a mean can hide two very
-different worlds: a model uniformly a little worse everywhere, or a model level
-with the line on most fixtures and badly wrong on some. It is the second.
+The project-level number — the shipped model 0.0163 behind the bookmaker over
+the 59,001 matches every forecaster could price — is a mean, and a mean can hide
+two very different worlds: a model uniformly a little worse everywhere, or a
+model level with the line on most fixtures and badly wrong on some. It is the
+second.
+
+The table below drops only what *one of these two* could not price, so it runs
+over 61,889 matches rather than 59,001 — 2,888 wider, because it does not also
+require Dixon-Coles to have priced the match. The deficit over its own
+population is 0.0168.
 
 Every out-of-sample forecast, grouped by how far it was from the closing line.
 "Apart" is total-variation distance, which for three outcomes reads as a
@@ -344,6 +350,9 @@ be read against:
 
 Run backwards: **2,286** scored forecasts to see a shift the size of the 0.0163
 this project's whole argument is about, 243 to see 0.05, 6,073 to see 0.01.
+These are the half-width of a two-sided 95% interval, which catches a real
+shift of exactly that size about half the time. Catching it 80% of the time
+takes about twice as many: **4,670** for 0.0163.
 
 So "no drift detected" is almost always the wrong sentence. The right one is
 "this archive could not detect a shift smaller than X", and `detectable` is a
@@ -416,6 +425,7 @@ make archive                       # scores the prediction log; needs PREDICTION
 
 The finest grain — one row per fold, per competition, per forecaster, per
 subset — is written to `data/reports/backtest.parquet` with a manifest beside
-it. Every metric is a mean over matches, so any coarser view is a weighted mean
+it, whose `inputs` block records the SHA-256 of the match, ratings and feature
+tables the scores came from. Every metric is a mean over matches, so any coarser view is a weighted mean
 of those rows and reconstructs exactly what a direct pass would have produced.
 That is why the pooled figures are computed rather than scored a second time.

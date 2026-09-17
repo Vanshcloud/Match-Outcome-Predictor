@@ -4,11 +4,9 @@ Two things live here and they are the same subject from opposite
 ends: turning decimal odds into probabilities, and measuring what happens when
 the model's probabilities differ from them.
 
-**The de-vig is here rather than in the baseline that used to hold it.** Three
-callers now need "what did the market say" — the backtest's benchmark, the
-disagreement table below, and the dashboard's match page — and three
-implementations of removing an overround is three chances to publish a number
-that is not the one the benchmark was scored against.
+**One de-vig.** The backtest's benchmark, the fixture list and the
+disagreement table below all remove the overround here, so every published
+market number is the one the benchmark was scored against.
 
 **Why this is a measurement rather than a value detector.** The
 obvious reading of "the model says 45%, the market says 38%" is that there is

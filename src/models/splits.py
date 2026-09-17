@@ -13,10 +13,8 @@ on the 5.30 kick-off. Boundaries here are timestamps and a day is indivisible,
 the same rule the feature windows follow.
 
 **Every fold is probed, not trusted.** :func:`~src.validation.temporal.split_boundary`
-runs on each one before it is yielded, and a violation raises. The arithmetic
-below is four lines and obviously correct, which is exactly the kind of code
-that is quietly wrong after someone changes a ``<`` to a ``<=`` for a reason
-that made sense at the time.
+runs on each one before it is yielded, and a violation raises, so a ``<``
+changed to ``<=`` below fails loudly instead of leaking quietly.
 """
 
 from __future__ import annotations

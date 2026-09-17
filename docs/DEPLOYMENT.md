@@ -305,6 +305,10 @@ would take:
 | **0.0163** — the gap to the closing line | **2,286** |
 | 0.01 | 6,073 |
 
+These are the half-width of a two-sided 95% interval, which catches a real
+shift of exactly that size about half the time. Catching it 80% of the time
+takes about twice as many: **4,670** for 0.0163.
+
 `detectable` is that arithmetic run forwards at the archive's actual size, and
 `distinguishable` is the comparison. A difference under the threshold is
 reported as *not evidence of drift* rather than as a small drift, on the Model

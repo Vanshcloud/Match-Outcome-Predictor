@@ -135,11 +135,12 @@ def test_a_competition_is_labelled_the_way_a_reader_would_name_it() -> None:
     assert competition.short_label("ESP_1") == "La Liga"
 
 
-def test_a_card_label_keeps_a_country_code_when_the_name_alone_is_ambiguous() -> None:
+def test_a_card_label_names_the_country_when_the_name_alone_is_ambiguous() -> None:
     """Italy and Brazil both call their top flight "Serie A"; two cards side by
     side reading "Serie A" would be two different competitions looking like one."""
-    assert competition.short_label("ITA_1") == "Serie A · ITA"
-    assert competition.short_label("BRA_1") == "Serie A · BRA"
+    assert competition.short_label("ITA_1") == "Serie A — Italy"
+    assert competition.short_label("BRA_1") == "Serie A — Brazil"
+    assert competition.short_label("GER_1") == "Bundesliga — Germany"
 
 
 def test_an_unknown_competition_falls_back_to_its_id() -> None:

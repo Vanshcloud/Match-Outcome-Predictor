@@ -28,7 +28,7 @@ class NullFixtures:
     available: bool = False
 
     reason: str = (
-        "The data behind this project is a **results** feed — a match that has "
+        "The data behind this project is a results feed — a match that has "
         "not been played is in no table here — so kick-off times, live scores "
         "and minutes need a second provider."
     )

@@ -52,13 +52,9 @@ class ApiPredictions:
         them. To this provider they are the same — it cannot price a fixture —
         and the detail is kept in :attr:`error` for the caption.
 
-        The first question used to be missing, and the way that surfaced is
-        worth recording. ``DASHBOARD_API_URL`` defaults to port 8000, an
-        unrelated service was listening there, and its ``/health`` answered
-        ``{"status": "ok"}`` — so the sidebar reported a healthy prediction
-        service while every ``/predict`` would have come back 404. A liveness
-        probe that accepts any 200 is a probe for "something is listening",
-        which is not the question anyone was asking.
+        The shape check matters because another service on the same port can
+        answer ``/health`` with ``{"status": "ok"}``; accepting any 200 would
+        report a healthy prediction service whose ``/predict`` returns 404.
         """
         try:
             health = self.client.health()

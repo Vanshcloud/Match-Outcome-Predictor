@@ -114,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output or settings.paths.features_dir,
         builders=select_builders(args.builder),
         verify=not args.no_verify,
+        sources=[matches_path],
     )
 
     print(f"\n{report.summary()}")

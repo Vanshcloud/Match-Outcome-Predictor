@@ -459,8 +459,8 @@ def test_no_key_is_unavailable_and_names_the_variable_to_set(
 
 def test_a_feed_that_answers_is_available_and_asks_the_feeds_own_calendar() -> None:
     """Availability is the same request `live()` makes, and it is anchored to
-    UTC — yesterday and today there, which is the smallest window certain to
-    hold every match in play whatever the host's timezone."""
+    UTC — from yesterday there, which is certain to hold every match in play
+    whatever the host's timezone."""
     provider, http = feed({"matches": [fd_row(status="IN_PLAY", minute=63)]})
     assert provider.available
     assert provider.error is None
@@ -469,7 +469,19 @@ def test_a_feed_that_answers_is_available_and_asks_the_feeds_own_calendar() -> N
     assert asked["headers"] == {"X-Auth-Token": "k"}
     utc_today = dt.datetime.now(dt.UTC).date()
     assert asked["params"]["dateFrom"] == (utc_today - dt.timedelta(days=1)).isoformat()
-    assert asked["params"]["dateTo"] == (utc_today + dt.timedelta(days=1)).isoformat()
+    assert asked["params"]["dateTo"] == (utc_today + dt.timedelta(days=9)).isoformat()
+
+
+def test_a_cold_home_page_asks_the_feed_once() -> None:
+    """Regression: availability, the live strip and the week of fixtures were two
+    requests of several seconds each; with the reader's date equal to the UTC
+    date they are one."""
+    provider, http = feed(_three_leagues("IN_PLAY"))
+    today = dt.datetime.now(dt.UTC).date()
+    assert provider.available
+    provider.live(competitions=["ENG_1"])
+    provider.scheduled(since=today, until=today + dt.timedelta(days=7))
+    assert len(http.calls) == 1
 
 
 def test_a_feed_that_refuses_the_key_is_unavailable_with_the_status_kept() -> None:
@@ -486,7 +498,7 @@ def test_a_feed_that_refuses_the_key_is_unavailable_with_the_status_kept() -> No
 def test_a_feed_that_cannot_be_reached_says_so_rather_than_raising() -> None:
     provider, _ = feed(fails=requests.ConnectionError("no route to host"))
     assert provider.scheduled(since=dt.date(2026, 9, 6), until=dt.date(2026, 9, 13)) == []
-    assert "could not be reached" in str(provider.error)
+    assert provider.error == "football-data.org could not be reached (ConnectionError)"
 
 
 def test_a_body_that_is_not_json_is_an_empty_answer_with_a_reason() -> None:
@@ -614,28 +626,45 @@ def test_live_is_only_what_is_being_played() -> None:
     assert [one.match_id for one in provider.live()] == ["fdorg-9"]
 
 
-def test_the_competitions_a_reader_follows_are_sent_as_the_feeds_own_codes() -> None:
-    provider, http = feed()
-    provider.scheduled(
-        since=dt.date(2026, 9, 6), until=dt.date(2026, 9, 13), competitions=["ENG_1", "GER_1"]
+def _three_leagues(status: str = "SCHEDULED") -> dict[str, object]:
+    return {
+        "matches": [
+            fd_row(id=1, status=status, competition={"code": "PL", "name": "Premier League"}),
+            fd_row(id=2, status=status, competition={"code": "BL1", "name": "Bundesliga"}),
+            fd_row(
+                id=3, status=status, competition={"code": "CL", "name": "UEFA Champions League"}
+            ),
+        ]
+    }
+
+
+def test_the_competitions_a_reader_follows_filter_the_answer() -> None:
+    provider, _ = feed(_three_leagues())
+    found = provider.scheduled(
+        since=dt.date(2026, 9, 5), until=dt.date(2026, 9, 12), competitions=["ENG_1", "GER_1"]
     )
-    assert http.calls[0]["params"]["competitions"] == "PL,BL1"
+    assert sorted(one.competition_id for one in found) == ["ENG_1", "GER_1"]
 
 
-def test_a_competition_outside_the_plan_is_dropped_from_the_filter_not_sent() -> None:
-    """There is no code here to send for it — this project's ids are its own.
-    (The live API ignores a paid competition left in the filter rather than
-    refusing the request, so the drop costs nothing; the alternative would be
-    an unfiltered request for competitions the reader did not ask about.)"""
-    provider, http = feed()
-    provider.live(competitions=["ENG_1", "SCO_2"])
-    assert http.calls[0]["params"]["competitions"] == "PL"
+def test_a_competition_outside_the_plan_is_ignored_in_the_filter() -> None:
+    provider, _ = feed(_three_leagues("IN_PLAY"))
+    assert [one.match_id for one in provider.live(competitions=["ENG_1", "SCO_2"])] == ["fdorg-1"]
 
 
-def test_the_champions_league_is_asked_for_only_when_it_is_followed() -> None:
-    provider, http = feed()
-    provider.live(competitions=["UEFA_CL"])
-    assert http.calls[0]["params"]["competitions"] == "CL"
+def test_the_champions_league_is_shown_only_when_it_is_followed() -> None:
+    provider, _ = feed(_three_leagues("IN_PLAY"))
+    assert [one.competition_id for one in provider.live(competitions=["UEFA_CL"])] == ["UEFA_CL"]
+
+
+def test_availability_and_a_filtered_live_section_share_one_request() -> None:
+    """Regression: each feed request takes seconds, and the home page's cold
+    load was three of them because a filtered ``live`` missed the cache entry
+    ``available`` had just filled for the same window."""
+    provider, http = feed(_three_leagues("IN_PLAY"))
+    assert provider.available
+    provider.live(competitions=["ENG_1", "GER_1"])
+    assert len(http.calls) == 1
+    assert "competitions" not in http.calls[0]["params"]
 
 
 def test_the_champions_league_is_a_feed_only_card_with_the_feeds_own_name() -> None:

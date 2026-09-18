@@ -15,7 +15,7 @@ every forecaster could price:
 
 | | log loss | RPS | accuracy |
 |---|---:|---:|---:|
-| Bookmaker closing odds | **0.9993** | **0.2031** | 50.6% |
+| Bookmaker closing odds | **0.9993** | **0.2031** | 50.5% |
 | Blend of three, calibrated | **1.0156** | **0.2082** | 49.3% |
 | Blend of three | 1.0156 | 0.2082 | 49.3% |
 | CatBoost | 1.0159 | 0.2083 | 49.2% |

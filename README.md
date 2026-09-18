@@ -63,9 +63,10 @@ the sidebar's date and the fixtures behind the cards are whatever was current
 when the screenshot was taken, which is why the two dates differ.
 
 ![Home page: live and upcoming matches](docs/screenshots/home.png)
-*Home: matches in play and the next seven days, each fixture with the model's
-probabilities. Scores and crests are served at runtime by football-data.org;
-the crests belong to their clubs, and none are stored in this repository.*
+*Home: what is in play now — nothing, when this was captured — and the next
+seven days, each fixture with the model's probabilities. Scores and crests are
+served at runtime by football-data.org; the crests belong to their clubs, and
+none are stored in this repository.*
 
 ![Match page for a played fixture](docs/screenshots/match.png)
 *Match page: the forecast, how often forecasts in the same probability band came
@@ -87,6 +88,56 @@ for reliability, per-competition results and limitations.*
 The dashboard is a client of the API over HTTP. Without data or a running
 service it still starts, and each section says what is missing and which
 command produces it.
+
+## API
+
+`make api` serves the calibrated blend on `http://127.0.0.1:8000`, with
+interactive docs at `/docs`. The service looks up design rows written by the
+batch build and never computes features inside a request, so the dashboard and
+the backtest cannot drift apart.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Liveness and readiness, component by component |
+| `GET /version` | Model, version, design columns, what it was fitted on |
+| `GET /fixtures` | Matches the model can price |
+| `POST /predict` | Price one fixture |
+| `POST /predict/batch` | Price several in one pass |
+| `GET /model-card/limitations` | What the model must not be used for |
+| `GET /metrics` | Prometheus exposition |
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H 'content-type: application/json' \
+  -d '{"match_id": "f1b6f4d50e640479"}'
+```
+
+```json
+{
+  "fixture": {
+    "match_id": "f1b6f4d50e640479", "competition_id": "BRA_1",
+    "competition": "Serie A", "country": "Brazil", "season": "2026",
+    "date": "2026-09-20", "home_team": "Athletico-PR", "away_team": "Bahia"
+  },
+  "probabilities": {
+    "home": 0.4533123231944255,
+    "draw": 0.29224375725304885,
+    "away": 0.25444391955252577
+  },
+  "model": "ensemble-calibrated", "model_version": "0.12.0",
+  "in_sample": false,
+  "predicted_at": "2026-09-18T06:59:44.692437Z",
+  "limitations_url": "/model-card/limitations"
+}
+```
+
+Two fields exist to stop the service being read as more than it is.
+`in_sample` is true when the fixture falls inside the served model's training
+window, because the served artefact is fitted on the whole history and its
+answer for a played match is not what the walk-forward folds measured.
+`limitations_url` points at the generated model card, so a caller reading only
+JSON still has the caveats one request away. Full reference:
+[docs/API.md](docs/API.md).
 
 ## ML methodology
 
@@ -161,7 +212,7 @@ Dixon-Coles could both price.
 
 | Forecaster | Log loss | RPS | Accuracy |
 |---|---:|---:|---:|
-| Bookmaker closing odds, overround removed (benchmark) | **0.9993** | **0.2031** | 50.6% |
+| Bookmaker closing odds, overround removed (benchmark) | **0.9993** | **0.2031** | 50.5% |
 | **Blend of three, calibrated (shipped)** | **1.0156** | **0.2082** | 49.3% |
 | CatBoost | 1.0159 | 0.2083 | 49.2% |
 | XGBoost / LightGBM / logistic regression | 1.0161–1.0162 | 0.2083–0.2084 | 49.2–49.3% |
@@ -477,3 +528,11 @@ Live fixtures, scores and crests come from
 [football-data.org](https://www.football-data.org/) under your own API key.
 Transfermarkt is deliberately not used, because its terms prohibit automated
 access and model training.
+
+## Disclaimer
+
+This is a research and portfolio project. Its output is a statistical forecast,
+not advice, and the evaluation above shows it losing to the bookmaker's closing
+line in every competition it was scored on — so it carries no edge to bet on.
+The served model's answer for an already-played match is in-sample, which the
+API flags and the dashboard says on the page.

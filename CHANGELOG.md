@@ -93,6 +93,15 @@ Milestones 13–20 and the publication pass.
   `data/reports/`, it is 27. The same paragraph's median gap for the blend is
   0.0146, not the 0.0153 it carried, and the widest and narrowest competition
   gaps quoted after it are LightGBM's, which it now says.
+- The closing line's accuracy is 50.5%, not the 50.6% the results tables
+  carried. It is 29,825 of 59,001 — 50.54999% — which is below the 50.55
+  boundary, so no rounding convention reaches 50.6, and the wider priced
+  population is lower still at 50.4791%. Corrected in the README,
+  `docs/EVALUATION.md` and `docs/MODELS.md`; `docs/history/` keeps what it
+  recorded at the time.
+- The README gained an API section — the endpoints, a real request and the
+  response it returns — and a disclaimer saying the output is a statistical
+  forecast rather than advice.
 - The 0.0163 deficit to the closing line is stated with the population it is a
   mean over. `docs/EVALUATION.md` attached it to the market table's 61,889
   matches; it is a mean over the 59,001 every forecaster could price, and over

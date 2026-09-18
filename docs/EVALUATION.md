@@ -13,7 +13,7 @@ price:
 
 | | log loss | RPS | accuracy |
 |---|---:|---:|---:|
-| Bookmaker closing odds, overround removed | **0.9993** | **0.2031** | 50.6% |
+| Bookmaker closing odds, overround removed | **0.9993** | **0.2031** | 50.5% |
 | Dixon-Coles | 1.0277 | 0.2114 | 48.5% |
 | Class prior, counted per fold | 1.0751 | 0.2284 | 43.7% |
 | Home always | ∞ | 0.4316 | 43.7% |
@@ -304,7 +304,7 @@ what ranks a degenerate forecast that log loss has already sent to infinity.
 
 **Accuracy** is reported last because in this problem it is close to
 meaningless. Predicting home every time scores 43.7%; the closing line scores
-50.6%. A well-calibrated model that rarely *predicts* a draw is behaving
+50.5%. A well-calibrated model that rarely *predicts* a draw is behaving
 correctly, not failing — roughly a quarter of matches are drawn and almost none
 of them are the modal outcome beforehand.
 

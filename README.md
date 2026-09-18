@@ -28,6 +28,40 @@ The project runs end to end, from raw results to a served model:
 5. Shows forecasts, live scores and the model's reliability in a Streamlit
    dashboard for the 10 competitions on football-data.org's free plan.
 
+## Supported competitions
+
+Two scopes, different on purpose.
+
+**The dashboard covers 10 competitions** — those on football-data.org's free
+live feed:
+
+| Competition | Country | Forecasts |
+|---|---|---|
+| Premier League | England | yes |
+| Championship | England | yes |
+| La Liga | Spain | yes |
+| Bundesliga | Germany | yes |
+| Serie A | Italy | yes |
+| Ligue 1 | France | yes |
+| Eredivisie | Netherlands | yes |
+| Primeira Liga | Portugal | yes |
+| Série A | Brazil | yes |
+| UEFA Champions League | Europe | no — fixtures and live scores only |
+
+The Champions League carries no forecasts because no match history is ingested
+for it. The model needs a competition's own past results, and the free feed
+supplies fixtures and scores, not history.
+
+![Competitions page](docs/screenshots/competitions.png)
+*The Competitions page: the ten the dashboard covers, Champions League
+included. Each opens the coming week's fixtures.*
+
+**The model learns from 39 competitions in 27 countries**, the nine leagues
+above among them, because a forecaster for the Premier League is better for
+having seen the Championship and twenty-nine other leagues. Every measured
+figure in this README is over those 39. `configs/leagues.yaml` is the registry;
+adding a competition is an entry there.
+
 ## Why this project
 
 Football predictions are usually reported as a hit rate. A hit rate hides
@@ -84,6 +118,10 @@ for reliability, per-competition results and limitations.*
 | Match | The forecast and its reliability band; form and head-to-head for a played match |
 | Search | A club's crest, live and upcoming fixtures, and results |
 | Model | Every forecaster on the same matches; reliability by competition and year; the served-forecast archive; limitations |
+
+The sidebar lists five of these. The match page is routed but kept out of the
+menu, because it is where a fixture card leads; opened bare it offers a grid of
+fixtures to pick from.
 
 The dashboard is a client of the API over HTTP. Without data or a running
 service it still starts, and each section says what is missing and which
